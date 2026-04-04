@@ -126,35 +126,66 @@ Deno.serve(async (req) => {
 async function scrapeVGS(apiKey: string, slug: string, address: string, town: string) {
   const searchUrl = `https://gis.vgsi.com/${slug}/Search.aspx`;
 
-  // Use Firecrawl to scrape the search results page
+  // Strategy 1: Use Firecrawl web search to find the exact property page on VGS
   try {
-    const queryUrl = `${searchUrl}?Query=${encodeURIComponent(address)}`;
-    console.log(`Scraping VGS search: ${queryUrl}`);
-    const scrapeResult = await firecrawlScrape(apiKey, queryUrl);
+    const query = `site:gis.vgsi.com/${slug} "${address}"`;
+    console.log(`Firecrawl search: ${query}`);
 
-    if (scrapeResult) {
-      console.log(`VGS scrape result length: ${scrapeResult.length}`);
-      console.log(`VGS scrape preview: ${scrapeResult.substring(0, 500)}`);
+    const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: `${address} ${town} CT property owner site:gis.vgsi.com`,
+        limit: 5,
+        scrapeOptions: { formats: ['markdown'] },
+      }),
+    });
 
-      // Check if the result has actual property data (not just the search form)
-      if (scrapeResult.includes('Owner') || scrapeResult.includes('OWNER') || 
-          scrapeResult.includes('Parcel') || scrapeResult.includes('Assessment')) {
-        const extracted = extractVGSData(scrapeResult, address, town);
-        if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
-          if (extracted.isLLC) {
-            try {
-              extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
-            } catch (e) {
-              console.error("LLC lookup error:", e);
+    if (searchResp.ok) {
+      const searchData = await searchResp.json();
+      const results = searchData.data || [];
+      console.log(`Firecrawl search returned ${results.length} results`);
+
+      for (const result of results) {
+        const url = result.url || '';
+        const markdown = result.markdown || '';
+
+        // Check if this is a VGS property page
+        if (url.includes('gis.vgsi.com') && url.includes('Parcel.aspx')) {
+          console.log(`Found VGS property page: ${url}`);
+          const extracted = extractVGSData(markdown, address, town);
+          if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
+            if (extracted.isLLC) {
+              try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC error:", e); }
             }
+            return json({ success: true, property: extracted });
           }
-          return json({ success: true, property: extracted });
+        }
+
+        // Try extracting from any search result with content
+        if (markdown && markdown.length > 200) {
+          const extracted = extractVGSData(markdown, address, town);
+          if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
+            if (extracted.isLLC) {
+              try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC error:", e); }
+            }
+            return json({ success: true, property: extracted });
+          }
         }
       }
+    }
+  } catch (e) {
+    console.error("Firecrawl search error:", e);
+  }
 
-      // If the search page has links to property detail pages, try to find one
-      const pidMatch = scrapeResult.match(/Parcel\.aspx\?pid=(\d+)/i) || 
-                       scrapeResult.match(/pid=(\d+)/i);
+  // Strategy 2: Try scraping a direct Parcel URL if we can guess from search
+  try {
+    const scrapeResult = await firecrawlScrape(apiKey, searchUrl);
+    if (scrapeResult) {
+      const pidMatch = scrapeResult.match(/Parcel\.aspx\?pid=(\d+)/i);
       if (pidMatch) {
         const detailUrl = `https://gis.vgsi.com/${slug}/Parcel.aspx?pid=${pidMatch[1]}`;
         console.log(`Found property detail URL: ${detailUrl}`);
@@ -163,11 +194,7 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
           const extracted = extractVGSData(detailResult, address, town);
           if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
             if (extracted.isLLC) {
-              try {
-                extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
-              } catch (e) {
-                console.error("LLC lookup error:", e);
-              }
+              try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC error:", e); }
             }
             return json({ success: true, property: extracted });
           }
@@ -175,7 +202,7 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
       }
     }
   } catch (e) {
-    console.error("VGS scrape error:", e);
+    console.error("VGS fallback error:", e);
   }
 
   return json({
