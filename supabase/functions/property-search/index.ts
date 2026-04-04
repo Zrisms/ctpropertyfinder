@@ -37,10 +37,10 @@ const VGS_TOWNS: Record<string, string> = {
   "windham": "windhamCT",
 };
 
-// Proxy fetch to bypass Deno TLS issues with VGS certificates
+// Use HTTP (not HTTPS) for VGS to avoid Deno TLS certificate issues
 async function proxyFetch(url: string, opts: RequestInit = {}): Promise<Response> {
-  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-  return fetch(proxyUrl, opts);
+  const httpUrl = url.replace("https://gis.vgsi.com", "http://gis.vgsi.com");
+  return fetch(httpUrl, opts);
 }
 
 Deno.serve(async (req) => {
