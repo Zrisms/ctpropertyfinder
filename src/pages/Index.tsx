@@ -162,6 +162,7 @@ const Index = () => {
               data={propertyData}
               onDownloadPdf={handleDownloadPdf}
               onDownloadExcel={handleDownloadExcel}
+              onDownloadLLCPdf={propertyData.isLLC && propertyData.llcDetails ? handleDownloadLLCPdf : undefined}
               isExporting={isExporting}
             />
           </div>
