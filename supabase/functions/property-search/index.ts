@@ -34,8 +34,7 @@ Deno.serve(async (req) => {
     try {
       // Try the parcel search API directly
       const apiUrl = `https://gis.vgsi.com/${townSlug}ct/api/Parcel/Search?query=${encodeURIComponent(address)}&category=Address`;
-      const apiResp = await fetch(apiUrl, {
-        ...fetchOpts,
+      const apiResp = await fetchWithTls(apiUrl, {
         headers: { Accept: "application/json" },
       });
 
