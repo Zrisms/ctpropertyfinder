@@ -119,7 +119,7 @@ const Index = () => {
       <header className="bg-navy text-primary-foreground py-16 px-4">
         <div className="max-w-3xl mx-auto text-center space-y-4">
           <div className="flex items-center justify-center gap-3 mb-2">
-            <Building2 className="h-10 w-10 text-gold" />
+            <Building2 className="h-10 w-10 text-red-500" />
           </div>
           <h1 className="font-display text-4xl md:text-5xl tracking-tight">
             CT Property Lookup
