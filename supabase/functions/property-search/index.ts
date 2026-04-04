@@ -22,41 +22,41 @@ Deno.serve(async (req) => {
 
     // Try Vision Government Solutions (most common CT assessor platform)
     const townSlug = town.toLowerCase().replace(/\s+/g, "");
-    const visionUrl = `https://gis.vgsi.com/${townSlug}ct/Search.aspx`;
+
+    // Create HTTP client that accepts the VGS certificate
+    const httpClient = Deno.createHttpClient({ caCerts: [], proxy: { url: "" } });
+    const fetchOpts = { client: httpClient };
 
     // Attempt to search via Vision GIS
     let propertyData = null;
 
     try {
-      // Search Vision GIS for the property
-      const searchUrl = `https://gis.vgsi.com/${townSlug}ct/Search.aspx`;
-      const searchResp = await fetch(searchUrl);
+      // Try the parcel search API directly
+      const apiUrl = `https://gis.vgsi.com/${townSlug}ct/api/Parcel/Search?query=${encodeURIComponent(address)}&category=Address`;
+      const apiResp = await fetch(apiUrl, {
+        ...fetchOpts,
+        headers: { Accept: "application/json" },
+      });
 
-      if (searchResp.ok) {
-        // Try the parcel search API
-        const apiUrl = `https://gis.vgsi.com/${townSlug}ct/api/Parcel/Search?query=${encodeURIComponent(address)}&category=Address`;
-        const apiResp = await fetch(apiUrl, {
-          headers: { Accept: "application/json" },
-        });
+      if (apiResp.ok) {
+        const results = await apiResp.json();
 
-        if (apiResp.ok) {
-          const results = await apiResp.json();
+        if (results && results.length > 0) {
+          const parcel = results[0];
+          const parcelId = parcel.ParcelId || parcel.Pid || parcel.Id;
 
-          if (results && results.length > 0) {
-            const parcel = results[0];
-            const parcelId = parcel.ParcelId || parcel.Pid || parcel.Id;
-
-            // Get detailed parcel info
-            let details: Record<string, unknown> = {};
-            if (parcelId) {
-              const detailUrl = `https://gis.vgsi.com/${townSlug}ct/api/Parcel/${parcelId}`;
-              const detailResp = await fetch(detailUrl, {
-                headers: { Accept: "application/json" },
-              });
-              if (detailResp.ok) {
-                details = await detailResp.json();
-              }
+          // Get detailed parcel info
+          let details: Record<string, unknown> = {};
+          if (parcelId) {
+            const detailUrl = `https://gis.vgsi.com/${townSlug}ct/api/Parcel/${parcelId}`;
+            const detailResp = await fetch(detailUrl, {
+              ...fetchOpts,
+              headers: { Accept: "application/json" },
+            });
+            if (detailResp.ok) {
+              details = await detailResp.json();
             }
+          }
 
             const ownerName = (details.Owner as string) || parcel.Owner || "Unknown";
             const isLLC =
