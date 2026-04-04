@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Building2 } from "lucide-react";
+import { Building2, ExternalLink } from "lucide-react";
 import { AddressSearch } from "@/components/AddressSearch";
 import { PropertyResults, type PropertyData } from "@/components/PropertyResults";
 import { useToast } from "@/hooks/use-toast";
@@ -9,11 +9,13 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [propertyData, setPropertyData] = useState<PropertyData | null>(null);
+  const [searchUrl, setSearchUrl] = useState<string | null>(null);
   const { toast } = useToast();
 
   const handleSearch = async (address: string, town: string) => {
     setIsLoading(true);
     setPropertyData(null);
+    setSearchUrl(null);
 
     try {
       const { data, error } = await supabase.functions.invoke("property-search", {
@@ -22,16 +24,21 @@ const Index = () => {
 
       if (error) throw error;
 
-      if (!data?.success) {
-        toast({
-          title: "Not Found",
-          description: data?.error || "Could not find property data for this address.",
-          variant: "destructive",
-        });
+      if (data?.success) {
+        setPropertyData(data.property);
         return;
       }
 
-      setPropertyData(data.property);
+      // Show direct link to assessor database
+      if (data?.searchUrl) {
+        setSearchUrl(data.searchUrl);
+      }
+
+      toast({
+        title: "Manual Search Required",
+        description: data?.error || "Could not find property data for this address.",
+        variant: "destructive",
+      });
     } catch (err) {
       console.error("Search error:", err);
       toast({
@@ -52,8 +59,6 @@ const Index = () => {
         body: { property: propertyData },
       });
       if (error) throw error;
-
-      // data should contain a base64 PDF
       if (data?.pdf) {
         const blob = base64ToBlob(data.pdf, "application/pdf");
         downloadBlob(blob, `${propertyData.address.replace(/\s+/g, "_")}_card.pdf`);
@@ -75,7 +80,6 @@ const Index = () => {
         body: { property: propertyData },
       });
       if (error) throw error;
-
       if (data?.excel) {
         const blob = base64ToBlob(data.excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         downloadBlob(blob, `${propertyData.owner.replace(/\s+/g, "_")}_LLC_info.xlsx`);
@@ -91,7 +95,6 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Hero */}
       <header className="bg-navy text-primary-foreground py-16 px-4">
         <div className="max-w-3xl mx-auto text-center space-y-4">
           <div className="flex items-center justify-center gap-3 mb-2">
@@ -106,7 +109,6 @@ const Index = () => {
         </div>
       </header>
 
-      {/* Search Section */}
       <main className="px-4 -mt-6">
         <div className="max-w-2xl mx-auto">
           <div className="bg-card rounded-xl shadow-lg border border-border p-6">
@@ -114,7 +116,25 @@ const Index = () => {
           </div>
         </div>
 
-        {/* Results */}
+        {searchUrl && !propertyData && (
+          <div className="max-w-2xl mx-auto mt-6">
+            <div className="bg-card rounded-xl border border-border p-6 text-center space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Automated scraping is not yet available for this town. You can search the assessor's database directly:
+              </p>
+              <a
+                href={searchUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Open Assessor Database
+              </a>
+            </div>
+          </div>
+        )}
+
         {propertyData && (
           <div className="mt-8 pb-12">
             <PropertyResults
@@ -126,8 +146,7 @@ const Index = () => {
           </div>
         )}
 
-        {/* Empty state */}
-        {!propertyData && !isLoading && (
+        {!propertyData && !isLoading && !searchUrl && (
           <div className="text-center py-16 text-muted-foreground">
             <p className="text-sm">Enter an address and town to get started</p>
           </div>
