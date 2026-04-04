@@ -125,12 +125,44 @@ Deno.serve(async (req) => {
 
 async function scrapeVGS(apiKey: string, slug: string, address: string, town: string) {
   const searchUrl = `https://gis.vgsi.com/${slug}/Search.aspx`;
+  const baseUrl = `https://gis.vgsi.com/${slug}`;
 
-  // Strategy: Use Firecrawl v1 actions to interact with VGS autocomplete search
-  // VGS uses jQuery UI Autocomplete - type address, wait for dropdown, click first result
+  // Strategy 1: Use Firecrawl search to find the property page via Google
   try {
-    console.log(`Scraping VGS with autocomplete interaction: ${searchUrl}`);
+    console.log(`Searching for property via Firecrawl search`);
+    const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: `"${address}" "${town}" CT property vgsi.com`,
+        limit: 5,
+      }),
+    });
 
+    if (searchResp.ok) {
+      const searchData = await searchResp.json();
+      const results = searchData.data || [];
+      console.log(`Search returned ${results.length} results`);
+
+      for (const result of results) {
+        const url = result.url || '';
+        if (url.includes('vgsi.com') && url.includes('Parcel.aspx')) {
+          console.log(`Found VGS parcel page: ${url}`);
+          return await scrapePropertyDetail(apiKey, url, address, town);
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Search error:", e);
+  }
+
+  // Strategy 2: Use Firecrawl scrape with actions on VGS search
+  // Use generic selectors that work with VGS ASP.NET pages
+  try {
+    console.log(`Trying VGS with actions`);
     const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
       method: 'POST',
       headers: {
@@ -139,19 +171,17 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
       },
       body: JSON.stringify({
         url: searchUrl,
-        formats: ['markdown', 'links'],
+        formats: ['markdown', 'links', 'html'],
         waitFor: 2000,
         actions: [
-          // Click the search text input
-          { type: 'click', selector: '#ContentPlaceHolder1_TextBox_Search' },
-          // Type the address (triggers autocomplete AJAX)
-          { type: 'write', text: address.substring(0, Math.min(address.length, 15)) },
-          // Wait for autocomplete results to appear
+          { type: 'wait', milliseconds: 1000 },
+          // Use CSS selector for the search input
+          { type: 'click', selector: 'input[id*="TextBox_Search"], input[id*="txtSearch"], input[type="text"]' },
+          { type: 'write', text: address },
           { type: 'wait', milliseconds: 3000 },
-          // Click the first autocomplete suggestion (jQuery UI autocomplete)
-          { type: 'click', selector: '.ui-autocomplete li:first-child a, .ui-menu-item:first-child a, ul.ui-autocomplete li:first-child' },
-          // Wait for navigation to property page
-          { type: 'wait', milliseconds: 4000 },
+          // Try clicking autocomplete suggestion
+          { type: 'click', selector: '.ui-autocomplete li a, .ui-menu-item a, ul.ui-autocomplete li' },
+          { type: 'wait', milliseconds: 5000 },
         ],
       }),
     });
@@ -159,47 +189,39 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
     if (resp.ok) {
       const data = await resp.json();
       const markdown = data.data?.markdown || data.markdown || '';
-      const links = data.data?.links || data.links || [];
-      const url = data.data?.metadata?.url || data.data?.metadata?.sourceURL || '';
-      console.log(`VGS result length: ${markdown.length}, URL: ${url}`);
+      const html = data.data?.html || data.html || '';
+      const finalUrl = data.data?.metadata?.url || data.data?.metadata?.sourceURL || '';
+      console.log(`Actions result: len=${markdown.length}, url=${finalUrl}`);
 
-      // Check if we navigated to a Parcel page
-      if (url.includes('Parcel.aspx') || markdown.includes('Parcel ID') || markdown.includes('Owner')) {
+      // If we navigated to a Parcel page
+      if (finalUrl.includes('Parcel.aspx') || markdown.includes('Parcel ID')) {
         const extracted = extractVGSData(markdown, address, town);
         if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
-          extracted.propertyCardUrl = url;
+          extracted.propertyCardUrl = finalUrl;
           if (extracted.isLLC) {
-            try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC error:", e); }
+            try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
           }
           return json({ success: true, property: extracted });
         }
       }
 
-      // Maybe we stayed on search page but have links
-      const parcelLink = links.find((l: string) => l.includes('Parcel.aspx?'));
-      if (parcelLink) {
-        return await scrapePropertyDetail(apiKey, parcelLink, address, town);
-      }
-
-      // Check markdown for parcel links
-      const pidMatch = markdown.match(/Parcel\.aspx\?[Pp]id=(\d+)/i);
+      // Check for Parcel links in HTML or markdown
+      const pidMatch = (html + markdown).match(/Parcel\.aspx\?[Pp]id=(\d+)/);
       if (pidMatch) {
-        const detailUrl = `https://gis.vgsi.com/${slug}/Parcel.aspx?Pid=${pidMatch[1]}`;
+        const detailUrl = `${baseUrl}/Parcel.aspx?Pid=${pidMatch[1]}`;
         return await scrapePropertyDetail(apiKey, detailUrl, address, town);
       }
-
-      console.log(`VGS preview: ${markdown.substring(0, 300)}`);
     } else {
       const errText = await resp.text();
-      console.error(`Firecrawl actions error ${resp.status}: ${errText}`);
+      console.error(`Actions error: ${errText.substring(0, 200)}`);
     }
   } catch (e) {
-    console.error("VGS scrape error:", e);
+    console.error("Actions error:", e);
   }
 
   return json({
     success: false,
-    error: "Could not find property. Try the assessor database directly.",
+    error: `Could not find property in ${town}. Try the assessor database directly.`,
     searchUrl,
   });
 }
