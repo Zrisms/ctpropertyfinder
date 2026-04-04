@@ -393,32 +393,255 @@ async function searchCTBusiness(apiKey: string, businessName: string) {
 
   console.log(`Searching CT SOS for: ${cleanName}`);
 
-  // Try scraping CT Secretary of State business search
-  try {
-    const searchUrl = `https://service.ct.gov/business/s/onlinebusinesssearch?language=en_US`;
-    const scrapeResult = await firecrawlScrape(apiKey, searchUrl);
+  const searchUrl = 'https://service.ct.gov/business/s/onlinebusinesssearch?language=en_US';
 
-    // The CT SOS site is a Salesforce app - very JS heavy
-    // Firecrawl should handle JS rendering
-    if (scrapeResult && scrapeResult.length > 100) {
-      console.log("Got CT SOS page content, length:", scrapeResult.length);
-      // Try to extract business info from the scraped content
-      // Since we can't interact with the search form via scrape, provide the direct link
+  // Step 1: Search for the business using Firecrawl actions
+  try {
+    console.log('Step 1: Performing business search on CT SOS');
+    const searchResp = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: searchUrl,
+        formats: ['markdown', 'links', 'html'],
+        waitFor: 5000,
+        actions: [
+          { type: 'wait', milliseconds: 3000 },
+          { type: 'click', selector: 'input[name*="businessNameSearch"], input[placeholder*="Business Name"], input[type="text"]' },
+          { type: 'write', text: cleanName },
+          { type: 'wait', milliseconds: 1000 },
+          { type: 'click', selector: 'button[title="Search"], button.slds-button:not([title="Clear"]), input[type="submit"], button[type="submit"]' },
+          { type: 'wait', milliseconds: 8000 },
+        ],
+      }),
+    });
+
+    if (!searchResp.ok) {
+      const errText = await searchResp.text();
+      console.error('CT SOS search failed:', errText.substring(0, 300));
+      return makeFallbackLLC(cleanName);
+    }
+
+    const searchData = await searchResp.json();
+    const markdown = searchData.data?.markdown || '';
+    const html = searchData.data?.html || '';
+    const links = searchData.data?.links || [];
+    console.log(`Search results: markdown=${markdown.length}, links=${links.length}`);
+
+    // Find the best matching business link
+    let detailUrl = '';
+    
+    // Check links for business detail pages
+    for (const link of links) {
+      const href = typeof link === 'string' ? link : link?.url || link?.href || '';
+      if (href.includes('/business/s/') && href.includes('Id=')) {
+        detailUrl = href;
+        break;
+      }
+    }
+
+    // Also check HTML for detail links
+    if (!detailUrl) {
+      const linkMatch = (html + markdown).match(/href="([^"]*\/business\/s\/[^"]*Id=[^"]*)"/i);
+      if (linkMatch) {
+        detailUrl = linkMatch[1];
+        if (detailUrl.startsWith('/')) detailUrl = `https://service.ct.gov${detailUrl}`;
+      }
+    }
+
+    // Try to extract data directly from search results if detail URL not found
+    const businessDetails = extractBusinessFromMarkdown(markdown, cleanName);
+    
+    if (detailUrl) {
+      console.log(`Found detail URL: ${detailUrl}`);
+      // Step 2: Scrape the detail page and click "Print Business Details"
+      return await scrapeCTBusinessDetail(apiKey, detailUrl, cleanName);
+    }
+
+    if (businessDetails && businessDetails.mailingAddress !== 'N/A') {
+      return businessDetails;
+    }
+
+    // Step 2 alternative: Try clicking on the first result row using actions
+    console.log('Trying to click first result row');
+    const clickResp = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: searchUrl,
+        formats: ['markdown', 'links', 'html'],
+        waitFor: 5000,
+        actions: [
+          { type: 'wait', milliseconds: 3000 },
+          { type: 'click', selector: 'input[name*="businessNameSearch"], input[placeholder*="Business Name"], input[type="text"]' },
+          { type: 'write', text: cleanName },
+          { type: 'wait', milliseconds: 1000 },
+          { type: 'click', selector: 'button[title="Search"], button.slds-button:not([title="Clear"]), input[type="submit"]' },
+          { type: 'wait', milliseconds: 8000 },
+          // Click first result link
+          { type: 'click', selector: 'a[data-aura-rendered-by], table a, .slds-table a, a[href*="Id="]' },
+          { type: 'wait', milliseconds: 5000 },
+          // Click Print Business Details button
+          { type: 'click', selector: 'button:has-text("Print"), a:has-text("Print Business Details"), button[title*="Print"]' },
+          { type: 'wait', milliseconds: 5000 },
+        ],
+      }),
+    });
+
+    if (clickResp.ok) {
+      const clickData = await clickResp.json();
+      const detailMd = clickData.data?.markdown || '';
+      console.log(`Detail page markdown length: ${detailMd.length}`);
+      
+      const details = extractBusinessFromMarkdown(detailMd, cleanName);
+      if (details && details.mailingAddress !== 'N/A') {
+        return details;
+      }
+    }
+
+  } catch (e) {
+    console.error('CT SOS search error:', e);
+  }
+
+  return makeFallbackLLC(cleanName);
+}
+
+async function scrapeCTBusinessDetail(apiKey: string, detailUrl: string, businessName: string) {
+  console.log(`Scraping CT business detail: ${detailUrl}`);
+  
+  try {
+    // Scrape the detail page and try to click Print Business Details
+    const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: detailUrl,
+        formats: ['markdown', 'html'],
+        waitFor: 5000,
+        actions: [
+          { type: 'wait', milliseconds: 3000 },
+          // Try clicking Print Business Details
+          { type: 'click', selector: 'button:has-text("Print"), a:has-text("Print"), button[title*="Print"]' },
+          { type: 'wait', milliseconds: 5000 },
+        ],
+      }),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      const markdown = data.data?.markdown || '';
+      console.log(`Business detail markdown length: ${markdown.length}`);
+      
+      const details = extractBusinessFromMarkdown(markdown, businessName);
+      if (details) {
+        details.rawMarkdown = markdown;
+        return details;
+      }
     }
   } catch (e) {
-    console.error("CT SOS scrape error:", e);
+    console.error('Detail scrape error:', e);
+  }
+
+  // Fallback: just scrape without actions
+  try {
+    const markdown = await firecrawlScrape(apiKey, detailUrl);
+    if (markdown) {
+      const details = extractBusinessFromMarkdown(markdown, businessName);
+      if (details) {
+        details.rawMarkdown = markdown;
+        return details;
+      }
+    }
+  } catch (e) {
+    console.error('Detail fallback error:', e);
+  }
+
+  return makeFallbackLLC(businessName);
+}
+
+function extractBusinessFromMarkdown(markdown: string, businessName: string) {
+  const text = markdown;
+  
+  let status = 'N/A';
+  let dateFormed = 'N/A';
+  let businessType = 'Limited Liability Company';
+  let mailingAddress = 'N/A';
+  const principals: { name: string; address: string }[] = [];
+
+  // Status
+  const statusMatch = text.match(/Status[:\s|]*([A-Za-z\s]+?)(?:\n|\||$)/i);
+  if (statusMatch) status = statusMatch[1].trim();
+
+  // Date Formed / Formation Date / Date of Formation
+  const dateMatch = text.match(/(?:Date\s*(?:of\s*)?Form(?:ed|ation)|Formation\s*Date)[:\s|]*(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/i);
+  if (dateMatch) dateFormed = dateMatch[1].trim();
+
+  // Business Type
+  const typeMatch = text.match(/(?:Business\s*Type|Entity\s*Type|Type)[:\s|]*([A-Za-z\s]+?)(?:\n|\||$)/i);
+  if (typeMatch) businessType = typeMatch[1].trim();
+
+  // Mailing Address
+  const mailMatch = text.match(/(?:Mailing\s*Address|Business\s*Address|Principal\s*Office)[:\s|]*([^\n|]+(?:\n[^\n|]{5,})?)/i);
+  if (mailMatch) mailingAddress = mailMatch[1].trim().replace(/\n/g, ', ');
+
+  // Principals - look for name/title/address patterns
+  const principalSection = text.match(/(?:Principal|Agent|Manager|Member|Organizer)s?\s*(?:Name|Info|Details)?[:\s]*\n?([\s\S]*?)(?:\n\n|\*\*|---|\|---|$)/i);
+  if (principalSection) {
+    const section = principalSection[1];
+    // Try name-address pairs
+    const nameMatches = section.matchAll(/(?:^|\n)\s*([A-Z][A-Za-z\s\.\,]+?)(?:\n\s*(.+(?:CT|NY|MA|NJ|PA)\s*\d{5}[^\n]*))?/gm);
+    for (const m of nameMatches) {
+      const name = m[1].trim();
+      if (name.length > 2 && name.length < 60 && !/^(name|title|address|type)/i.test(name)) {
+        principals.push({
+          name,
+          address: m[2]?.trim() || 'See business record',
+        });
+      }
+    }
+  }
+
+  // Also try table-style extraction: | Name | Address |
+  const tableRows = text.matchAll(/\|\s*([A-Z][A-Za-z\s\.]+?)\s*\|\s*([^|]+?(?:CT|NY|MA)\s*\d{5}[^|]*)\s*\|/gi);
+  for (const row of tableRows) {
+    const name = row[1].trim();
+    if (name.length > 2 && !principals.some(p => p.name === name)) {
+      principals.push({ name, address: row[2].trim() });
+    }
   }
 
   return {
-    mailingAddress: "Search CT Secretary of State for details",
-    dateFormed: "N/A",
-    businessType: "Limited Liability Company",
+    mailingAddress,
+    dateFormed,
+    businessType,
+    status,
+    principals: principals.length > 0 ? principals : [{ name: 'See CT Secretary of State records', address: `Search: ${businessName}` }],
+    rawMarkdown: '',
+  };
+}
+
+function makeFallbackLLC(cleanName: string) {
+  return {
+    mailingAddress: 'Could not retrieve automatically',
+    dateFormed: 'N/A',
+    businessType: 'Limited Liability Company',
+    status: 'N/A',
     principals: [
       {
-        name: "See CT Secretary of State records",
-        address: `https://service.ct.gov/business/s/onlinebusinesssearch?language=en_US (search: ${cleanName})`,
+        name: 'See CT Secretary of State records',
+        address: `https://service.ct.gov/business/s/onlinebusinesssearch (search: ${cleanName})`,
       },
     ],
+    rawMarkdown: '',
   };
 }
 
