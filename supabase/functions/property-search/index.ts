@@ -49,8 +49,7 @@ Deno.serve(async (req) => {
           let details: Record<string, unknown> = {};
           if (parcelId) {
             const detailUrl = `https://gis.vgsi.com/${townSlug}ct/api/Parcel/${parcelId}`;
-            const detailResp = await fetch(detailUrl, {
-              ...fetchOpts,
+            const detailResp = await fetchWithTls(detailUrl, {
               headers: { Accept: "application/json" },
             });
             if (detailResp.ok) {
