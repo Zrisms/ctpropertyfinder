@@ -3,7 +3,24 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Towns that use Vision Government Solutions (from vgsi.com/connecticut-online-database)
+// Address abbreviation normalization
+const ABBREVIATIONS: Record<string, string> = {
+  street: 'st', road: 'rd', drive: 'dr', avenue: 'ave', lane: 'ln',
+  court: 'ct', circle: 'cir', boulevard: 'blvd', place: 'pl',
+  terrace: 'ter', way: 'way', trail: 'trl', highway: 'hwy',
+  parkway: 'pkwy', turnpike: 'tpke', extension: 'ext',
+};
+
+function normalizeAddress(address: string): string {
+  let normalized = address.trim();
+  for (const [full, abbr] of Object.entries(ABBREVIATIONS)) {
+    const re = new RegExp(`\\b${full}\\b`, 'gi');
+    normalized = normalized.replace(re, abbr.toUpperCase());
+  }
+  return normalized;
+}
+
+// VGS towns mapping
 const VGS_TOWNS: Record<string, string> = {
   "andover": "andoverct", "berlin": "berlinct", "bethlehem": "bethlehemct",
   "bolton": "BoltonCT", "branford": "branfordct", "bridgeport": "bridgeportct",
@@ -36,131 +53,326 @@ const VGS_TOWNS: Record<string, string> = {
   "windham": "windhamCT",
 };
 
+// Non-VGS towns and their assessor URLs
+const OTHER_TOWNS: Record<string, string> = {
+  "avon": "https://avon.mapxpress.net/",
+  "bloomfield": "https://bloomfieldct.mapxpress.net/",
+  "east hartford": "https://gis.easthartfordct.gov/assessment/",
+  "farmington": "https://farmington.mapxpress.net/",
+  "hartford": "https://www.hartfordct.gov/assessor",
+  "new canaan": "https://newcanaan.mapxpress.net/",
+  "newington": "https://newington.mapxpress.net/",
+  "rocky hill": "https://rockyhill.mapxpress.net/",
+  "simsbury": "https://simsbury.mapxpress.net/",
+  "west hartford": "https://gis.vgsi.com/westhartfordct/",
+  "wethersfield": "https://wethersfield.mapxpress.net/",
+  "windsor": "https://windsor.mapxpress.net/",
+  "windsor locks": "https://windsorlocks.mapxpress.net/",
+  "groton": "https://groton.mapxpress.net/",
+  "norwalk": "https://norwalk.mapxpress.net/",
+  "greenwich": "https://www.greenwichct.gov/349/Assessment",
+  "darien": "https://darien.mapxpress.net/",
+  "shelton": "https://shelton.mapxpress.net/",
+  "cheshire": "https://cheshire.mapxpress.net/",
+  "guilford": "https://guilford.mapxpress.net/",
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    const { address, town, vgsData } = await req.json();
+    const { address, town } = await req.json();
 
     if (!address || !town) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Address and town are required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return json({ success: false, error: "Address and town are required" }, 400);
     }
 
-    console.log(`Searching property: ${address}, ${town}, CT`);
+    const normalizedAddress = normalizeAddress(address);
+    const townLower = town.toLowerCase().trim();
+    console.log(`Searching: ${normalizedAddress}, ${town}, CT`);
 
-    const townLower = town.toLowerCase();
+    const apiKey = Deno.env.get('FIRECRAWL_API_KEY');
+    if (!apiKey) {
+      return json({ success: false, error: "Scraping service not configured" }, 500);
+    }
+
     const vgsSlug = VGS_TOWNS[townLower];
 
-    // If client sent VGS scraped data, process it
-    if (vgsData) {
-      console.log("Processing client-provided VGS data");
-      const ownerName = vgsData.owner || "Unknown";
-      const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(ownerName);
-
-      const propertyData = {
-        address: vgsData.address || address,
-        town,
-        owner: ownerName,
-        isLLC,
-        parcelId: vgsData.parcelId || "",
-        assessedValue: vgsData.assessedValue || "",
-        lotSize: vgsData.lotSize || "",
-        yearBuilt: vgsData.yearBuilt || "",
-        zoning: vgsData.zoning || "",
-        propertyCardUrl: vgsData.propertyCardUrl || "",
-        llcDetails: undefined as {
-          mailingAddress: string;
-          dateFormed: string;
-          businessType: string;
-          principals: { name: string; address: string }[];
-        } | undefined,
-      };
-
-      if (isLLC) {
-        try {
-          propertyData.llcDetails = await searchCTBusiness(ownerName);
-        } catch (e) {
-          console.error("LLC search error:", e);
-        }
-      }
-
-      return new Response(
-        JSON.stringify({ success: true, property: propertyData }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Return VGS info so client can do the scraping (bypasses Deno TLS issue)
     if (vgsSlug) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          needsClientFetch: true,
-          vgsSlug,
-          autocompleteUrl: `https://gis.vgsi.com/${vgsSlug}/Search.aspx/AutoComplete`,
-          searchUrl: `https://gis.vgsi.com/${vgsSlug}/Search.aspx`,
-          address,
-          town,
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      // Use Firecrawl to scrape VGS
+      return await scrapeVGS(apiKey, vgsSlug, normalizedAddress, town);
     }
 
-    // Town not on VGS
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: `${town}, CT does not use Vision Government Solutions. This town's assessor database uses a different platform not yet supported.`,
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    const otherUrl = OTHER_TOWNS[townLower];
+    if (otherUrl) {
+      // Try Firecrawl on non-VGS town
+      return await scrapeGenericAssessor(apiKey, otherUrl, normalizedAddress, town);
+    }
+
+    // Unknown town - provide search suggestions
+    return json({
+      success: false,
+      error: `${town}, CT assessor database is not yet mapped. Try searching manually.`,
+      searchUrl: `https://www.google.com/search?q=${encodeURIComponent(`${town} CT property assessor database`)}`,
+    });
   } catch (error) {
     console.error("Error:", error);
-    return new Response(
-      JSON.stringify({ success: false, error: error instanceof Error ? error.message : "Search failed" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return json({ success: false, error: error instanceof Error ? error.message : "Search failed" }, 500);
   }
 });
 
-async function searchCTBusiness(businessName: string) {
+async function scrapeVGS(apiKey: string, slug: string, address: string, town: string) {
+  const searchUrl = `https://gis.vgsi.com/${slug}/Search.aspx`;
+
+  // Step 1: Use Firecrawl to search for the address
+  // VGS uses an autocomplete API - try to find the property ID first
+  const autocompleteUrl = `https://gis.vgsi.com/${slug}/Search.aspx/AutoComplete`;
+
+  try {
+    // Try the autocomplete endpoint directly
+    const acResp = await fetch(autocompleteUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prefixText: address, count: 10 }),
+    });
+
+    if (acResp.ok) {
+      const results = await acResp.json();
+      const acResults = results.d || results;
+
+      if (Array.isArray(acResults) && acResults.length > 0) {
+        // Found matching addresses - get the first match
+        const matchedAddress = acResults[0];
+        console.log(`VGS autocomplete match: ${matchedAddress}`);
+
+        // Now scrape the property page
+        const propertySearchUrl = `https://gis.vgsi.com/${slug}/Search.aspx?Query=${encodeURIComponent(matchedAddress)}`;
+
+        // Use Firecrawl to scrape the result page
+        const scrapeResult = await firecrawlScrape(apiKey, propertySearchUrl);
+
+        if (scrapeResult) {
+          const extracted = extractVGSData(scrapeResult, address, town);
+          if (extracted) {
+            // Check for LLC and do business lookup
+            if (extracted.isLLC) {
+              try {
+                extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
+              } catch (e) {
+                console.error("LLC lookup error:", e);
+              }
+            }
+            return json({ success: true, property: extracted });
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error("VGS autocomplete error:", e);
+  }
+
+  // Fallback: scrape the search page directly with Firecrawl
+  try {
+    const scrapeResult = await firecrawlScrape(apiKey, `${searchUrl}?Query=${encodeURIComponent(address)}`);
+    if (scrapeResult) {
+      const extracted = extractVGSData(scrapeResult, address, town);
+      if (extracted) {
+        if (extracted.isLLC) {
+          try {
+            extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
+          } catch (e) {
+            console.error("LLC lookup error:", e);
+          }
+        }
+        return json({ success: true, property: extracted });
+      }
+    }
+  } catch (e) {
+    console.error("VGS scrape error:", e);
+  }
+
+  return json({
+    success: false,
+    error: "Could not find property on VGS. Try the assessor database directly.",
+    searchUrl,
+  });
+}
+
+async function scrapeGenericAssessor(apiKey: string, baseUrl: string, address: string, town: string) {
+  try {
+    // Try scraping the assessor site with a search query
+    const searchUrl = baseUrl.includes('?') ? `${baseUrl}&q=${encodeURIComponent(address)}` : baseUrl;
+    const scrapeResult = await firecrawlScrape(apiKey, searchUrl);
+
+    if (scrapeResult) {
+      const extracted = extractGenericData(scrapeResult, address, town);
+      if (extracted) {
+        if (extracted.isLLC) {
+          try {
+            extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
+          } catch (e) {
+            console.error("LLC lookup error:", e);
+          }
+        }
+        return json({ success: true, property: extracted });
+      }
+    }
+  } catch (e) {
+    console.error("Generic scrape error:", e);
+  }
+
+  return json({
+    success: false,
+    error: `Could not automatically search ${town} assessor database.`,
+    searchUrl: baseUrl,
+  });
+}
+
+async function firecrawlScrape(apiKey: string, url: string): Promise<string | null> {
+  console.log(`Firecrawl scraping: ${url}`);
+  try {
+    const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url,
+        formats: ['markdown'],
+        onlyMainContent: true,
+        waitFor: 5000,
+      }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.text();
+      console.error(`Firecrawl ${resp.status}:`, err);
+      return null;
+    }
+
+    const data = await resp.json();
+    return data.data?.markdown || data.markdown || null;
+  } catch (e) {
+    console.error("Firecrawl fetch error:", e);
+    return null;
+  }
+}
+
+function extractVGSData(markdown: string, address: string, town: string) {
+  // Parse VGS property page markdown
+  const lines = markdown.split('\n').map(l => l.trim()).filter(Boolean);
+
+  let owner = '';
+  let parcelId = '';
+  let assessedValue = '';
+  let lotSize = '';
+  let yearBuilt = '';
+  let zoning = '';
+  let propertyAddress = address;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const nextLine = lines[i + 1] || '';
+
+    if (/owner/i.test(line) && !owner) {
+      // Owner is often on the next line or after a colon
+      const colonVal = line.split(':')[1]?.trim();
+      owner = colonVal || nextLine;
+    }
+    if (/parcel\s*(id|#|number)/i.test(line) && !parcelId) {
+      const colonVal = line.split(':')[1]?.trim();
+      parcelId = colonVal || nextLine;
+    }
+    if (/assessed\s*value|total\s*assess/i.test(line) && !assessedValue) {
+      const match = line.match(/\$[\d,]+/) || nextLine.match(/\$[\d,]+/);
+      if (match) assessedValue = match[0];
+    }
+    if (/lot\s*size|acreage|acres/i.test(line) && !lotSize) {
+      const colonVal = line.split(':')[1]?.trim();
+      lotSize = colonVal || nextLine;
+    }
+    if (/year\s*built/i.test(line) && !yearBuilt) {
+      const match = line.match(/\b(1[89]\d{2}|20[0-2]\d)\b/) || nextLine.match(/\b(1[89]\d{2}|20[0-2]\d)\b/);
+      if (match) yearBuilt = match[0];
+    }
+    if (/zoning|zone/i.test(line) && !zoning) {
+      const colonVal = line.split(':')[1]?.trim();
+      zoning = colonVal || nextLine;
+    }
+    if (/location|address|property\s*address/i.test(line) && line.includes(':')) {
+      const val = line.split(':').slice(1).join(':').trim();
+      if (val && val.length > 5) propertyAddress = val;
+    }
+  }
+
+  // Clean up owner
+  owner = owner.replace(/[*#\[\]]/g, '').trim();
+  if (!owner || owner.length < 2) return null;
+
+  const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner);
+
+  return {
+    address: propertyAddress,
+    town,
+    owner,
+    isLLC,
+    parcelId: parcelId.replace(/[*#\[\]]/g, '').trim(),
+    assessedValue,
+    lotSize: lotSize.replace(/[*#\[\]]/g, '').trim(),
+    yearBuilt,
+    zoning: zoning.replace(/[*#\[\]]/g, '').trim(),
+    propertyCardUrl: '',
+    llcDetails: undefined as any,
+  };
+}
+
+function extractGenericData(markdown: string, address: string, town: string) {
+  // Generic extractor - try to find owner info from any assessor page
+  return extractVGSData(markdown, address, town); // Same heuristics work
+}
+
+async function searchCTBusiness(apiKey: string, businessName: string) {
   const cleanName = businessName
     .replace(/,?\s*(LLC|L\.L\.C\.?|Limited Liability Company)\s*$/i, "")
     .trim();
 
-  console.log(`Searching CT business registry for: ${cleanName}`);
+  console.log(`Searching CT SOS for: ${cleanName}`);
 
+  // Try scraping CT Secretary of State business search
   try {
-    const pageResp = await fetch(
-      `https://service.ct.gov/business/s/onlinebusinesssearch?language=en_US`
-    );
+    const searchUrl = `https://service.ct.gov/business/s/onlinebusinesssearch?language=en_US`;
+    const scrapeResult = await firecrawlScrape(apiKey, searchUrl);
 
-    if (pageResp.ok) {
-      return {
-        mailingAddress: "Search CT Secretary of State for details",
-        dateFormed: "N/A",
-        businessType: "Limited Liability Company",
-        principals: [
-          {
-            name: "See CT Secretary of State records",
-            address: `https://service.ct.gov/business/s/onlinebusinesssearch?language=en_US (search: ${cleanName})`,
-          },
-        ],
-      };
+    // The CT SOS site is a Salesforce app - very JS heavy
+    // Firecrawl should handle JS rendering
+    if (scrapeResult && scrapeResult.length > 100) {
+      console.log("Got CT SOS page content, length:", scrapeResult.length);
+      // Try to extract business info from the scraped content
+      // Since we can't interact with the search form via scrape, provide the direct link
     }
   } catch (e) {
-    console.error("CT SOTS search error:", e);
+    console.error("CT SOS scrape error:", e);
   }
 
   return {
-    mailingAddress: "Unable to retrieve",
+    mailingAddress: "Search CT Secretary of State for details",
     dateFormed: "N/A",
-    businessType: "LLC",
-    principals: [],
+    businessType: "Limited Liability Company",
+    principals: [
+      {
+        name: "See CT Secretary of State records",
+        address: `https://service.ct.gov/business/s/onlinebusinesssearch?language=en_US (search: ${cleanName})`,
+      },
+    ],
   };
+}
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
 }

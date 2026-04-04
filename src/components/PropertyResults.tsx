@@ -49,13 +49,19 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, isExport
 
         <Separator className="my-4" />
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <InfoItem icon={User} label="Owner" value={data.owner} />
-          {data.parcelId && <InfoItem icon={MapPin} label="Parcel ID" value={data.parcelId} />}
-          {data.assessedValue && <InfoItem icon={Building2} label="Assessed Value" value={data.assessedValue} />}
-          {data.lotSize && <InfoItem icon={MapPin} label="Lot Size" value={data.lotSize} />}
-          {data.yearBuilt && <InfoItem icon={Calendar} label="Year Built" value={data.yearBuilt} />}
-          {data.zoning && <InfoItem icon={Building2} label="Zoning" value={data.zoning} />}
+        {/* Data Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <tbody>
+              <TableRow label="Owner" value={data.owner} />
+              {data.parcelId && <TableRow label="Parcel ID" value={data.parcelId} />}
+              {data.assessedValue && <TableRow label="Assessed Value" value={data.assessedValue} />}
+              {data.lotSize && <TableRow label="Lot Size" value={data.lotSize} />}
+              {data.yearBuilt && <TableRow label="Year Built" value={data.yearBuilt} />}
+              {data.zoning && <TableRow label="Zoning" value={data.zoning} />}
+              <TableRow label="LLC Status" value={data.isLLC ? "Yes" : "No"} />
+            </tbody>
+          </table>
         </div>
       </Card>
 
@@ -65,10 +71,14 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, isExport
           <h3 className="font-display text-xl text-foreground mb-4">LLC Details — {data.owner}</h3>
           <Separator className="mb-4" />
 
-          <div className="space-y-3">
-            <Detail label="Mailing Address" value={data.llcDetails.mailingAddress} />
-            <Detail label="Date Formed" value={data.llcDetails.dateFormed} />
-            <Detail label="Business Type" value={data.llcDetails.businessType} />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <tbody>
+                <TableRow label="Mailing Address" value={data.llcDetails.mailingAddress} />
+                <TableRow label="Date Formed" value={data.llcDetails.dateFormed} />
+                <TableRow label="Business Type" value={data.llcDetails.businessType} />
+              </tbody>
+            </table>
           </div>
 
           {data.llcDetails.principals.length > 0 && (
@@ -78,7 +88,7 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, isExport
                 {data.llcDetails.principals.map((p, i) => (
                   <div key={i} className="bg-muted rounded-lg p-3">
                     <p className="font-medium text-foreground">{p.name}</p>
-                    <p className="text-sm text-muted-foreground">{p.address}</p>
+                    <p className="text-sm text-muted-foreground break-all">{p.address}</p>
                   </div>
                 ))}
               </div>
@@ -101,43 +111,29 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, isExport
           )}
           Download Property Card (PDF)
         </Button>
-        {data.isLLC && (
-          <Button
-            onClick={onDownloadExcel}
-            disabled={isExporting}
-            variant="outline"
-            className="flex-1 h-12 font-semibold border-secondary text-secondary-foreground hover:bg-secondary/10"
-          >
-            {isExporting ? (
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-            ) : (
-              <FileSpreadsheet className="mr-2 h-5 w-5" />
-            )}
-            Export LLC Info (Excel)
-          </Button>
-        )}
+        <Button
+          onClick={onDownloadExcel}
+          disabled={isExporting}
+          variant="outline"
+          className="flex-1 h-12 font-semibold border-secondary text-secondary-foreground hover:bg-secondary/10"
+        >
+          {isExporting ? (
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+          ) : (
+            <FileSpreadsheet className="mr-2 h-5 w-5" />
+          )}
+          Export to Excel
+        </Button>
       </div>
     </div>
   );
 }
 
-function InfoItem({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string }) {
+function TableRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-1.5 text-muted-foreground">
-        <Icon className="h-3.5 w-3.5" />
-        <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
-      </div>
-      <p className="text-sm font-medium text-foreground">{value}</p>
-    </div>
-  );
-}
-
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-      <span className="text-sm font-medium text-muted-foreground min-w-[140px]">{label}:</span>
-      <span className="text-sm text-foreground">{value}</span>
-    </div>
+    <tr className="border-b border-border last:border-0">
+      <td className="py-2.5 pr-4 font-medium text-muted-foreground whitespace-nowrap">{label}</td>
+      <td className="py-2.5 text-foreground">{value}</td>
+    </tr>
   );
 }

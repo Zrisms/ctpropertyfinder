@@ -26,16 +26,16 @@ const Index = () => {
 
       if (data?.success) {
         setPropertyData(data.property);
+        toast({ title: "Property Found", description: `Found data for ${data.property.address}` });
         return;
       }
 
-      // Show direct link to assessor database
       if (data?.searchUrl) {
         setSearchUrl(data.searchUrl);
       }
 
       toast({
-        title: "Manual Search Required",
+        title: "Property Not Found",
         description: data?.error || "Could not find property data for this address.",
         variant: "destructive",
       });
@@ -82,8 +82,8 @@ const Index = () => {
       if (error) throw error;
       if (data?.excel) {
         const blob = base64ToBlob(data.excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        downloadBlob(blob, `${propertyData.owner.replace(/\s+/g, "_")}_LLC_info.xlsx`);
-        toast({ title: "Success", description: "LLC info exported to Excel." });
+        downloadBlob(blob, `${propertyData.owner.replace(/\s+/g, "_")}_property_info.xlsx`);
+        toast({ title: "Success", description: "Property data exported to Excel." });
       }
     } catch (err) {
       console.error(err);
@@ -120,7 +120,7 @@ const Index = () => {
           <div className="max-w-2xl mx-auto mt-6">
             <div className="bg-card rounded-xl border border-border p-6 text-center space-y-3">
               <p className="text-sm text-muted-foreground">
-                Automated scraping is not yet available for this town. You can search the assessor's database directly:
+                Could not automatically extract data. Try searching the assessor's database directly:
               </p>
               <a
                 href={searchUrl}
