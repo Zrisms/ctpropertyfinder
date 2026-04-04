@@ -4,7 +4,6 @@ const corsHeaders = {
 };
 
 // Towns that use Vision Government Solutions (from vgsi.com/connecticut-online-database)
-// Key = town name (lowercase), Value = URL slug (case-sensitive as on vgsi.com)
 const VGS_TOWNS: Record<string, string> = {
   "andover": "andoverct", "berlin": "berlinct", "bethlehem": "bethlehemct",
   "bolton": "BoltonCT", "branford": "branfordct", "bridgeport": "bridgeportct",
@@ -37,19 +36,13 @@ const VGS_TOWNS: Record<string, string> = {
   "windham": "windhamCT",
 };
 
-// Use HTTP (not HTTPS) for VGS to avoid Deno TLS certificate issues
-async function proxyFetch(url: string, opts: RequestInit = {}): Promise<Response> {
-  const httpUrl = url.replace("https://gis.vgsi.com", "http://gis.vgsi.com");
-  return fetch(httpUrl, opts);
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    const { address, town } = await req.json();
+    const { address, town, vgsData } = await req.json();
 
     if (!address || !town) {
       return new Response(
@@ -63,148 +56,67 @@ Deno.serve(async (req) => {
     const townLower = town.toLowerCase();
     const vgsSlug = VGS_TOWNS[townLower];
 
-    let propertyData = null;
+    // If client sent VGS scraped data, process it
+    if (vgsData) {
+      console.log("Processing client-provided VGS data");
+      const ownerName = vgsData.owner || "Unknown";
+      const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(ownerName);
 
-    if (vgsSlug) {
-      // Town uses Vision Government Solutions
-      try {
-        // VGS jQuery autocomplete endpoint
-        const autocompleteUrl = `https://gis.vgsi.com/${vgsSlug}/Search.aspx/AutoComplete`;
-        console.log(`Trying VGS autocomplete: ${autocompleteUrl}`);
+      const propertyData = {
+        address: vgsData.address || address,
+        town,
+        owner: ownerName,
+        isLLC,
+        parcelId: vgsData.parcelId || "",
+        assessedValue: vgsData.assessedValue || "",
+        lotSize: vgsData.lotSize || "",
+        yearBuilt: vgsData.yearBuilt || "",
+        zoning: vgsData.zoning || "",
+        propertyCardUrl: vgsData.propertyCardUrl || "",
+        llcDetails: undefined as {
+          mailingAddress: string;
+          dateFormed: string;
+          businessType: string;
+          principals: { name: string; address: string }[];
+        } | undefined,
+      };
 
-        const searchResp = await proxyFetch(autocompleteUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({
-            prefixText: address,
-            count: 10,
-            contextKey: "Address",
-          }),
-        });
-
-        console.log(`VGS autocomplete status: ${searchResp.status}`);
-
-        if (searchResp.ok) {
-          const text = await searchResp.text();
-          console.log(`VGS response: ${text.substring(0, 500)}`);
-
-          let results: string[] = [];
-          try {
-            const parsed = JSON.parse(text);
-            results = parsed.d || parsed || [];
-          } catch {
-            console.log("Could not parse VGS response as JSON");
-          }
-
-          if (results.length > 0) {
-            // First result typically looks like "123 MAIN ST (PID: 12345)"
-            const firstResult = results[0];
-            const pidMatch = firstResult.match(/\(PID:\s*(\d+)\)/i) || firstResult.match(/~~(\d+)$/);
-            const cleanAddress = firstResult.replace(/\s*\(PID:\s*\d+\)/, "").replace(/~~\d+$/, "").trim();
-
-            let parcelId = pidMatch ? pidMatch[1] : "";
-            let ownerName = "Unknown";
-            let assessedValue = "";
-            let lotSize = "";
-            let yearBuilt = "";
-            let zoning = "";
-
-            // Try to get parcel details page
-            if (parcelId) {
-              try {
-                const parcelUrl = `https://gis.vgsi.com/${vgsSlug}/Parcel.aspx?pid=${parcelId}`;
-                const parcelResp = await proxyFetch(parcelUrl);
-
-                if (parcelResp.ok) {
-                  const html = await parcelResp.text();
-
-                  // Parse owner from the parcel page
-                  const ownerMatch = html.match(/MainContent_lblOwner[^>]*>([^<]+)/);
-                  if (ownerMatch) ownerName = ownerMatch[1].trim();
-
-                  const assessMatch = html.match(/MainContent_lblTotalAssessment[^>]*>([^<]+)/);
-                  if (assessMatch) assessedValue = assessMatch[1].trim();
-
-                  const lotMatch = html.match(/MainContent_lblLotSize[^>]*>([^<]+)/);
-                  if (lotMatch) lotSize = lotMatch[1].trim();
-
-                  const yearMatch = html.match(/MainContent_lblYearBuilt[^>]*>([^<]+)/);
-                  if (yearMatch) yearBuilt = yearMatch[1].trim();
-
-                  const zoneMatch = html.match(/MainContent_lblZone[^>]*>([^<]+)/);
-                  if (zoneMatch) zoning = zoneMatch[1].trim();
-
-                  // Also try alternate patterns
-                  if (ownerName === "Unknown") {
-                    const ownerAlt = html.match(/Owner[:\s]*<\/[^>]+>\s*<[^>]+>([^<]+)/i);
-                    if (ownerAlt) ownerName = ownerAlt[1].trim();
-                  }
-                }
-              } catch (e) {
-                console.error("Parcel detail error:", e);
-              }
-            }
-
-            const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(ownerName);
-
-            propertyData = {
-              address: cleanAddress || address,
-              town,
-              owner: ownerName,
-              isLLC,
-              parcelId,
-              assessedValue,
-              lotSize,
-              yearBuilt,
-              zoning,
-              propertyCardUrl: parcelId
-                ? `https://gis.vgsi.com/${vgsSlug}/Parcel.aspx?pid=${parcelId}`
-                : `https://gis.vgsi.com/${vgsSlug}/Search.aspx`,
-              llcDetails: undefined as {
-                mailingAddress: string;
-                dateFormed: string;
-                businessType: string;
-                principals: { name: string; address: string }[];
-              } | undefined,
-            };
-
-            if (isLLC) {
-              try {
-                propertyData.llcDetails = await searchCTBusiness(ownerName);
-              } catch (e) {
-                console.error("LLC search error:", e);
-              }
-            }
-          }
+      if (isLLC) {
+        try {
+          propertyData.llcDetails = await searchCTBusiness(ownerName);
+        } catch (e) {
+          console.error("LLC search error:", e);
         }
-      } catch (e) {
-        console.error("VGS error:", e);
       }
+
+      return new Response(
+        JSON.stringify({ success: true, property: propertyData }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // If no data found, provide helpful info
-    if (!propertyData) {
-      const searchUrl = vgsSlug
-        ? `https://gis.vgsi.com/${vgsSlug}/Search.aspx`
-        : null;
-
+    // Return VGS info so client can do the scraping (bypasses Deno TLS issue)
+    if (vgsSlug) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: vgsSlug
-            ? `Could not find "${address}" in ${town}, CT. Try searching directly at the assessor's database.`
-            : `${town}, CT does not use Vision Government Solutions. This town's assessor database uses a different platform not yet supported.`,
-          searchUrl,
+          needsClientFetch: true,
+          vgsSlug,
+          autocompleteUrl: `https://gis.vgsi.com/${vgsSlug}/Search.aspx/AutoComplete`,
+          searchUrl: `https://gis.vgsi.com/${vgsSlug}/Search.aspx`,
+          address,
+          town,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
+    // Town not on VGS
     return new Response(
-      JSON.stringify({ success: true, property: propertyData }),
+      JSON.stringify({
+        success: false,
+        error: `${town}, CT does not use Vision Government Solutions. This town's assessor database uses a different platform not yet supported.`,
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
