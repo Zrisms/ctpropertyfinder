@@ -126,48 +126,45 @@ Deno.serve(async (req) => {
 async function scrapeVGS(apiKey: string, slug: string, address: string, town: string) {
   const searchUrl = `https://gis.vgsi.com/${slug}/Search.aspx`;
 
-  // Strategy 1: Use Firecrawl web search to find the exact property page on VGS
+  // Strategy 1: Use Firecrawl with actions to fill the VGS search form
   try {
-    const query = `site:gis.vgsi.com/${slug} "${address}"`;
-    console.log(`Firecrawl search: ${query}`);
+    console.log(`Scraping VGS with form interaction: ${searchUrl}`);
 
-    const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
+    const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        query: `${address} ${town} CT property owner site:gis.vgsi.com`,
-        limit: 5,
-        scrapeOptions: { formats: ['markdown'] },
+        url: searchUrl,
+        formats: ['markdown', 'links'],
+        waitFor: 3000,
+        actions: [
+          { type: 'wait', milliseconds: 2000 },
+          { type: 'click', selector: '#ContentPlaceHolder1_TextBox_Search' },
+          { type: 'write', text: address },
+          { type: 'wait', milliseconds: 2000 },
+          { type: 'click', selector: '#ContentPlaceHolder1_Button_Search' },
+          { type: 'wait', milliseconds: 5000 },
+        ],
       }),
     });
 
-    if (searchResp.ok) {
-      const searchData = await searchResp.json();
-      const results = searchData.data || [];
-      console.log(`Firecrawl search returned ${results.length} results`);
+    if (resp.ok) {
+      const data = await resp.json();
+      const markdown = data.data?.markdown || data.markdown || '';
+      const links = data.data?.links || data.links || [];
+      console.log(`VGS actions scrape length: ${markdown.length}`);
+      console.log(`VGS actions scrape preview: ${markdown.substring(0, 300)}`);
 
-      for (const result of results) {
-        const url = result.url || '';
-        const markdown = result.markdown || '';
-
-        // Check if this is a VGS property page
-        if (url.includes('gis.vgsi.com') && url.includes('Parcel.aspx')) {
-          console.log(`Found VGS property page: ${url}`);
-          const extracted = extractVGSData(markdown, address, town);
-          if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
-            if (extracted.isLLC) {
-              try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC error:", e); }
-            }
-            return json({ success: true, property: extracted });
-          }
-        }
-
-        // Try extracting from any search result with content
-        if (markdown && markdown.length > 200) {
-          const extracted = extractVGSData(markdown, address, town);
+      // Check for property links in the results
+      const parcelLinks = links.filter((l: string) => l.includes('Parcel.aspx?pid='));
+      if (parcelLinks.length > 0) {
+        console.log(`Found ${parcelLinks.length} parcel links, scraping first: ${parcelLinks[0]}`);
+        const detailMd = await firecrawlScrape(apiKey, parcelLinks[0]);
+        if (detailMd) {
+          const extracted = extractVGSData(detailMd, address, town);
           if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
             if (extracted.isLLC) {
               try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC error:", e); }
@@ -176,22 +173,26 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
           }
         }
       }
-    }
-  } catch (e) {
-    console.error("Firecrawl search error:", e);
-  }
 
-  // Strategy 2: Try scraping a direct Parcel URL if we can guess from search
-  try {
-    const scrapeResult = await firecrawlScrape(apiKey, searchUrl);
-    if (scrapeResult) {
-      const pidMatch = scrapeResult.match(/Parcel\.aspx\?pid=(\d+)/i);
+      // Also check if the page itself transitioned to a property detail
+      if (markdown.length > 500) {
+        const extracted = extractVGSData(markdown, address, town);
+        if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
+          if (extracted.isLLC) {
+            try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC error:", e); }
+          }
+          return json({ success: true, property: extracted });
+        }
+      }
+
+      // Check markdown for parcel links
+      const pidMatch = markdown.match(/Parcel\.aspx\?pid=(\d+)/i);
       if (pidMatch) {
         const detailUrl = `https://gis.vgsi.com/${slug}/Parcel.aspx?pid=${pidMatch[1]}`;
-        console.log(`Found property detail URL: ${detailUrl}`);
-        const detailResult = await firecrawlScrape(apiKey, detailUrl);
-        if (detailResult) {
-          const extracted = extractVGSData(detailResult, address, town);
+        console.log(`Found pid in markdown: ${detailUrl}`);
+        const detailMd = await firecrawlScrape(apiKey, detailUrl);
+        if (detailMd) {
+          const extracted = extractVGSData(detailMd, address, town);
           if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
             if (extracted.isLLC) {
               try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC error:", e); }
@@ -200,14 +201,17 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
           }
         }
       }
+    } else {
+      const errText = await resp.text();
+      console.error(`Firecrawl actions error ${resp.status}: ${errText}`);
     }
   } catch (e) {
-    console.error("VGS fallback error:", e);
+    console.error("VGS actions error:", e);
   }
 
   return json({
     success: false,
-    error: "Could not find property on VGS. Try the assessor database directly.",
+    error: "Could not find property. Try the assessor database directly.",
     searchUrl,
   });
 }
