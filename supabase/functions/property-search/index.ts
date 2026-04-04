@@ -356,7 +356,7 @@ function extractVGSData(markdown: string, address: string, town: string) {
     propertyCardUrl: '',
     llcDetails: undefined as any,
   };
-
+}
 
 
 function extractGenericData(markdown: string, address: string, town: string) {
