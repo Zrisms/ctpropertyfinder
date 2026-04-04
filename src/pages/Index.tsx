@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Building2 } from "lucide-react";
+import { Building2, ExternalLink } from "lucide-react";
 import { AddressSearch } from "@/components/AddressSearch";
 import { PropertyResults, type PropertyData } from "@/components/PropertyResults";
 import { useToast } from "@/hooks/use-toast";
@@ -9,14 +9,15 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [propertyData, setPropertyData] = useState<PropertyData | null>(null);
+  const [searchUrl, setSearchUrl] = useState<string | null>(null);
   const { toast } = useToast();
 
   const handleSearch = async (address: string, town: string) => {
     setIsLoading(true);
     setPropertyData(null);
+    setSearchUrl(null);
 
     try {
-      // Step 1: Ask edge function what to do
       const { data, error } = await supabase.functions.invoke("property-search", {
         body: { address, town },
       });
@@ -28,37 +29,13 @@ const Index = () => {
         return;
       }
 
-      // Step 2: If edge function says we need client-side fetch (VGS TLS workaround)
-      if (data?.needsClientFetch) {
-        const vgsData = await fetchVGSFromBrowser(data.vgsSlug, address);
-
-        if (vgsData) {
-          // Step 3: Send scraped data back to edge function for LLC processing
-          const { data: processed, error: err2 } = await supabase.functions.invoke("property-search", {
-            body: { address, town, vgsData },
-          });
-
-          if (err2) throw err2;
-
-          if (processed?.success) {
-            setPropertyData(processed.property);
-            return;
-          }
-        }
-
-        // If VGS fetch failed, show the direct link
-        toast({
-          title: "Could not auto-fetch",
-          description: `Try searching directly at the assessor's database.`,
-        });
-        
-        // Open VGS in new tab as fallback
-        window.open(data.searchUrl, "_blank");
-        return;
+      // Show direct link to assessor database
+      if (data?.searchUrl) {
+        setSearchUrl(data.searchUrl);
       }
 
       toast({
-        title: "Not Found",
+        title: "Manual Search Required",
         description: data?.error || "Could not find property data for this address.",
         variant: "destructive",
       });
@@ -74,99 +51,6 @@ const Index = () => {
     }
   };
 
-  const fetchVGSFromBrowser = async (vgsSlug: string, address: string) => {
-    try {
-      // Use the VGS autocomplete endpoint from the browser (no TLS issues)
-      const autocompleteUrl = `https://gis.vgsi.com/${vgsSlug}/Search.aspx/AutoComplete`;
-      
-      const resp = await fetch(autocompleteUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          prefixText: address,
-          count: 10,
-          contextKey: "Address",
-        }),
-      });
-
-      if (!resp.ok) {
-        console.error("VGS autocomplete failed:", resp.status);
-        return null;
-      }
-
-      const result = await resp.json();
-      const items: string[] = result.d || result || [];
-
-      if (items.length === 0) {
-        console.log("No VGS results found");
-        return null;
-      }
-
-      // Parse the first result - format varies but often includes PID
-      const firstResult = items[0];
-      console.log("VGS first result:", firstResult);
-
-      // Extract PID from result (format: "123 MAIN ST~~12345" or "123 MAIN ST (PID: 12345)")
-      const pidMatch = firstResult.match(/~~(\d+)$/) || firstResult.match(/\(PID:\s*(\d+)\)/i);
-      const cleanAddress = firstResult.replace(/\s*~~\d+$/, "").replace(/\s*\(PID:\s*\d+\)/, "").trim();
-      const parcelId = pidMatch ? pidMatch[1] : "";
-
-      // Now fetch the parcel detail page
-      let owner = "Unknown";
-      let assessedValue = "";
-      let lotSize = "";
-      let yearBuilt = "";
-      let zoning = "";
-
-      if (parcelId) {
-        try {
-          const parcelUrl = `https://gis.vgsi.com/${vgsSlug}/Parcel.aspx?pid=${parcelId}`;
-          const parcelResp = await fetch(parcelUrl);
-
-          if (parcelResp.ok) {
-            const html = await parcelResp.text();
-
-            // Parse data from VGS parcel page HTML
-            const ownerMatch = html.match(/MainContent_lblOwner[^>]*>([^<]+)/);
-            if (ownerMatch) owner = ownerMatch[1].trim();
-
-            const assessMatch = html.match(/MainContent_lblTotalAssessment[^>]*>([^<]+)/);
-            if (assessMatch) assessedValue = assessMatch[1].trim();
-
-            const lotMatch = html.match(/MainContent_lblLotSize[^>]*>([^<]+)/);
-            if (lotMatch) lotSize = lotMatch[1].trim();
-
-            const yearMatch = html.match(/MainContent_lblYearBuilt[^>]*>([^<]+)/);
-            if (yearMatch) yearBuilt = yearMatch[1].trim();
-
-            const zoneMatch = html.match(/MainContent_lblZone[^>]*>([^<]+)/);
-            if (zoneMatch) zoning = zoneMatch[1].trim();
-          }
-        } catch (e) {
-          console.error("Failed to fetch parcel details:", e);
-        }
-      }
-
-      return {
-        address: cleanAddress || address,
-        owner,
-        parcelId,
-        assessedValue,
-        lotSize,
-        yearBuilt,
-        zoning,
-        propertyCardUrl: parcelId
-          ? `https://gis.vgsi.com/${vgsSlug}/Parcel.aspx?pid=${parcelId}`
-          : `https://gis.vgsi.com/${vgsSlug}/Search.aspx`,
-      };
-    } catch (e) {
-      console.error("Browser VGS fetch error:", e);
-      return null;
-    }
-  };
-
   const handleDownloadPdf = async () => {
     if (!propertyData) return;
     setIsExporting(true);
@@ -175,7 +59,6 @@ const Index = () => {
         body: { property: propertyData },
       });
       if (error) throw error;
-
       if (data?.pdf) {
         const blob = base64ToBlob(data.pdf, "application/pdf");
         downloadBlob(blob, `${propertyData.address.replace(/\s+/g, "_")}_card.pdf`);
@@ -197,7 +80,6 @@ const Index = () => {
         body: { property: propertyData },
       });
       if (error) throw error;
-
       if (data?.excel) {
         const blob = base64ToBlob(data.excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         downloadBlob(blob, `${propertyData.owner.replace(/\s+/g, "_")}_LLC_info.xlsx`);
@@ -234,6 +116,25 @@ const Index = () => {
           </div>
         </div>
 
+        {searchUrl && !propertyData && (
+          <div className="max-w-2xl mx-auto mt-6">
+            <div className="bg-card rounded-xl border border-border p-6 text-center space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Automated scraping is not yet available for this town. You can search the assessor's database directly:
+              </p>
+              <a
+                href={searchUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Open Assessor Database
+              </a>
+            </div>
+          </div>
+        )}
+
         {propertyData && (
           <div className="mt-8 pb-12">
             <PropertyResults
@@ -245,7 +146,7 @@ const Index = () => {
           </div>
         )}
 
-        {!propertyData && !isLoading && (
+        {!propertyData && !isLoading && !searchUrl && (
           <div className="text-center py-16 text-muted-foreground">
             <p className="text-sm">Enter an address and town to get started</p>
           </div>
