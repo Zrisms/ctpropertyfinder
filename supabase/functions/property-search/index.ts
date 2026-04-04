@@ -92,7 +92,6 @@ Deno.serve(async (req) => {
                 console.error("LLC search error:", e);
               }
             }
-          }
         }
       }
     } catch (e) {
