@@ -38,27 +38,35 @@ function generateLLCPdf(llc: Record<string, unknown>, ownerName: string): ArrayB
   const principals = (llc.principals || []) as { name: string; address: string }[];
   
   const lines = [
-    'Connecticut Secretary of the State',
-    'Official Business Details',
+    '=== Connecticut Secretary of the State ===',
+    '     Official Business Record Details',
     '',
     `Business Name: ${ownerName}`,
+    `Account Number: ${llc.accountNumber || 'N/A'}`,
     `Status: ${llc.status || 'N/A'}`,
     `Business Type: ${llc.businessType || 'N/A'}`,
-    `Date Formed: ${llc.dateFormed || 'N/A'}`,
+    `Date Registered: ${llc.dateFormed || 'N/A'}`,
+    `Citizenship: ${llc.citizenship || 'N/A'}`,
+    `Formation Place: ${llc.formationPlace || 'N/A'}`,
     `Mailing Address: ${llc.mailingAddress || 'N/A'}`,
-    '',
-    '--- Principals ---',
   ];
 
+  if (llc.email) lines.push(`Business Email: ${llc.email}`);
+  if (llc.naicsCode) lines.push(`NAICS Code: ${llc.naicsCode}`);
+
+  lines.push('');
+  lines.push('--- Principals / Agents ---');
+
   for (const p of principals) {
-    lines.push(`Name: ${p.name}`);
-    lines.push(`Address: ${p.address}`);
+    lines.push(`  Name: ${p.name}`);
+    if (p.address) lines.push(`  Address: ${p.address}`);
     lines.push('');
   }
 
   lines.push('');
   lines.push(`Generated: ${new Date().toLocaleDateString('en-US')}`);
-  lines.push('Source: CT Secretary of the State Business Registry');
+  lines.push('Source: CT Open Data Portal (data.ct.gov)');
+  lines.push('Data from CT Secretary of the State, Business Services Division');
 
   const streamContent = `BT\n/F1 11 Tf\n50 750 Td\n14 TL\n${lines.map(l => `(${escapePdf(l)}) '`).join('\n')}\nET`;
 

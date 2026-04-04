@@ -23,6 +23,11 @@ export interface PropertyData {
     status?: string;
     principals: { name: string; address: string }[];
     rawMarkdown?: string;
+    accountNumber?: string;
+    citizenship?: string;
+    formationPlace?: string;
+    email?: string;
+    naicsCode?: string;
   };
 }
 
@@ -90,6 +95,11 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
                 <TableRow label="Business Type" value={data.llcDetails.businessType} />
                 <TableRow label="Date Formed" value={data.llcDetails.dateFormed} />
                 <TableRow label="Mailing Address" value={data.llcDetails.mailingAddress} />
+                {data.llcDetails.accountNumber && <TableRow label="Account Number" value={data.llcDetails.accountNumber} />}
+                {data.llcDetails.citizenship && <TableRow label="Citizenship" value={data.llcDetails.citizenship} />}
+                {data.llcDetails.formationPlace && <TableRow label="Formation Place" value={data.llcDetails.formationPlace} />}
+                {data.llcDetails.email && <TableRow label="Business Email" value={data.llcDetails.email} />}
+                {data.llcDetails.naicsCode && <TableRow label="NAICS Code" value={data.llcDetails.naicsCode} />}
               </tbody>
             </table>
           </div>
