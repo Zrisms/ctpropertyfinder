@@ -356,13 +356,8 @@ function extractVGSData(markdown: string, address: string, town: string) {
     propertyCardUrl: '',
     llcDetails: undefined as any,
   };
-}
-    yearBuilt,
-    zoning: zoning.replace(/[*#\[\]]/g, '').trim(),
-    propertyCardUrl: '',
-    llcDetails: undefined as any,
-  };
-}
+
+
 
 function extractGenericData(markdown: string, address: string, town: string) {
   // Generic extractor - try to find owner info from any assessor page
