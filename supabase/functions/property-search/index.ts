@@ -126,78 +126,10 @@ Deno.serve(async (req) => {
 async function scrapeVGS(apiKey: string, slug: string, address: string, town: string) {
   const searchUrl = `https://gis.vgsi.com/${slug}/Search.aspx`;
 
-  // Strategy: Use Firecrawl v2 scrape + interact to fill the VGS search form
+  // Strategy: Use Firecrawl v1 actions to interact with VGS autocomplete search
+  // VGS uses jQuery UI Autocomplete - type address, wait for dropdown, click first result
   try {
-    console.log(`Step 1: Scraping VGS page to get scrapeId: ${searchUrl}`);
-
-    // Step 1: Scrape the page to get a scrapeId (browser session)
-    const scrapeResp = await fetch('https://api.firecrawl.dev/v2/scrape', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        url: searchUrl,
-        formats: ['markdown', 'links'],
-        waitFor: 3000,
-      }),
-    });
-
-    if (!scrapeResp.ok) {
-      const errText = await scrapeResp.text();
-      console.error(`Firecrawl v2 scrape error ${scrapeResp.status}: ${errText}`);
-      
-      // Fallback to v1 with actions
-      return await scrapeVGSWithActions(apiKey, slug, searchUrl, address, town);
-    }
-
-    const scrapeData = await scrapeResp.json();
-    const scrapeId = scrapeData.data?.metadata?.scrapeId || scrapeData.scrapeId;
-    console.log(`Got scrapeId: ${scrapeId}`);
-
-    if (!scrapeId) {
-      console.log("No scrapeId, falling back to actions");
-      return await scrapeVGSWithActions(apiKey, slug, searchUrl, address, town);
-    }
-
-    // Step 2: Interact - fill the search form and submit
-    console.log(`Step 2: Interacting with form - typing "${address}"`);
-    const interactResp = await fetch(`https://api.firecrawl.dev/v2/scrape/${scrapeId}/interact`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        prompt: `Type "${address}" into the search text box and click the Search button. Wait for results to load.`,
-        formats: ['markdown', 'links'],
-      }),
-    });
-
-    if (interactResp.ok) {
-      const interactData = await interactResp.json();
-      const markdown = interactData.data?.markdown || interactData.markdown || '';
-      const links = interactData.data?.links || interactData.links || [];
-      console.log(`Interact result length: ${markdown.length}`);
-      console.log(`Interact preview: ${markdown.substring(0, 500)}`);
-
-      return processVGSResults(apiKey, slug, markdown, links, address, town);
-    } else {
-      const errText = await interactResp.text();
-      console.error(`Interact error ${interactResp.status}: ${errText}`);
-    }
-  } catch (e) {
-    console.error("VGS v2 error:", e);
-  }
-
-  // Fallback to v1 with actions
-  return await scrapeVGSWithActions(apiKey, slug, searchUrl, address, town);
-}
-
-async function scrapeVGSWithActions(apiKey: string, slug: string, searchUrl: string, address: string, town: string) {
-  try {
-    console.log(`Fallback: Using v1 actions for VGS`);
+    console.log(`Scraping VGS with autocomplete interaction: ${searchUrl}`);
 
     const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
       method: 'POST',
@@ -208,14 +140,18 @@ async function scrapeVGSWithActions(apiKey: string, slug: string, searchUrl: str
       body: JSON.stringify({
         url: searchUrl,
         formats: ['markdown', 'links'],
-        waitFor: 3000,
+        waitFor: 2000,
         actions: [
-          { type: 'wait', milliseconds: 2000 },
-          { type: 'click', selector: 'input[type="text"]' },
-          { type: 'write', text: address },
-          { type: 'wait', milliseconds: 1500 },
-          { type: 'press', key: 'Enter' },
-          { type: 'wait', milliseconds: 5000 },
+          // Click the search text input
+          { type: 'click', selector: '#ContentPlaceHolder1_TextBox_Search' },
+          // Type the address (triggers autocomplete AJAX)
+          { type: 'write', text: address.substring(0, Math.min(address.length, 15)) },
+          // Wait for autocomplete results to appear
+          { type: 'wait', milliseconds: 3000 },
+          // Click the first autocomplete suggestion (jQuery UI autocomplete)
+          { type: 'click', selector: '.ui-autocomplete li:first-child a, .ui-menu-item:first-child a, ul.ui-autocomplete li:first-child' },
+          // Wait for navigation to property page
+          { type: 'wait', milliseconds: 4000 },
         ],
       }),
     });
@@ -224,15 +160,41 @@ async function scrapeVGSWithActions(apiKey: string, slug: string, searchUrl: str
       const data = await resp.json();
       const markdown = data.data?.markdown || data.markdown || '';
       const links = data.data?.links || data.links || [];
-      console.log(`V1 actions result length: ${markdown.length}`);
+      const url = data.data?.metadata?.url || data.data?.metadata?.sourceURL || '';
+      console.log(`VGS result length: ${markdown.length}, URL: ${url}`);
 
-      return processVGSResults(apiKey, slug, markdown, links, address, town);
+      // Check if we navigated to a Parcel page
+      if (url.includes('Parcel.aspx') || markdown.includes('Parcel ID') || markdown.includes('Owner')) {
+        const extracted = extractVGSData(markdown, address, town);
+        if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
+          extracted.propertyCardUrl = url;
+          if (extracted.isLLC) {
+            try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC error:", e); }
+          }
+          return json({ success: true, property: extracted });
+        }
+      }
+
+      // Maybe we stayed on search page but have links
+      const parcelLink = links.find((l: string) => l.includes('Parcel.aspx?'));
+      if (parcelLink) {
+        return await scrapePropertyDetail(apiKey, parcelLink, address, town);
+      }
+
+      // Check markdown for parcel links
+      const pidMatch = markdown.match(/Parcel\.aspx\?[Pp]id=(\d+)/i);
+      if (pidMatch) {
+        const detailUrl = `https://gis.vgsi.com/${slug}/Parcel.aspx?Pid=${pidMatch[1]}`;
+        return await scrapePropertyDetail(apiKey, detailUrl, address, town);
+      }
+
+      console.log(`VGS preview: ${markdown.substring(0, 300)}`);
     } else {
       const errText = await resp.text();
-      console.error(`V1 actions error ${resp.status}: ${errText}`);
+      console.error(`Firecrawl actions error ${resp.status}: ${errText}`);
     }
   } catch (e) {
-    console.error("V1 actions error:", e);
+    console.error("VGS scrape error:", e);
   }
 
   return json({
@@ -242,53 +204,14 @@ async function scrapeVGSWithActions(apiKey: string, slug: string, searchUrl: str
   });
 }
 
-function processVGSResults(apiKey: string, slug: string, markdown: string, links: string[], address: string, town: string) {
-  // Check for property links in the results
-  const parcelLinks = links.filter((l: string) => l.includes('Parcel.aspx?pid='));
-  
-  if (parcelLinks.length > 0) {
-    // Return the first parcel link for a follow-up scrape
-    console.log(`Found ${parcelLinks.length} parcel links`);
-    // Scrape the property detail page
-    return scrapePropertyDetail(apiKey, parcelLinks[0], address, town);
-  }
-
-  // Check markdown for parcel links
-  const pidMatch = markdown.match(/Parcel\.aspx\?pid=(\d+)/i);
-  if (pidMatch) {
-    const detailUrl = `https://gis.vgsi.com/${slug}/Parcel.aspx?pid=${pidMatch[1]}`;
-    return scrapePropertyDetail(apiKey, detailUrl, address, town);
-  }
-
-  // Try extracting from the current page content
-  if (markdown.length > 500) {
-    const extracted = extractVGSData(markdown, address, town);
-    if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
-      if (extracted.isLLC) {
-        return searchCTBusiness(apiKey, extracted.owner).then(llc => {
-          extracted.llcDetails = llc;
-          return json({ success: true, property: extracted });
-        }).catch(() => json({ success: true, property: extracted }));
-      }
-      return json({ success: true, property: extracted });
-    }
-  }
-
-  return json({
-    success: false,
-    error: "Could not find property. Try the assessor database directly.",
-    searchUrl: `https://gis.vgsi.com/${slug}/Search.aspx`,
-  });
-}
-
 async function scrapePropertyDetail(apiKey: string, url: string, address: string, town: string) {
   console.log(`Scraping property detail: ${url}`);
   const detailMd = await firecrawlScrape(apiKey, url);
   if (detailMd) {
-    console.log(`Property detail length: ${detailMd.length}`);
-    console.log(`Property detail preview: ${detailMd.substring(0, 500)}`);
+    console.log(`Detail length: ${detailMd.length}`);
     const extracted = extractVGSData(detailMd, address, town);
     if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
+      extracted.propertyCardUrl = url;
       if (extracted.isLLC) {
         try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC error:", e); }
       }
