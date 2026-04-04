@@ -126,37 +126,42 @@ Deno.serve(async (req) => {
 async function scrapeVGS(apiKey: string, slug: string, address: string, town: string) {
   const searchUrl = `https://gis.vgsi.com/${slug}/Search.aspx`;
 
-  // Step 1: Use Firecrawl to search for the address
-  // VGS uses an autocomplete API - try to find the property ID first
-  const autocompleteUrl = `https://gis.vgsi.com/${slug}/Search.aspx/AutoComplete`;
-
+  // Use Firecrawl to scrape the search results page
   try {
-    // Try the autocomplete endpoint directly
-    const acResp = await fetch(autocompleteUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prefixText: address, count: 10 }),
-    });
+    const queryUrl = `${searchUrl}?Query=${encodeURIComponent(address)}`;
+    console.log(`Scraping VGS search: ${queryUrl}`);
+    const scrapeResult = await firecrawlScrape(apiKey, queryUrl);
 
-    if (acResp.ok) {
-      const results = await acResp.json();
-      const acResults = results.d || results;
+    if (scrapeResult) {
+      console.log(`VGS scrape result length: ${scrapeResult.length}`);
+      console.log(`VGS scrape preview: ${scrapeResult.substring(0, 500)}`);
 
-      if (Array.isArray(acResults) && acResults.length > 0) {
-        // Found matching addresses - get the first match
-        const matchedAddress = acResults[0];
-        console.log(`VGS autocomplete match: ${matchedAddress}`);
+      // Check if the result has actual property data (not just the search form)
+      if (scrapeResult.includes('Owner') || scrapeResult.includes('OWNER') || 
+          scrapeResult.includes('Parcel') || scrapeResult.includes('Assessment')) {
+        const extracted = extractVGSData(scrapeResult, address, town);
+        if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
+          if (extracted.isLLC) {
+            try {
+              extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
+            } catch (e) {
+              console.error("LLC lookup error:", e);
+            }
+          }
+          return json({ success: true, property: extracted });
+        }
+      }
 
-        // Now scrape the property page
-        const propertySearchUrl = `https://gis.vgsi.com/${slug}/Search.aspx?Query=${encodeURIComponent(matchedAddress)}`;
-
-        // Use Firecrawl to scrape the result page
-        const scrapeResult = await firecrawlScrape(apiKey, propertySearchUrl);
-
-        if (scrapeResult) {
-          const extracted = extractVGSData(scrapeResult, address, town);
-          if (extracted) {
-            // Check for LLC and do business lookup
+      // If the search page has links to property detail pages, try to find one
+      const pidMatch = scrapeResult.match(/Parcel\.aspx\?pid=(\d+)/i) || 
+                       scrapeResult.match(/pid=(\d+)/i);
+      if (pidMatch) {
+        const detailUrl = `https://gis.vgsi.com/${slug}/Parcel.aspx?pid=${pidMatch[1]}`;
+        console.log(`Found property detail URL: ${detailUrl}`);
+        const detailResult = await firecrawlScrape(apiKey, detailUrl);
+        if (detailResult) {
+          const extracted = extractVGSData(detailResult, address, town);
+          if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
             if (extracted.isLLC) {
               try {
                 extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
@@ -167,26 +172,6 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
             return json({ success: true, property: extracted });
           }
         }
-      }
-    }
-  } catch (e) {
-    console.error("VGS autocomplete error:", e);
-  }
-
-  // Fallback: scrape the search page directly with Firecrawl
-  try {
-    const scrapeResult = await firecrawlScrape(apiKey, `${searchUrl}?Query=${encodeURIComponent(address)}`);
-    if (scrapeResult) {
-      const extracted = extractVGSData(scrapeResult, address, town);
-      if (extracted) {
-        if (extracted.isLLC) {
-          try {
-            extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
-          } catch (e) {
-            console.error("LLC lookup error:", e);
-          }
-        }
-        return json({ success: true, property: extracted });
       }
     }
   } catch (e) {
