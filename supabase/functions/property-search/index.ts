@@ -347,12 +347,12 @@ function extractVGSData(markdown: string, address: string, town: string) {
     if (assessMatch) assessedValue = `$${assessMatch[1]}`;
   }
 
-  // Year Built
-  const yearMatch = text.match(/Year\s*Built:?\s*(1[89]\d{2}|20[0-2]\d)/i);
+  // Year Built - VGS format: "Year Built: | 1927" or "Year Built:1927"
+  const yearMatch = text.match(/Year\s*Built:?\s*\|?\s*(1[89]\d{2}|20[0-2]\d)/i);
   if (yearMatch) yearBuilt = yearMatch[1];
 
-  // Lot Size
-  const lotMatch = text.match(/Size\s*\(Acres\)\s*([\d\.]+)/i);
+  // Lot Size - VGS format: "Size (Acres) | 0.3"
+  const lotMatch = text.match(/Size\s*\(Acres\)\s*\|?\s*([\d\.]+)/i) || text.match(/(\d+\.?\d*)\s*acres/i);
   if (lotMatch) lotSize = `${lotMatch[1]} acres`;
 
   // Zoning
