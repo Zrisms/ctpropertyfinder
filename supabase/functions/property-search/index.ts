@@ -288,8 +288,8 @@ async function firecrawlScrape(apiKey: string, url: string): Promise<string | nu
 }
 
 function extractVGSData(markdown: string, address: string, town: string) {
-  // Parse VGS property page markdown
-  const lines = markdown.split('\n').map(l => l.trim()).filter(Boolean);
+  // VGS markdown format: "OwnerNAME" or "| Owner | NAME |" or "Owner: NAME"
+  const text = markdown;
 
   let owner = '';
   let parcelId = '';
@@ -299,43 +299,46 @@ function extractVGSData(markdown: string, address: string, town: string) {
   let zoning = '';
   let propertyAddress = address;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const nextLine = lines[i + 1] || '';
+  // Try table format first: | Owner | VALUE |
+  const tableOwner = text.match(/\|\s*Owner\s*\|\s*([^|]+)\|/i);
+  if (tableOwner) owner = tableOwner[1].trim();
 
-    if (/owner/i.test(line) && !owner) {
-      // Owner is often on the next line or after a colon
-      const colonVal = line.split(':')[1]?.trim();
-      owner = colonVal || nextLine;
-    }
-    if (/parcel\s*(id|#|number)/i.test(line) && !parcelId) {
-      const colonVal = line.split(':')[1]?.trim();
-      parcelId = colonVal || nextLine;
-    }
-    if (/assessed\s*value|total\s*assess/i.test(line) && !assessedValue) {
-      const match = line.match(/\$[\d,]+/) || nextLine.match(/\$[\d,]+/);
-      if (match) assessedValue = match[0];
-    }
-    if (/lot\s*size|acreage|acres/i.test(line) && !lotSize) {
-      const colonVal = line.split(':')[1]?.trim();
-      lotSize = colonVal || nextLine;
-    }
-    if (/year\s*built/i.test(line) && !yearBuilt) {
-      const match = line.match(/\b(1[89]\d{2}|20[0-2]\d)\b/) || nextLine.match(/\b(1[89]\d{2}|20[0-2]\d)\b/);
-      if (match) yearBuilt = match[0];
-    }
-    if (/zoning|zone/i.test(line) && !zoning) {
-      const colonVal = line.split(':')[1]?.trim();
-      zoning = colonVal || nextLine;
-    }
-    if (/location|address|property\s*address/i.test(line) && line.includes(':')) {
-      const val = line.split(':').slice(1).join(':').trim();
-      if (val && val.length > 5) propertyAddress = val;
-    }
+  // Try inline format: OwnerVALUE (VGS concatenates label+value)
+  if (!owner) {
+    const inlineOwner = text.match(/Owner([A-Z][A-Z\s\+\.\,\-\']+?)(?:Total|Sale|Co-Owner|$)/m);
+    if (inlineOwner) owner = inlineOwner[1].trim();
   }
 
-  // Clean up owner
-  owner = owner.replace(/[*#\[\]]/g, '').trim();
+  // Location/Address
+  const locMatch = text.match(/Location([A-Z0-9][A-Z0-9\s]+?)(?:\n|Mblu)/i);
+  if (locMatch) propertyAddress = locMatch[1].trim();
+
+  // Parcel ID
+  const parcelMatch = text.match(/Parcel\s*ID\s*([0-9][0-9\s]+)/i);
+  if (parcelMatch) parcelId = parcelMatch[1].trim();
+
+  // Assessed/Market Value
+  const marketMatch = text.match(/Total\s*Market\s*Value\s*\$?([\d,]+)/i);
+  if (marketMatch) assessedValue = `$${marketMatch[1]}`;
+  if (!assessedValue) {
+    const assessMatch = text.match(/Appraisal\s*\$?([\d,]+)/i);
+    if (assessMatch) assessedValue = `$${assessMatch[1]}`;
+  }
+
+  // Year Built
+  const yearMatch = text.match(/Year\s*Built:?\s*(1[89]\d{2}|20[0-2]\d)/i);
+  if (yearMatch) yearBuilt = yearMatch[1];
+
+  // Lot Size
+  const lotMatch = text.match(/Size\s*\(Acres\)\s*([\d\.]+)/i);
+  if (lotMatch) lotSize = `${lotMatch[1]} acres`;
+
+  // Zoning
+  const zoneMatch = text.match(/Zone\s*\|\s*([A-Z0-9\-]+)/i) || text.match(/Zone\s+([A-Z0-9\-]+)/i);
+  if (zoneMatch) zoning = zoneMatch[1].trim();
+
+  // Clean up
+  owner = owner.replace(/[*#\[\]]/g, '').replace(/<br\/?>/gi, ' ').trim();
   if (!owner || owner.length < 2) return null;
 
   const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner);
@@ -345,9 +348,15 @@ function extractVGSData(markdown: string, address: string, town: string) {
     town,
     owner,
     isLLC,
-    parcelId: parcelId.replace(/[*#\[\]]/g, '').trim(),
+    parcelId,
     assessedValue,
-    lotSize: lotSize.replace(/[*#\[\]]/g, '').trim(),
+    lotSize,
+    yearBuilt,
+    zoning,
+    propertyCardUrl: '',
+    llcDetails: undefined as any,
+  };
+}
     yearBuilt,
     zoning: zoning.replace(/[*#\[\]]/g, '').trim(),
     propertyCardUrl: '',
