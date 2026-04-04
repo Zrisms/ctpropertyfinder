@@ -1,8 +1,9 @@
-import { FileDown, FileSpreadsheet, Building2, User, Calendar, MapPin, Loader2 } from "lucide-react";
+import { FileDown, FileSpreadsheet, Building2, Loader2, Eye, Download } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { useState } from "react";
 
 export interface PropertyData {
   address: string;
@@ -19,7 +20,9 @@ export interface PropertyData {
     mailingAddress: string;
     dateFormed: string;
     businessType: string;
+    status?: string;
     principals: { name: string; address: string }[];
+    rawMarkdown?: string;
   };
 }
 
@@ -27,10 +30,13 @@ interface PropertyResultsProps {
   data: PropertyData;
   onDownloadPdf: () => void;
   onDownloadExcel: () => void;
+  onDownloadLLCPdf?: () => void;
   isExporting: boolean;
 }
 
-export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, isExporting }: PropertyResultsProps) {
+export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownloadLLCPdf, isExporting }: PropertyResultsProps) {
+  const [showRawDetails, setShowRawDetails] = useState(false);
+
   return (
     <div className="w-full max-w-3xl mx-auto space-y-6 animate-fade-in">
       {/* Property Info Card */}
@@ -49,7 +55,6 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, isExport
 
         <Separator className="my-4" />
 
-        {/* Data Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <tbody>
@@ -65,18 +70,26 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, isExport
         </div>
       </Card>
 
-      {/* LLC Details */}
+      {/* Official Business Details */}
       {data.isLLC && data.llcDetails && (
         <Card className="p-6 border-border bg-card shadow-sm">
-          <h3 className="font-display text-xl text-foreground mb-4">LLC Details — {data.owner}</h3>
+          <div className="flex items-start justify-between mb-4">
+            <h3 className="font-display text-xl text-foreground">
+              Official Business Details — {data.owner}
+            </h3>
+            <Badge variant="outline" className="text-xs">
+              CT Secretary of State
+            </Badge>
+          </div>
           <Separator className="mb-4" />
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <tbody>
-                <TableRow label="Mailing Address" value={data.llcDetails.mailingAddress} />
-                <TableRow label="Date Formed" value={data.llcDetails.dateFormed} />
+                {data.llcDetails.status && <TableRow label="Status" value={data.llcDetails.status} />}
                 <TableRow label="Business Type" value={data.llcDetails.businessType} />
+                <TableRow label="Date Formed" value={data.llcDetails.dateFormed} />
+                <TableRow label="Mailing Address" value={data.llcDetails.mailingAddress} />
               </tbody>
             </table>
           </div>
@@ -94,6 +107,60 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, isExport
               </div>
             </>
           )}
+
+          {/* View / Download actions */}
+          <div className="flex flex-col sm:flex-row gap-3 mt-6">
+            {data.llcDetails.rawMarkdown && (
+              <Button
+                variant="outline"
+                onClick={() => setShowRawDetails(!showRawDetails)}
+                className="flex-1"
+              >
+                <Eye className="mr-2 h-4 w-4" />
+                {showRawDetails ? "Hide" : "View"} Full Details
+              </Button>
+            )}
+            {onDownloadLLCPdf && (
+              <Button
+                onClick={onDownloadLLCPdf}
+                disabled={isExporting}
+                className="flex-1 bg-secondary text-secondary-foreground hover:bg-secondary/80"
+              >
+                {isExporting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                Download Business Details PDF
+              </Button>
+            )}
+          </div>
+
+          {/* Raw details view */}
+          {showRawDetails && data.llcDetails.rawMarkdown && (
+            <div className="mt-4 bg-muted rounded-lg p-4 max-h-96 overflow-y-auto">
+              <pre className="text-xs text-foreground whitespace-pre-wrap font-mono">
+                {data.llcDetails.rawMarkdown}
+              </pre>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Printable details not available message */}
+      {data.isLLC && !data.llcDetails && (
+        <Card className="p-6 border-border bg-card shadow-sm">
+          <p className="text-muted-foreground text-sm text-center">
+            Printable business details not available. Try searching manually at{" "}
+            <a
+              href="https://service.ct.gov/business/s/onlinebusinesssearch?language=en_US"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary underline"
+            >
+              CT Secretary of State
+            </a>
+          </p>
         </Card>
       )}
 

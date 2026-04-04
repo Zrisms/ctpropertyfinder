@@ -93,6 +93,27 @@ const Index = () => {
     }
   };
 
+  const handleDownloadLLCPdf = async () => {
+    if (!propertyData?.llcDetails) return;
+    setIsExporting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("llc-detail-pdf", {
+        body: { llcDetails: propertyData.llcDetails, ownerName: propertyData.owner },
+      });
+      if (error) throw error;
+      if (data?.pdf) {
+        const blob = base64ToBlob(data.pdf, "application/pdf");
+        downloadBlob(blob, `${propertyData.owner.replace(/\s+/g, "_")}_business_details.pdf`);
+        toast({ title: "Success", description: "Business details PDF downloaded." });
+      }
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Error", description: "Failed to generate LLC PDF.", variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="bg-navy text-primary-foreground py-16 px-4">
@@ -141,6 +162,7 @@ const Index = () => {
               data={propertyData}
               onDownloadPdf={handleDownloadPdf}
               onDownloadExcel={handleDownloadExcel}
+              onDownloadLLCPdf={propertyData.isLLC && propertyData.llcDetails ? handleDownloadLLCPdf : undefined}
               isExporting={isExporting}
             />
           </div>
