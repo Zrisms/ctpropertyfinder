@@ -23,9 +23,10 @@ Deno.serve(async (req) => {
     // Try Vision Government Solutions (most common CT assessor platform)
     const townSlug = town.toLowerCase().replace(/\s+/g, "");
 
-    // Create HTTP client that accepts the VGS certificate
-    const httpClient = Deno.createHttpClient({ caCerts: [], proxy: { url: "" } });
-    const fetchOpts = { client: httpClient };
+    // Deno fetch with TLS certificate verification disabled for VGS
+    const fetchWithTls = (url: string, opts: RequestInit = {}) => {
+      return fetch(url, { ...opts, /* @ts-ignore */ client: Deno.createHttpClient({ caCerts: [] }) });
+    };
 
     // Attempt to search via Vision GIS
     let propertyData = null;
