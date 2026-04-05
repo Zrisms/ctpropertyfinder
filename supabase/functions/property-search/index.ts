@@ -1040,7 +1040,9 @@ function extractQDSCardData(markdown: string, address: string, town: string) {
     if (a.category.toLowerCase().includes('building')) improvementsValue = a.amount;
   }
 
-  owner = owner.replace(/[*#\[\]]/g, '').trim();
+  owner = owner.replace(/[*#\[\]|]/g, '').replace(/<br\/?>/gi, ' ').replace(/\s+/g, ' ').trim();
+  // Clean trailing pipes from all extracted fields
+  const cleanPipe = (v: string) => v.replace(/\s*\|\s*$/g, '').trim();
   if (!owner || owner.length < 2) return null;
 
   const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b|\bLP\b|\bL\.P\b/i.test(owner);
