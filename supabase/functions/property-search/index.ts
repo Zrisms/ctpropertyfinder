@@ -635,13 +635,7 @@ async function scrapeAvonGIS(apiKey: string, address: string, town: string): Pro
     llcDetails: undefined as any,
   };
 
-  if (isLLC) {
-    try {
-      prop.llcDetails = await searchCTBusiness(apiKey, owner);
-    } catch (e) {
-      console.error("LLC:", e);
-    }
-  }
+  // LLC lookup removed - handled separately by frontend
 
   return json({ success: true, property: prop });
 }
