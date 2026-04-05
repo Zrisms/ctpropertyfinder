@@ -1692,8 +1692,10 @@ function extractAggregatorData(markdown: string, address: string, town: string) 
   }
 
   owner = owner.replace(/[*#\[\]]/g, '').trim();
-  if (!owner || owner.length < 2 || owner.length > 100) return null;
+  if (!owner || owner.length < 4 || owner.length > 100) return null;
   if (/https?:\/\/|\.com|\.org/.test(owner)) return null;
+  // Reject single common words that aren't real owner names
+  if (/^(Sold|For Sale|Pending|Active|Price|View|Details|Home|House|Property|Contact|Agent|N\/A|Unknown)$/i.test(owner)) return null;
 
   const dollarMatch = (labels: string[]): string => {
     for (const label of labels) {
