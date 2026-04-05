@@ -288,6 +288,12 @@ Deno.serve(async (req) => {
       return await universalPropertySearch(apiKey, normalizedAddress, town);
     }
 
+    // For 'custom' platform towns (no real scraper), skip directly to universal fallback
+    if (config.platform === 'custom') {
+      console.log(`Custom platform for ${town}, going straight to universal fallback`);
+      return await universalPropertySearch(apiKey, normalizedAddress, town, config.url);
+    }
+
     // Try platform-specific scraper first
     let result: Response;
     try {
@@ -313,9 +319,8 @@ Deno.serve(async (req) => {
         case 'equality':
           result = await scrapeEqualityCama(apiKey, config.url!, normalizedAddress, town);
           break;
-        case 'custom':
         default:
-          result = await scrapeGenericWithFallback(apiKey, config.url!, normalizedAddress, town, config.label || `${town} Assessor`);
+          result = json({ success: false });
           break;
       }
     } catch (e) {
