@@ -894,7 +894,7 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
       console.log(`PRC POST links sample: ${JSON.stringify(linkSample)}`);
       
       // Also look for different URL patterns PRC might use
-      const allIds = [...resultHtml.matchAll(/uniqueid=(\d+)/gi)].map(m => m[1]);
+      const allIds = [...resultHtml.matchAll(/uniqueid=([A-Za-z0-9]+)/gi)].map(m => m[1]);
       const altIds = [...resultHtml.matchAll(/pid=(\d+)/gi)].map(m => m[1]);
       const resultIds = [...resultHtml.matchAll(/PropertyResults[^"]*?(\d{4,})/gi)].map(m => m[1]);
       console.log(`PRC POST IDs: uniqueid=${allIds.length}, pid=${altIds.length}, resultIds=${resultIds.length}`);
