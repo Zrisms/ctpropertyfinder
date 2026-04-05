@@ -18,12 +18,8 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
   const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
   const [isFetching, setIsFetching] = useState(false);
   const debounceRef = useRef<number | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const addressInputRef = useRef<HTMLInputElement>(null);
-
-  const handleClear = useCallback(() => {
-    setAddress(""); setTown(""); setAddressSuggestions([]); setShowAddressSuggestions(false); setActiveAddressIndex(-1);
-    requestAnimationFrame(() => addressInputRef.current?.focus());
-  }, []);
 
   const filteredTowns = useMemo(() => {
     if (!town) return CT_TOWNS.slice(0, 6);
