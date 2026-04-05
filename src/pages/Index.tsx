@@ -60,7 +60,6 @@ const Index = () => {
                 Connecticut Property Intelligence
               </div>
               <img src={foyrLogo} alt="Foyr" className="h-28 md:h-36 mx-auto mb-2" />
-              </h1>
               <p className="text-lg md:text-xl text-muted-foreground font-light leading-relaxed max-w-lg mx-auto animate-fade-in" style={{ animationDelay: '0.2s', opacity: 0 }}>
                 Owners, valuations, building details, and LLC records — all in one search.
               </p>
