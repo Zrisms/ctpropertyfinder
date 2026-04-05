@@ -1202,7 +1202,7 @@ async function scrapeMapXpress(apiKey: string, baseUrl: string, address: string,
           { type: "wait", milliseconds: 500 },
           // Click Go/submit button
           { type: "click", selector: "input[type='image']" },
-          { type: "wait", milliseconds: 3000 },
+          { type: "wait", milliseconds: 2000 },
         ],
       }),
     });
