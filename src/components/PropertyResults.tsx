@@ -74,7 +74,7 @@ export interface PropertyData {
     dateFormed: string;
     businessType: string;
     status?: string;
-    principals: { name: string; address: string }[];
+    principals: { name: string; title?: string; address: string; residentialAddress?: string }[];
     rawMarkdown?: string;
     accountNumber?: string;
     citizenship?: string;
