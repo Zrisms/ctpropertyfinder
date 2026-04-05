@@ -312,12 +312,12 @@ const TOWN_DB: Record<string, TownConfig> = {
   "east hartford": { platform: "ias", url: "https://easthartford.ias-clt.com/", label: "East Hartford Assessor" },
   hartford: { platform: "ias", url: "https://hartford.ias-clt.com/", label: "Hartford Assessor" },
 
-  // === Towns with custom/dedicated assessment sites ===
+  // === Towns with custom/dedicated assessment sites (scraped dynamically) ===
   bloomfield: { platform: "custom", url: "https://bloomfield.mapxpress.net/", label: "Bloomfield GIS & Property Info" },
-  darien: { platform: "custom", url: "https://assessment.darienct.gov/Search/commonsearch.aspx?mode=address", label: "Darien Assessor" },
-  groton: { platform: "custom", url: "https://www.groton-ct.gov/departments/gis/index.php", label: "Groton GIS Portal" },
-  wethersfield: { platform: "custom", url: "https://wethersfieldct.gov/171/Real-Estate", label: "Wethersfield Assessor" },
-  windsor: { platform: "custom", url: "https://www.windsorct.gov/541/Property-Cards", label: "Windsor Property Cards" },
+  darien: { platform: "custom", url: "https://gis.vgsi.com/darienct/Search.aspx", label: "Darien Assessor (VGS)" },
+  groton: { platform: "custom", url: "https://gis.vgsi.com/grotonct/Search.aspx", label: "Groton Assessor" },
+  wethersfield: { platform: "custom", url: "https://gis.vgsi.com/wethersfieldct/Search.aspx", label: "Wethersfield Assessor" },
+  windsor: { platform: "custom", url: "https://gis.vgsi.com/windsorct/Search.aspx", label: "Windsor Assessor" },
 
   // === Remaining custom towns ===
   barkhamsted: { platform: "custom", url: "https://www.barkhamsted.us/", label: "Barkhamsted Assessor" },
