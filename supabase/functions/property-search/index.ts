@@ -310,71 +310,171 @@ async function firecrawlScrape(apiKey: string, url: string): Promise<string | nu
 }
 
 function extractVGSData(markdown: string, address: string, town: string) {
-  // VGS markdown format: "OwnerNAME" or "| Owner | NAME |" or "Owner: NAME"
   const text = markdown;
 
+  // Helper to extract table or inline values
+  const grab = (patterns: RegExp[]): string => {
+    for (const p of patterns) {
+      const m = text.match(p);
+      if (m && m[1]?.trim()) return m[1].trim();
+    }
+    return '';
+  };
+
   let owner = '';
-  let parcelId = '';
-  let assessedValue = '';
-  let lotSize = '';
-  let yearBuilt = '';
-  let zoning = '';
   let propertyAddress = address;
 
-  // Try table format first: | Owner | VALUE |
+  // Owner
   const tableOwner = text.match(/\|\s*Owner\s*\|\s*([^|]+)\|/i);
   if (tableOwner) owner = tableOwner[1].trim();
-
-  // Try inline format: OwnerVALUE (VGS concatenates label+value)
   if (!owner) {
     const inlineOwner = text.match(/Owner([A-Z][A-Z\s\+\.\,\-\']+?)(?:Total|Sale|Co-Owner|$)/m);
     if (inlineOwner) owner = inlineOwner[1].trim();
   }
 
+  // Co-Owner
+  const coOwner = grab([/\|\s*Co-Owner\s*\|\s*([^|]+)\|/i, /Co-Owner([A-Z][A-Z\s\+\.\,\-\']+?)(?:\n|Total)/m]);
+
   // Location/Address
   const locMatch = text.match(/Location([A-Z0-9][A-Z0-9\s]+?)(?:\n|Mblu)/i);
   if (locMatch) propertyAddress = locMatch[1].trim();
 
+  // MBLU (Map-Block-Lot-Unit)
+  const mblu = grab([/Mblu\s*\|?\s*([\w\-\/]+)/i, /Map-Block-Lot\s*\|?\s*([\w\-\/]+)/i]);
+
   // Parcel ID
-  const parcelMatch = text.match(/Parcel\s*ID\s*([0-9][0-9\s]+)/i);
-  if (parcelMatch) parcelId = parcelMatch[1].trim();
+  const parcelId = grab([/Parcel\s*ID\s*\|?\s*([0-9][\w\s\-]*)/i]);
 
-  // Assessed/Market Value
-  const marketMatch = text.match(/Total\s*Market\s*Value\s*\$?([\d,]+)/i);
-  if (marketMatch) assessedValue = `$${marketMatch[1]}`;
-  if (!assessedValue) {
-    const assessMatch = text.match(/Appraisal\s*\$?([\d,]+)/i);
-    if (assessMatch) assessedValue = `$${assessMatch[1]}`;
-  }
+  // Book & Page (deed reference)
+  const bookPage = grab([/Book\s*&?\s*Page\s*\|?\s*([\w\-\/\s]+?)(?:\n|$)/i, /Book\/Page\s*\|?\s*([\w\-\/\s]+?)(?:\n|$)/i]);
 
-  // Year Built - VGS format: "Year Built: | 1927" or "Year Built:1927"
-  const yearMatch = text.match(/Year\s*Built:?\s*\|?\s*(1[89]\d{2}|20[0-2]\d)/i);
-  if (yearMatch) yearBuilt = yearMatch[1];
+  // === VALUES ===
+  const totalAssessment = grab([/Total\s*Assessment\s*\$?([\d,]+)/i, /Assessment\s*Total\s*\$?([\d,]+)/i]);
+  const totalAppraisal = grab([/Total\s*(?:Market\s*)?(?:Value|Appraisal)\s*\$?([\d,]+)/i, /Appraisal\s*\$?([\d,]+)/i]);
+  const landValue = grab([/Land\s*(?:Value|Appraisal)\s*\$?([\d,]+)/i]);
+  const buildingValue = grab([/(?:Building|Improvement)\s*(?:Value|Appraisal)\s*\$?([\d,]+)/i]);
+  const otherValue = grab([/Other\s*(?:Value|Appraisal)\s*\$?([\d,]+)/i]);
 
-  // Lot Size - VGS format: "Size (Acres) | 0.3"
-  const lotMatch = text.match(/Size\s*\(Acres\)\s*\|?\s*([\d\.]+)/i) || text.match(/(\d+\.?\d*)\s*acres/i);
-  if (lotMatch) lotSize = `${lotMatch[1]} acres`;
+  // === SALE INFO ===
+  const salePrice = grab([/Sale\s*Price\s*\$?([\d,]+)/i, /Last\s*Sale\s*\$?([\d,]+)/i]);
+  const saleDate = grab([/Sale\s*Date\s*\|?\s*([\d\/\-]+)/i]);
+  const saleQualification = grab([/Qualification\s*\|?\s*([^\n|]+)/i]);
+  const grantor = grab([/Grantor\s*\|?\s*([^\n|]+)/i]);
 
-  // Zoning
-  const zoneMatch = text.match(/Zone\s*\|\s*([A-Z0-9\-]+)/i) || text.match(/Zone\s+([A-Z0-9\-]+)/i);
-  if (zoneMatch) zoning = zoneMatch[1].trim();
+  // === LOT ===
+  const lotSize = grab([/Size\s*\(Acres\)\s*\|?\s*([\d\.]+)/i, /(\d+\.?\d*)\s*acres/i]);
+  const landUse = grab([/Land\s*Use\s*(?:Code\s*)?\|?\s*([^\n|]+)/i, /Use\s*Code\s*\|?\s*([^\n|]+)/i]);
+  const zoning = grab([/Zone\s*\|\s*([A-Z0-9\-]+)/i, /Zone\s+([A-Z0-9\-]+)/i]);
+  const neighborhood = grab([/Neighborhood\s*\|?\s*([^\n|]+)/i, /Nbhd\s*\|?\s*([^\n|]+)/i]);
 
-  // Clean up
+  // === BUILDING ===
+  const yearBuilt = grab([/Year\s*Built:?\s*\|?\s*(1[89]\d{2}|20[0-2]\d)/i]);
+  const buildingStyle = grab([/Style\s*\|?\s*([^\n|]+)/i, /Building\s*Style\s*\|?\s*([^\n|]+)/i]);
+  const stories = grab([/Stories\s*\|?\s*([\d\.]+)/i, /(?:Num|#)\s*Stories\s*\|?\s*([\d\.]+)/i]);
+  const livingArea = grab([/Living\s*Area\s*\|?\s*([\d,]+)/i, /Gross\s*Living\s*(?:Area)?\s*\|?\s*([\d,]+)/i]);
+  const totalRooms = grab([/Total\s*Rooms\s*\|?\s*(\d+)/i, /Rooms?\s*\|?\s*(\d+)/i]);
+  const bedrooms = grab([/Bed\s*(?:rooms?)?\s*\|?\s*(\d+)/i, /BR\s*\|?\s*(\d+)/i]);
+  const fullBaths = grab([/Full\s*Bath\s*\|?\s*(\d+)/i]);
+  const halfBaths = grab([/Half\s*Bath\s*\|?\s*(\d+)/i]);
+  const totalBaths = grab([/Total\s*Bath\s*\|?\s*([\d\.]+)/i, /Baths?\s*\|?\s*([\d\.]+)/i]);
+  const basement = grab([/Basement\s*\|?\s*([^\n|]+)/i]);
+  const basementFinished = grab([/Basement\s*Finished\s*\|?\s*([^\n|]+)/i, /Finished\s*Basement\s*\|?\s*([\d,]+)/i]);
+
+  // === CONSTRUCTION ===
+  const exteriorWall = grab([/Exterior\s*Wall\s*\|?\s*([^\n|]+)/i, /Ext\s*Wall\s*\|?\s*([^\n|]+)/i]);
+  const roofType = grab([/Roof\s*(?:Type|Cover|Material)\s*\|?\s*([^\n|]+)/i]);
+  const roofStructure = grab([/Roof\s*Structure\s*\|?\s*([^\n|]+)/i]);
+  const foundation = grab([/Foundation\s*\|?\s*([^\n|]+)/i]);
+  const interiorWall = grab([/Interior\s*Wall\s*\|?\s*([^\n|]+)/i, /Int\s*Wall\s*\|?\s*([^\n|]+)/i]);
+  const flooring = grab([/Floor(?:ing)?\s*\|?\s*([^\n|]+)/i]);
+  const framework = grab([/Frame(?:work)?\s*\|?\s*([^\n|]+)/i]);
+
+  // === SYSTEMS ===
+  const heating = grab([/Heat(?:ing)?\s*(?:Type)?\s*\|?\s*([^\n|]+)/i]);
+  const heatingFuel = grab([/Heat(?:ing)?\s*Fuel\s*\|?\s*([^\n|]+)/i]);
+  const cooling = grab([/(?:AC|Air\s*Condition|Cool(?:ing)?)\s*\|?\s*([^\n|]+)/i]);
+  const fireplaces = grab([/Fireplace\s*\|?\s*(\d+)/i]);
+  const water = grab([/Water\s*\|?\s*([^\n|]+)/i]);
+  const sewer = grab([/Sewer\s*\|?\s*([^\n|]+)/i]);
+
+  // === GARAGE / PARKING ===
+  const garage = grab([/Garage\s*(?:Type)?\s*\|?\s*([^\n|]+)/i]);
+  const garageCapacity = grab([/Garage\s*(?:Cap(?:acity)?|Stalls?)\s*\|?\s*(\d+)/i]);
+
+  // === OTHER ===
+  const propertyClass = grab([/(?:Property\s*)?Class\s*\|?\s*([^\n|]+)/i]);
+  const grade = grab([/Grade\s*\|?\s*([^\n|]+)/i]);
+  const condition = grab([/Condition\s*\|?\s*([^\n|]+)/i]);
+  const taxDistrict = grab([/Tax\s*District\s*\|?\s*([^\n|]+)/i]);
+
+  // Clean owner
   owner = owner.replace(/[*#\[\]]/g, '').replace(/<br\/?>/gi, ' ').trim();
   if (!owner || owner.length < 2) return null;
 
   const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner);
 
+  const fmt$ = (v: string) => v ? `$${v}` : '';
+
   return {
     address: propertyAddress,
     town,
     owner,
+    coOwner,
     isLLC,
     parcelId,
-    assessedValue,
-    lotSize,
-    yearBuilt,
+    mblu,
+    bookPage,
+    // Values
+    assessedValue: fmt$(totalAssessment) || fmt$(totalAppraisal),
+    totalAppraisal: fmt$(totalAppraisal),
+    landValue: fmt$(landValue),
+    buildingValue: fmt$(buildingValue),
+    otherValue: fmt$(otherValue),
+    // Sale
+    salePrice: fmt$(salePrice),
+    saleDate,
+    saleQualification,
+    grantor,
+    // Lot
+    lotSize: lotSize ? `${lotSize} acres` : '',
+    landUse,
     zoning,
+    neighborhood,
+    // Building
+    yearBuilt,
+    buildingStyle,
+    stories,
+    livingArea: livingArea ? `${livingArea} sq ft` : '',
+    totalRooms,
+    bedrooms,
+    fullBaths,
+    halfBaths,
+    totalBaths,
+    basement,
+    basementFinished,
+    // Construction
+    exteriorWall,
+    roofType,
+    roofStructure,
+    foundation,
+    interiorWall,
+    flooring,
+    framework,
+    // Systems
+    heating,
+    heatingFuel,
+    cooling,
+    fireplaces,
+    water,
+    sewer,
+    // Garage
+    garage,
+    garageCapacity,
+    // Other
+    propertyClass,
+    grade,
+    condition,
+    taxDistrict,
     propertyCardUrl: '',
     llcDetails: undefined as any,
   };
