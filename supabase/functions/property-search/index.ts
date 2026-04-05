@@ -522,7 +522,7 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
     if (searchResp.ok) {
       const searchData = await searchResp.json();
       const results = searchData.data || [];
-      const skipSites = /zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch|neighborwho|blockshopper/i;
+      const skipSites = /zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch|neighborwho|blockshopper|realtor\.com|redfin|homes\.com|movoto|propertyshark|loopnet|realtyhop|coldwellbanker|century21|berkshirehathaway|sothebysrealty|compass\.com|opendoor|offerpad|homelight|apartmentguide|apartments\.com|rent\.com|hotpads|streeteasy|countyoffice\.org|landwatch|landandfarm|housecanary|estately|homefacts|city-data|niche\.com|yelp|yellowpages|angi\.com|houzz|porch\.com/i;
 
       for (const result of results) {
         const url = result.url || '';
