@@ -766,7 +766,6 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
           if (extracted && extracted.owner && !extracted.owner.includes("Enter an")) {
             extracted.propertyCardUrl = finalUrl;
 // LLC lookup removed - handled separately by frontend
-            }
             return json({ success: true, property: extracted });
           }
         }
@@ -822,7 +821,6 @@ async function scrapeMapXpress(apiKey: string, baseUrl: string, address: string,
         if (extracted) {
           extracted.propertyCardUrl = data.data?.metadata?.url || baseUrl;
 // LLC lookup removed - handled separately by frontend
-          }
           return json({ success: true, property: extracted });
         }
       }
@@ -929,7 +927,6 @@ async function scrapeQDS(apiKey: string, baseUrl: string, address: string, town:
       }
 
 // LLC lookup removed - handled separately by frontend
-      }
       return json({ success: true, property: extracted });
     }
 
@@ -1077,7 +1074,6 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
           if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
             extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uid}`;
 // LLC lookup removed - handled separately by frontend
-            }
             return json({ success: true, property: extracted });
           }
         }
@@ -1134,7 +1130,6 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
           if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
             extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uid}`;
 // LLC lookup removed - handled separately by frontend
-            }
             return json({ success: true, property: extracted });
           }
         }
@@ -1328,7 +1323,6 @@ async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: stri
       if (extracted) {
         extracted.propertyCardUrl = baseUrl;
 // LLC lookup removed - handled separately by frontend
-        }
         return json({ success: true, property: extracted });
       }
     }
@@ -1352,7 +1346,6 @@ async function scrapeIASCLT(apiKey: string, baseUrl: string, address: string, to
       if (extracted) {
         extracted.propertyCardUrl = baseUrl;
 // LLC lookup removed - handled separately by frontend
-        }
         return json({ success: true, property: extracted });
       }
     }
@@ -1376,7 +1369,6 @@ async function scrapeEqualityCama(apiKey: string, baseUrl: string, address: stri
       if (extracted) {
         extracted.propertyCardUrl = baseUrl;
 // LLC lookup removed - handled separately by frontend
-        }
         return json({ success: true, property: extracted });
       }
     }
@@ -1406,7 +1398,6 @@ async function scrapeGenericWithFallback(
       if (extracted) {
         extracted.propertyCardUrl = baseUrl;
 // LLC lookup removed - handled separately by frontend
-        }
         return json({ success: true, property: extracted });
       }
     }
