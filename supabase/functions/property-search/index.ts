@@ -806,14 +806,14 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
       body: JSON.stringify({
         url: searchUrl,
         formats: ['markdown', 'links', 'html'],
-        waitFor: 2000,
+        waitFor: 1500,
         actions: [
-          { type: 'wait', milliseconds: 1000 },
+          { type: 'wait', milliseconds: 500 },
           { type: 'click', selector: 'input[id*="TextBox_Search"], input[id*="txtSearch"], input[type="text"]' },
           { type: 'write', text: searchText },
-          { type: 'wait', milliseconds: 4000 },
+          { type: 'wait', milliseconds: 2500 },
           { type: 'click', selector: '.ui-autocomplete li:first-child a, .ui-menu-item:first-child a, ul.ui-autocomplete li:first-child' },
-          { type: 'wait', milliseconds: 6000 },
+          { type: 'wait', milliseconds: 3000 },
         ],
       }),
     });
