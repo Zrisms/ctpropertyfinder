@@ -868,53 +868,337 @@ function mergeVGSFields(primary: any, secondary: any) {
   }
 }
 
-// ========== MAPXPRESS SCRAPING ==========
+// ========== MAPXPRESS SCRAPING (Direct ASP API) ==========
 async function scrapeMapXpress(apiKey: string, baseUrl: string, address: string, town: string) {
   try {
-    console.log(`Scraping MapXpress for ${town}: ${baseUrl}`);
+    const addrParts = address.match(/^(\d+)\s+(.+)$/i);
+    const houseNum = addrParts?.[1] || "";
+    const streetFull = addrParts?.[2] || address;
+    const streetBase = streetFull
+      .replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|PARK|TERRACE|TRAIL|HIGHWAY)\.?$/i, "")
+      .trim();
 
-    // Use Firecrawl actions to search on the MapXpress site directly
+    console.log(`MapXpress direct: searching ${baseUrl} for #${houseNum} on ${streetBase}`);
+
+    // STEP 1: POST to search.asp to find the UNIQUE_ID
+    const searchUrl = `${baseUrl.replace(/\/$/, "")}/PAGES/search.asp`;
+    const searchBody = `searchname=&houseno=${encodeURIComponent(houseNum)}&street=${encodeURIComponent(streetBase)}&unique_id=&go.x=1&go.y=1`;
+
+    const searchResp = await fetch(searchUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": `${baseUrl}/portal.asp`,
+      },
+      body: searchBody,
+    });
+
+    if (!searchResp.ok) {
+      console.log(`MapXpress search POST failed: ${searchResp.status}`);
+      // Fallback to Firecrawl scraping of detail page
+      return await scrapeMapXpressFallback(apiKey, baseUrl, address, town, houseNum, streetBase);
+    }
+
+    const searchHtml = await searchResp.text();
+    console.log(`MapXpress search response: ${searchHtml.length} chars`);
+
+    // Parse search results to find matching UNIQUE_ID
+    // Format: UNIQUE_ID<br>ACCOUNT<br>OWNER<br>ADDRESS
+    const resultPattern = /(\d+)<br>\s*(R?\d+)<br>\s*([^<]+)<br>\s*(\d+\s+[^<]+)<br>/gi;
+    const matches: { uniqueId: string; account: string; owner: string; addr: string }[] = [];
+    let m;
+    while ((m = resultPattern.exec(searchHtml)) !== null) {
+      matches.push({ uniqueId: m[1], account: m[2].trim(), owner: m[3].trim(), addr: m[4].trim() });
+    }
+
+    console.log(`MapXpress: found ${matches.length} results`);
+
+    // Find the best matching result
+    let bestMatch = matches[0]; // default to first
+    if (matches.length > 1) {
+      const streetUpper = streetBase.toUpperCase();
+      const found = matches.find(r => {
+        const addrUpper = r.addr.toUpperCase();
+        return addrUpper.startsWith(houseNum) && addrUpper.includes(streetUpper);
+      });
+      if (found) bestMatch = found;
+    }
+
+    if (!bestMatch) {
+      console.log(`MapXpress: no results for ${address}`);
+      return json({
+        success: false,
+        error: `Could not find "${address}" in ${town} MapXpress database.`,
+        searchUrl: baseUrl,
+      });
+    }
+
+    console.log(`MapXpress: best match UNIQUE_ID=${bestMatch.uniqueId}, addr=${bestMatch.addr}`);
+
+    // STEP 2: Scrape the detail page using Firecrawl (detail.asp requires session/cookies)
+    const detailUrl = `${baseUrl.replace(/\/$/, "")}/PAGES/detail.asp?UNIQUE_ID=${bestMatch.uniqueId}`;
+    console.log(`MapXpress: scraping detail page: ${detailUrl}`);
+
+    const detailMd = await firecrawlScrapeFullPage(apiKey, detailUrl);
+    if (detailMd && detailMd.length > 200) {
+      const extracted = extractMapXpressDetailData(detailMd, address, town, bestMatch);
+      if (extracted) {
+        extracted.propertyCardUrl = detailUrl;
+        // Also try summary card for additional data
+        const summaryUrl = `${baseUrl.replace(/\/$/, "")}/ags_map/property_card.asp?UNIQUE_ID=${bestMatch.uniqueId}`;
+        extracted.summaryCardUrl = summaryUrl;
+        return json({ success: true, property: extracted });
+      }
+    }
+
+    // STEP 3: Even if detail scrape fails, return basic data from search results
+    const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(bestMatch.owner);
+    return json({
+      success: true,
+      property: {
+        address: bestMatch.addr,
+        town,
+        owner: bestMatch.owner,
+        coOwner: "",
+        ownerAddress: "",
+        isLLC,
+        parcelId: bestMatch.uniqueId,
+        mblu: "",
+        accountNumber: bestMatch.account,
+        buildingCount: "", bookPage: "", certificate: "", instrument: "",
+        assessedValue: "", totalAppraisal: "", totalMarketValue: "",
+        improvementsValue: "", landValue: "",
+        assessImprovements: "", assessLand: "", assessTotal: "",
+        salePrice: "", saleDate: "", lotSize: "", frontage: "", depth: "",
+        useCode: "", useDescription: "", zoning: "", neighborhood: "",
+        totalMarketLand: "", landAppraisedValue: "",
+        yearBuilt: "", buildingStyle: "", model: "", stories: "",
+        livingArea: "", replacementCost: "", buildingPercentGood: "",
+        occupancy: "", totalRooms: "", bedrooms: "", totalBaths: "", halfBaths: "",
+        totalXtraFixtures: "", bathStyle: "", kitchenStyle: "", interiorCondition: "",
+        finBsmntArea: "", finBsmntQual: "", grade: "",
+        exteriorWall: "", roofStructure: "", roofCover: "", interiorWall: "", flooring: "",
+        heating: "", heatingFuel: "", cooling: "", buildingPhoto: "",
+        garage: "", pool: "", fireplace: "", foundation: "", taxAmount: "",
+        ownershipHistory: [], subAreas: [], valuationHistory: [],
+        propertyCardUrl: detailUrl,
+        llcDetails: undefined as any,
+      },
+    });
+  } catch (e) {
+    console.error("MapXpress error:", e);
+    return json({
+      success: false,
+      error: `Could not find property in ${town}. Try the MapXpress database directly.`,
+      searchUrl: baseUrl,
+    });
+  }
+}
+
+// Fallback if direct POST fails (e.g. session required)
+async function scrapeMapXpressFallback(apiKey: string, baseUrl: string, address: string, town: string, houseNum: string, streetBase: string): Promise<Response> {
+  console.log(`MapXpress fallback: using Firecrawl actions for ${town}`);
+  const portalUrl = `${baseUrl.replace(/\/$/, "")}/`;
+  try {
     const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        url: baseUrl,
-        formats: ["markdown", "html"],
-        waitFor: 1500,
+        url: portalUrl,
+        formats: ["html"],
+        onlyMainContent: false,
+        waitFor: 2000,
         actions: [
-          { type: "wait", milliseconds: 1000 },
-          {
-            type: "click",
-            selector: 'input[name*="Address"], input[name*="address"], #txtAddress, input[placeholder*="Address"]',
-          },
-          { type: "write", text: address },
-          { type: "click", selector: 'input[type="submit"], button[type="submit"], #btnSearch' },
-          { type: "wait", milliseconds: 3000 },
+          { type: "wait", milliseconds: 500 },
+          { type: "click", selector: "a[href*='portal'], a:has-text('Accept'), a:has-text('Enter'), a:has-text('Agree')" },
+          { type: "wait", milliseconds: 800 },
+          { type: "click", selector: "input[name='houseno'], input[name*='house'], input[name*='number']" },
+          { type: "write", text: houseNum },
+          { type: "click", selector: "input[name='street'], input[name*='street']" },
+          { type: "write", text: streetBase },
+          { type: "click", selector: "input[name*='go'], input[type='image'], input[type='submit'], button[type='submit']" },
+          { type: "wait", milliseconds: 2000 },
         ],
       }),
     });
-
     if (resp.ok) {
       const data = await resp.json();
-      const markdown = data.data?.markdown || data.markdown || "";
-      if (markdown.length > 200) {
-        const extracted = extractMapXpressData(markdown, address, town);
-        if (extracted) {
-          extracted.propertyCardUrl = data.data?.metadata?.url || baseUrl;
-// LLC lookup removed - handled separately by frontend
-          return json({ success: true, property: extracted });
+      const html = data.data?.html || data.html || "";
+      // Extract UNIQUE_ID from detail links
+      const uidMatch = html.match(/detail\.asp\?UNIQUE_ID=(\d+)/i);
+      if (uidMatch) {
+        const detailUrl = `${baseUrl.replace(/\/$/, "")}/PAGES/detail.asp?UNIQUE_ID=${uidMatch[1]}`;
+        const detailMd = await firecrawlScrapeFullPage(apiKey, detailUrl);
+        if (detailMd && detailMd.length > 200) {
+          const extracted = extractMapXpressDetailData(detailMd, address, town, null);
+          if (extracted) {
+            extracted.propertyCardUrl = detailUrl;
+            return json({ success: true, property: extracted });
+          }
         }
       }
     }
   } catch (e) {
-    console.error("MapXpress error:", e);
+    console.error("MapXpress fallback error:", e);
   }
+  return json({ success: false, error: `Could not find property in ${town}.`, searchUrl: baseUrl });
+}
 
-  return json({
-    success: false,
-    error: `Could not find property in ${town}. Try searching the MapXpress database directly.`,
-    searchUrl: baseUrl,
-  });
+// Extract structured data from MapXpress detail.asp page
+function extractMapXpressDetailData(markdown: string, address: string, town: string, searchResult: { uniqueId: string; account: string; owner: string; addr: string } | null) {
+  const text = markdown;
+
+  const grab = (labels: string[]): string => {
+    for (const label of labels) {
+      const tableRe = new RegExp(`\\|\\s*${label}:?\\s*\\|\\s*([^|]*?)\\s*\\|`, "i");
+      const tm = text.match(tableRe);
+      if (tm?.[1]?.trim()) return tm[1].trim();
+      const colonRe = new RegExp(`${label}[:\\s]+([^\\n|]+)`, "i");
+      const cm = text.match(colonRe);
+      if (cm?.[1]?.trim()) return cm[1].trim();
+      const boldRe = new RegExp(`\\*\\*${label}\\*\\*[:\\s]*([^\\n|]+)`, "i");
+      const bm = text.match(boldRe);
+      if (bm?.[1]?.trim()) return bm[1].trim();
+    }
+    return "";
+  };
+
+  const dollarGrab = (labels: string[]): string => {
+    for (const label of labels) {
+      const re = new RegExp(`${label}[:\\s]*\\$?([\\d,]+)`, "i");
+      const m = text.match(re);
+      if (m?.[1]) return m[1].trim();
+    }
+    return "";
+  };
+
+  let owner = grab(["Owner", "Owner Name"]) || searchResult?.owner || "";
+  const coOwner = grab(["Co-Owner", "Second Name", "Second name"]);
+  let propertyAddress = grab(["Location", "Property Location", "Address"]) || searchResult?.addr || address;
+  const ownerAddress = grab(["Mailing Address", "Mail Address", "MAILING ADDRESS"]);
+  const parcelId = grab(["Unique ID", "Unique_ID", "PID"]) || searchResult?.uniqueId || "";
+  const accountNumber = grab(["Account", "Acct"]) || searchResult?.account || "";
+  const mbl = grab(["MBL", "Map/Block/Lot"]);
+
+  // Values
+  const bldgAppraised = dollarGrab(["Buildings Appraised", "Building Appraised", "Bldg Appraised"]);
+  const bldgAssessed = dollarGrab(["Buildings Assessed", "Building Assessed", "Bldg Assessed"]);
+  const landAppraised = dollarGrab(["Land Appraised"]);
+  const landAssessed = dollarGrab(["Land Assessed"]);
+  const totalAppraised = dollarGrab(["Total Appraised", "TOTAL Appraised"]);
+  const totalAssessed = dollarGrab(["Total Assessed", "TOTAL Assessed"]);
+
+  // Property info
+  const lotSize = grab(["Total Acres", "Lot Size", "Acres"]);
+  const landUse = grab(["Land Use", "Property Type", "Use"]);
+  const zoning = grab(["Zoning", "Zone"]);
+  const neighborhood = grab(["Neighborhood", "NBHD"]);
+  const foundation = grab(["Foundation"]);
+
+  // Sale info
+  const saleDate = grab(["Sale Date"]);
+  const salePrice = dollarGrab(["Sale Price"]);
+  const bookPage = grab(["Book / Page", "Book/Page", "Book \\/ Page"]);
+
+  // Building
+  const buildingGross = grab(["Building Gross", "Gross.*sqft"]);
+  const livingArea = grab(["Living Area", "Living.*sqft"]);
+  const buildingStyle = grab(["Building Style", "Style"]);
+  const buildingCondition = grab(["Building Condition", "Condition"]);
+  const totalRooms = grab(["Number of Rooms", "Rooms"]);
+  const bedrooms = grab(["Number of Bedrooms", "Bedrooms"]);
+  const totalBaths = grab(["Number of Bathrooms", "Bathrooms", "Baths"]);
+  const stories = grab(["Stories"]);
+  const roofStructure = grab(["Roof Structure", "Roof"]);
+  const exteriorWall = grab(["Primary Exterior", "Exterior Wall", "Exterior"]);
+  const heating = grab(["Heating/Cooling Type", "Heating", "Heat Type"]);
+  const heatingFuel = grab(["Heating Fuel", "Fuel"]);
+  const cooling = grab(["AC_Type", "AC Type", "Cooling"]);
+  const yearBuilt = grab(["Year Built"]);
+  const garage = grab(["Garage"]);
+  const pool = grab(["Pool"]);
+  const fireplace = grab(["Fireplace", "Fireplaces"]);
+
+  owner = owner.replace(/[*#\[\]|]/g, "").replace(/<br\/?>/gi, " ").replace(/\s+/g, " ").trim();
+  if (!owner || owner.length < 2) return null;
+
+  const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner);
+  const fmt$ = (v: string) => (v ? `$${v}` : "");
+
+  return {
+    address: propertyAddress,
+    town,
+    owner,
+    coOwner,
+    ownerAddress,
+    isLLC,
+    parcelId,
+    mblu: mbl,
+    accountNumber,
+    buildingCount: "",
+    bookPage,
+    certificate: "",
+    instrument: "",
+    assessedValue: fmt$(totalAssessed),
+    totalAppraisal: fmt$(totalAppraised),
+    totalMarketValue: fmt$(totalAppraised),
+    improvementsValue: fmt$(bldgAppraised),
+    landValue: fmt$(landAppraised),
+    assessImprovements: fmt$(bldgAssessed),
+    assessLand: fmt$(landAssessed),
+    assessTotal: fmt$(totalAssessed),
+    salePrice: salePrice ? `$${salePrice}` : "",
+    saleDate,
+    lotSize: lotSize ? `${lotSize} acres` : "",
+    frontage: "",
+    depth: "",
+    useCode: "",
+    useDescription: landUse,
+    zoning,
+    neighborhood,
+    totalMarketLand: "",
+    landAppraisedValue: fmt$(landAppraised),
+    yearBuilt,
+    buildingStyle,
+    model: "",
+    stories,
+    livingArea: livingArea ? `${livingArea} sq ft` : "",
+    replacementCost: "",
+    buildingPercentGood: "",
+    occupancy: "",
+    totalRooms,
+    bedrooms,
+    totalBaths,
+    halfBaths: "",
+    totalXtraFixtures: "",
+    bathStyle: "",
+    kitchenStyle: "",
+    interiorCondition: buildingCondition,
+    finBsmntArea: "",
+    finBsmntQual: "",
+    grade: "",
+    exteriorWall,
+    roofStructure,
+    roofCover: "",
+    interiorWall: "",
+    flooring: "",
+    heating,
+    heatingFuel,
+    cooling,
+    buildingPhoto: "",
+    garage,
+    pool,
+    fireplace,
+    foundation,
+    taxAmount: "",
+    ownershipHistory: [] as { owner: string; salePrice: string; bookPage: string; saleDate: string }[],
+    subAreas: [] as { code: string; description: string; grossArea: string; livingArea: string }[],
+    valuationHistory: [] as { year: string; improvements: string; land: string; total: string }[],
+    propertyCardUrl: "",
+    summaryCardUrl: "",
+    llcDetails: undefined as any,
+  };
 }
 
 // ========== QDS SCRAPING (Avon etc.) ==========
