@@ -47,6 +47,19 @@ function getAddressVariants(address: string): string[] {
   return [...new Set(variants)];
 }
 
+// Verify extracted address matches the searched address (prevent wrong-property results)
+function isAddressMatch(extractedAddr: string, searchAddr: string, houseNum: string): boolean {
+  if (!extractedAddr) return true; // No address to check = assume ok
+  const e = extractedAddr.toUpperCase().replace(/[^A-Z0-9\s]/g, ' ').trim();
+  const s = searchAddr.toUpperCase().replace(/[^A-Z0-9\s]/g, ' ').trim();
+  // Must contain the house number
+  if (houseNum && !e.includes(houseNum)) return false;
+  // Check if the street base name overlaps
+  const searchWords = s.split(/\s+/).filter(w => w.length > 2 && !/^(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY)$/.test(w));
+  const matchCount = searchWords.filter(w => e.includes(w)).length;
+  return matchCount >= Math.min(2, searchWords.length);
+
+
 // ========== PLATFORM TYPES ==========
 type Platform = 'vgs' | 'mapxpress' | 'qds' | 'act' | 'ias' | 'equality' | 'prc' | 'custom';
 
