@@ -81,8 +81,8 @@ const Index = () => {
       });
       if (error) throw error;
       if (data?.excel) {
-        const blob = base64ToBlob(data.excel, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        downloadBlob(blob, `${propertyData.owner.replace(/\s+/g, "_")}_property_info.xlsx`);
+        const blob = base64ToBlob(data.excel, "text/csv");
+        downloadBlob(blob, `${propertyData.owner.replace(/\s+/g, "_")}_property_info.csv`);
         toast({ title: "Success", description: "Property data exported to Excel." });
       }
     } catch (err) {
