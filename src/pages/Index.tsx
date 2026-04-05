@@ -110,7 +110,7 @@ const Index = () => {
 
       <footer className="relative border-t border-border/30">
         <div className="max-w-4xl mx-auto px-6 py-6 flex items-center justify-between text-xs text-muted-foreground/40">
-          <span>CT Property Lookup</span>
+          <span>Foyr</span>
           <span>Public records</span>
         </div>
       </footer>
