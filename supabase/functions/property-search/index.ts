@@ -514,7 +514,7 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        query: `"${houseNum} ${streetBase}" "${town}" CT property owner year built square feet assessment`,
+        query: `"${houseNum} ${streetBase}" "${town}" CT property owner assessment site:.gov OR site:.us OR site:vgsi.com OR site:actdatascout.com`,
         limit: 5,
       }),
     });
