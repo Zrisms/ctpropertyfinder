@@ -136,7 +136,7 @@ function isAddressMatch(extractedAddr: string, searchAddr: string, houseNum: str
 }
 
 // ========== PLATFORM TYPES ==========
-type Platform = "vgs" | "mapxpress" | "qds" | "act" | "ias" | "equality" | "prc" | "avon_gis" | "custom";
+type Platform = "vgs" | "mapxpress" | "qds" | "act" | "ias" | "equality" | "prc" | "avon_gis" | "arcgis_rest" | "custom";
 
 interface TownConfig {
   platform: Platform;
