@@ -557,39 +557,61 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
   try {
     console.log(`Scraping PRC for ${town} (code=${townCode})`);
 
-    // Strategy 1: Firecrawl web search (most reliable for ASP.NET sites)
-    const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: `"${address}" "${town}" CT property record card site:propertyrecordcards.com`, limit: 5 }),
+    // Parse address into number + street name
+    const addrMatch = address.match(/^(\d+)\s+(.+)$/i);
+    if (!addrMatch) {
+      return json({ success: false, error: `Could not parse address: ${address}`, searchUrl: baseUrl });
+    }
+    const houseNum = addrMatch[1];
+    const streetPart = addrMatch[2].toUpperCase().trim();
+
+    // Step 1: Fetch the search page HTML to get the street name options
+    console.log(`Fetching PRC page to find street names...`);
+    const pageResp = await fetch(baseUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
     });
-    if (searchResp.ok) {
-      const sData = await searchResp.json();
-      const results = sData.data || [];
-      console.log(`PRC search returned ${results.length} results`);
-      for (const result of results) {
-        const url = result.url || '';
-        const uidMatch = url.match(/uniqueid=(\d+)/i);
-        if (uidMatch && url.includes('propertyrecordcards.com')) {
-          const detailUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${uidMatch[1]}`;
-          console.log(`Found PRC detail: ${detailUrl}`);
-          const detailMd = await firecrawlScrape(apiKey, detailUrl);
-          if (detailMd) {
-            const extracted = extractPRCData(detailMd, address, town);
-            if (extracted) {
-              extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uidMatch[1]}`;
-              if (extracted.isLLC) {
-                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
-              }
-              return json({ success: true, property: extracted });
-            }
-          }
-        }
+    if (!pageResp.ok) {
+      console.error(`PRC page fetch failed: ${pageResp.status}`);
+      return json({ success: false, error: `Could not load ${town} property records.`, searchUrl: baseUrl });
+    }
+    const pageHtml = await pageResp.text();
+
+    // Extract street names from the <select> options
+    const streetRegex = /<option value="([^"]+)">[^<]+<\/option>/g;
+    const streets: string[] = [];
+    let sm;
+    while ((sm = streetRegex.exec(pageHtml)) !== null) {
+      if (sm[1] && sm[1].length > 1 && !['Apartment','Automotive','Church','Condos','Elderly','Entertainment','Farms/Barns','Industrial','Lodging','Marina','Office','Public Use','Residential','Restaurant','Retail','School','Special Use','Vacant Land'].includes(sm[1])) {
+        streets.push(sm[1]);
       }
     }
+    console.log(`Found ${streets.length} streets for ${town}`);
 
-    // Strategy 2: Firecrawl actions on PRC search form
-    console.log(`Trying PRC actions fallback`);
+    // Match user's street against the dropdown options
+    let matchedStreet = '';
+    // Try exact match first
+    matchedStreet = streets.find(s => s === streetPart) || '';
+    // Try without suffix abbreviation
+    if (!matchedStreet) {
+      const streetBase = streetPart.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, '').trim();
+      matchedStreet = streets.find(s => s.startsWith(streetBase)) || '';
+    }
+    // Try contains match
+    if (!matchedStreet) {
+      const streetWords = streetPart.split(/\s+/);
+      const mainWord = streetWords[0];
+      matchedStreet = streets.find(s => s.includes(mainWord)) || '';
+    }
+
+    if (!matchedStreet) {
+      console.log(`Street "${streetPart}" not found in ${town} PRC database`);
+      return json({ success: false, error: `Street "${streetPart}" not found in ${town}. Try the Property Record Cards database directly.`, searchUrl: baseUrl });
+    }
+    console.log(`Matched street: "${matchedStreet}"`);
+
+    // Step 2: Use Firecrawl actions to interact with the Chosen dropdown and search
+    // The PRC site uses jQuery Chosen plugin for street name dropdown
+    // We need to: 1) fill number, 2) open Chosen dropdown, 3) type to filter, 4) click match, 5) click search
     const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -599,9 +621,21 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
         waitFor: 3000,
         actions: [
           { type: 'wait', milliseconds: 2000 },
-          { type: 'click', selector: '#ContentPlaceHolder1_txtLocation' },
-          { type: 'write', text: address.replace(/\b(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL)\b/gi, '').trim() },
-          { type: 'click', selector: '#ContentPlaceHolder1_btnSearch' },
+          // Fill house number
+          { type: 'click', selector: '#MainContent_tbPropertySearchStreetNumber' },
+          { type: 'write', text: houseNum },
+          // Open the Chosen dropdown
+          { type: 'click', selector: '#MainContent_cbPropertySearchStreetName_chzn .chzn-single' },
+          { type: 'wait', milliseconds: 500 },
+          // Type in the Chosen search to filter
+          { type: 'click', selector: '#MainContent_cbPropertySearchStreetName_chzn .chzn-search input' },
+          { type: 'write', text: matchedStreet.substring(0, 8) },
+          { type: 'wait', milliseconds: 1000 },
+          // Click the first matching result
+          { type: 'click', selector: '#MainContent_cbPropertySearchStreetName_chzn .chzn-results .active-result' },
+          { type: 'wait', milliseconds: 500 },
+          // Click the search button
+          { type: 'click', selector: '#MainContent_btnPropertySearch' },
           { type: 'wait', milliseconds: 5000 },
         ],
       }),
@@ -614,13 +648,16 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
       const links = data.data?.links || data.links || [];
       const combined = html + markdown + JSON.stringify(links);
 
+      console.log(`PRC actions response length: md=${markdown.length}, html=${html.length}`);
+
+      // Look for uniqueid in the results
       const uniqueIdMatch = combined.match(/PropertyResults\.aspx\?towncode=\d+&(?:amp;)?uniqueid=(\d+)/i)
         || combined.match(/PrintPage\.aspx\?towncode=\d+&(?:amp;)?uniqueid=(\d+)/i)
         || combined.match(/uniqueid=(\d+)/i);
 
       if (uniqueIdMatch) {
         const detailUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${uniqueIdMatch[1]}`;
-        console.log(`Found PRC via actions: ${detailUrl}`);
+        console.log(`Found PRC property: ${detailUrl}`);
         const detailMd = await firecrawlScrape(apiKey, detailUrl);
         if (detailMd) {
           const extracted = extractPRCData(detailMd, address, town);
@@ -634,7 +671,8 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
         }
       }
 
-      if (markdown.includes('Parcel Information') || markdown.includes('Owner')) {
+      // If we got results table but no link, try parsing table for the right row
+      if (markdown.includes('Parcel Information') || markdown.includes('Owner') || markdown.includes('Street Name')) {
         const extracted = extractPRCData(markdown, address, town);
         if (extracted) {
           extracted.propertyCardUrl = baseUrl;
@@ -642,6 +680,36 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
             try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
           }
           return json({ success: true, property: extracted });
+        }
+      }
+    }
+
+    // Strategy 2: Firecrawl web search fallback
+    console.log(`Trying PRC web search fallback...`);
+    const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: `"${houseNum}" "${matchedStreet}" "${town}" CT property record card site:propertyrecordcards.com`, limit: 5 }),
+    });
+    if (searchResp.ok) {
+      const sData = await searchResp.json();
+      const results = sData.data || [];
+      for (const result of results) {
+        const url = result.url || '';
+        const uidMatch = url.match(/uniqueid=(\d+)/i);
+        if (uidMatch && url.includes('propertyrecordcards.com')) {
+          const detailUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${uidMatch[1]}`;
+          const detailMd = await firecrawlScrape(apiKey, detailUrl);
+          if (detailMd) {
+            const extracted = extractPRCData(detailMd, address, town);
+            if (extracted) {
+              extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uidMatch[1]}`;
+              if (extracted.isLLC) {
+                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+              }
+              return json({ success: true, property: extracted });
+            }
+          }
         }
       }
     }
@@ -677,17 +745,25 @@ function extractPRCData(markdown: string, address: string, town: string) {
   const totalRow = text.match(/\|\s*Total\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*\|/i);
   if (totalRow) { totalAppraised = totalRow[1]; totalAssessed = totalRow[2]; }
 
-  // Owner from "Owner's Data" cell (uses <br> separators)
+  // Owner from "Owner's Data" cell - format: "| NAME<br>ADDRESS<br>CITY, ST ZIP |"
   let owner = '', coOwner = '', ownerAddress = '';
-  const ownerMatch = text.match(/Owner'?s?\s*Data[\s|]*\n?\|?\s*([^|]+)\|/i);
+  const ownerMatch = text.match(/Owner'?s?\s*Data\s*\|[\s\n]*\|[\s-]*\|[\s\n]*\|\s*([^|]+)\|/i);
   if (ownerMatch) {
-    const parts = ownerMatch[1].replace(/<br\/?>/gi, '\n').split('\n').map(s => s.trim()).filter(Boolean);
+    const raw = ownerMatch[1].replace(/<br\s*\/?>/gi, '\n').trim();
+    const parts = raw.split('\n').map(s => s.trim()).filter(Boolean);
     owner = parts[0] || '';
+    // Check if second line looks like a co-owner (contains & or name-like pattern)
     if (parts.length > 2) {
-      coOwner = parts[1] || '';
-      ownerAddress = parts.slice(2).join(', ');
-    } else {
       ownerAddress = parts.slice(1).join(', ');
+    } else if (parts.length === 2) {
+      ownerAddress = parts[1];
+    }
+  }
+  // Fallback: try simpler pattern
+  if (!owner || owner === '---') {
+    const simpleFallback = text.match(/\|\s*([A-Z][A-Z\s&,.']+?)<br/i);
+    if (simpleFallback) {
+      owner = simpleFallback[1].trim();
     }
   }
 
