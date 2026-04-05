@@ -430,7 +430,7 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
       const validUrls = results
         .map((r: any) => r.url as string)
         .filter((u: string) => u && !skipSites.test(u))
-        .slice(0, 4); // Scrape up to 4 sources
+        .slice(0, 3); // Scrape up to 3 sources in parallel
 
       // The comprehensive extraction prompt for insurance-grade data
       const extractPrompt = `Extract ALL available property record data for the property at ${address}, ${town}, CT. This is for insurance underwriting — be thorough. Extract every field you can find. If a field is not available, return empty string "".`;
