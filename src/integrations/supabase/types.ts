@@ -14,30 +14,7 @@ export type Database = {
   }
   public: {
     Tables: {
-      property_cache: {
-        Row: {
-          address: string
-          id: string
-          property_data: Json
-          searched_at: string
-          town: string
-        }
-        Insert: {
-          address: string
-          id?: string
-          property_data: Json
-          searched_at?: string
-          town: string
-        }
-        Update: {
-          address?: string
-          id?: string
-          property_data?: Json
-          searched_at?: string
-          town?: string
-        }
-        Relationships: []
-      }
+      [_ in never]: never
     }
     Views: {
       [_ in never]: never
