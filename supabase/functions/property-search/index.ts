@@ -770,7 +770,7 @@ async function universalPropertySearch(apiKey: string, address: string, lookupTo
     if (searchResp.ok) {
       const searchData = await searchResp.json();
       const results = searchData.data || [];
-      const skipSites = /zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch|neighborwho|blockshopper/i;
+      const skipSites = BLOCKED_SITES;
 
       for (const result of results) {
         const url = result.url || '';
