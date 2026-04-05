@@ -1781,6 +1781,13 @@ function extractVGSData(markdown: string, address: string, town: string) {
   const finBsmntQual = tableGrab("Fin Bsmnt Qual");
   const nbhdCode = tableGrab("NBHD Code");
 
+  // Additional building features
+  const garage = tableGrab("Garage") || tableGrab("Garage Type") || tableGrab("Garage Capacity");
+  const pool = tableGrab("Pool") || tableGrab("Pool Type");
+  const fireplace = tableGrab("Fireplace") || tableGrab("# Fireplaces") || tableGrab("Fireplaces");
+  const foundation = tableGrab("Foundation") || tableGrab("Foundation Type");
+  const taxAmount = tableGrab("Tax Amount") || tableGrab("Total Tax") || tableGrab("Annual Tax") || dollarGrab("Tax\\s*Amount") || dollarGrab("Total\\s*Tax");
+
   const subAreas: { code: string; description: string; grossArea: string; livingArea: string }[] = [];
   const subAreaSection = text.match(/\| Code \| Description \| Gross[\s\S]*?\n([\s\S]*?)(?:\n\n|Building Sub-Areas)/i);
   if (subAreaSection) {
