@@ -1,13 +1,19 @@
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { Search, MapPin, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { CT_TOWNS } from "@/lib/ct-towns";
-import { COMMON_STREET_NAMES, STREET_SUFFIXES } from "@/lib/ct-streets";
+import { supabase } from "@/integrations/supabase/client";
 
 interface AddressSearchProps {
   onSearch: (address: string, town: string) => void;
   isLoading: boolean;
+}
+
+interface AddressSuggestion {
+  street: string;
+  town: string;
+  display: string;
 }
 
 export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
@@ -17,10 +23,11 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
   const [showAddressSuggestions, setShowAddressSuggestions] = useState(false);
   const [activeTownIndex, setActiveTownIndex] = useState(-1);
   const [activeAddressIndex, setActiveAddressIndex] = useState(-1);
-  const townRef = useRef<HTMLInputElement>(null);
-  const addressRef = useRef<HTMLInputElement>(null);
+  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
+  const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false);
+  const debounceRef = useRef<number | null>(null);
 
-  // Fuzzy match towns - supports contains, not just startsWith
+  // Fuzzy match towns
   const filteredTowns = useMemo(() => {
     if (!town) return CT_TOWNS.slice(0, 8);
     const q = town.toLowerCase();
@@ -31,41 +38,36 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
     return [...starts, ...contains].slice(0, 8);
   }, [town]);
 
-  // Street name suggestions based on partial input
-  const addressSuggestions = useMemo(() => {
-    if (!address) return [];
-    const parts = address.trim().split(/\s+/);
-    
-    const hasNumber = /^\d+/.test(parts[0]);
+  // Debounced address autocomplete via Nominatim
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
 
-    // Just a house number typed (e.g. "25") — show popular street names
-    if (parts.length === 1 && hasNumber) {
-      return COMMON_STREET_NAMES.slice(0, 8).map((s) => `${parts[0]} ${s}`);
+    if (address.length < 3) {
+      setAddressSuggestions([]);
+      return;
     }
 
-    if (parts.length < 2) return [];
-
-    const lastWord = parts[parts.length - 1].toLowerCase();
-    const prefix = parts.slice(0, -1).join(" ");
-
-    if (hasNumber && parts.length === 2) {
-      const matches = COMMON_STREET_NAMES.filter((s) =>
-        s.toLowerCase().startsWith(lastWord)
-      ).slice(0, 8);
-      return matches.map((m) => `${prefix} ${m}`);
-    }
-
-    if (hasNumber && parts.length >= 3) {
-      const suffixMatches = STREET_SUFFIXES.filter((s) =>
-        s.toLowerCase().startsWith(lastWord)
-      ).slice(0, 8);
-      if (suffixMatches.length > 0) {
-        return suffixMatches.map((s) => `${prefix} ${s}`);
+    debounceRef.current = window.setTimeout(async () => {
+      setIsFetchingSuggestions(true);
+      try {
+        const query = town ? `${address}, ${town}` : address;
+        const { data, error } = await supabase.functions.invoke("address-autocomplete", {
+          body: { query },
+        });
+        if (!error && data?.suggestions) {
+          setAddressSuggestions(data.suggestions);
+        }
+      } catch {
+        // silent fail
+      } finally {
+        setIsFetchingSuggestions(false);
       }
-    }
+    }, 350);
 
-    return [];
-  }, [address]);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [address, town]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,7 +108,9 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
         setActiveAddressIndex((i) => Math.max(i - 1, 0));
       } else if (e.key === "Enter" && activeAddressIndex >= 0) {
         e.preventDefault();
-        setAddress(addressSuggestions[activeAddressIndex]);
+        const s = addressSuggestions[activeAddressIndex];
+        setAddress(s.street);
+        setTown(s.town);
         setShowAddressSuggestions(false);
         setActiveAddressIndex(-1);
       } else if (e.key === "Escape") {
@@ -118,11 +122,13 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
 
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-2xl mx-auto space-y-4">
-      {/* Address input with street suggestions */}
+      {/* Address input with live suggestions */}
       <div className="relative">
         <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+        {isFetchingSuggestions && (
+          <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground animate-spin" />
+        )}
         <Input
-          ref={addressRef}
           type="text"
           placeholder="Enter street address (e.g. 123 Main St)"
           value={address}
@@ -140,18 +146,20 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
           <div className="absolute z-10 mt-1 w-full bg-card border border-border rounded-lg shadow-lg overflow-hidden max-h-48 overflow-y-auto">
             {addressSuggestions.map((s, i) => (
               <button
-                key={s}
+                key={`${s.street}-${s.town}-${i}`}
                 type="button"
                 className={`w-full text-left px-4 py-2.5 transition-colors text-sm ${
                   i === activeAddressIndex ? "bg-accent text-accent-foreground" : "hover:bg-muted"
                 }`}
                 onClick={() => {
-                  setAddress(s);
+                  setAddress(s.street);
+                  setTown(s.town);
                   setShowAddressSuggestions(false);
                   setActiveAddressIndex(-1);
                 }}
               >
-                {s}
+                <span className="font-medium">{s.street}</span>
+                <span className="text-muted-foreground"> — {s.town}, CT</span>
               </button>
             ))}
           </div>
@@ -162,7 +170,6 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
       <div className="relative">
         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
         <Input
-          ref={townRef}
           type="text"
           placeholder="Town (e.g. Hartford)"
           value={town}
