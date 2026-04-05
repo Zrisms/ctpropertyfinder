@@ -391,17 +391,17 @@ Deno.serve(async (req) => {
     }
 
     if (!config) {
-      console.log(`Town "${town}" not in DB, trying universal fallback`);
-      return await universalPropertySearch(apiKey, normalizedAddress, town);
+      console.log(`Town "${town}" not in DB — no scraper available`);
+      return json({ success: false, error: `No assessor database configured for ${town}, CT.` });
     }
 
-    // For 'custom' platform towns (no real scraper), skip directly to smart extract
+    // For 'custom' platform towns (no real scraper), return not found with URL
     if (config.platform === 'custom') {
-      console.log(`Custom platform for ${town}, going straight to smart extract`);
-      return await smartExtractProperty(apiKey, normalizedAddress, lookupTown, config.url, town);
+      console.log(`Custom platform for ${town}, no direct scraper`);
+      return json({ success: false, error: `No direct scraper for ${town}, CT.`, searchUrl: config.url });
     }
 
-    // Try platform-specific scraper first using canonical lookup town
+    // Try platform-specific scraper using canonical lookup town
     let result: Response;
     try {
       switch (config.platform) {
@@ -446,12 +446,16 @@ Deno.serve(async (req) => {
         }
         return json(body);
       }
-      console.log(`Platform ${config.platform} failed for ${town}, trying universal fallback...`);
+      console.log(`Platform ${config.platform} failed for ${town}`);
     } catch {
-      console.log(`Could not parse platform response, trying universal fallback...`);
+      console.log(`Could not parse platform response`);
     }
 
-    return await universalPropertySearch(apiKey, normalizedAddress, lookupTown, config.url, town);
+    return json({
+      success: false,
+      error: `Could not find property data for ${address} in ${town}. Try the assessor database directly.`,
+      searchUrl: config.url || '',
+    });
   } catch (error) {
     console.error("Error:", error);
     return json({ success: false, error: error instanceof Error ? error.message : "Search failed" }, 500);
