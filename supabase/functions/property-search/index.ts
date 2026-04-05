@@ -684,23 +684,21 @@ async function universalPropertySearch(apiKey: string, address: string, lookupTo
   // Strategy 1: Search official assessor sources (parallel queries with variants)
   const variants = getAddressVariants(address);
   const searchQueries = new Set<string>();
-  searchQueries.add(`"${houseNum} ${streetBase}" "${town}" CT property vgsi.com OR propertyrecordcards.com`);
-  searchQueries.add(`"${houseNum} ${streetBase}" "${town}" CT assessor property owner assessment`);
-  // Add variant-based queries
-  for (const v of variants.slice(0, 3)) {
+  searchQueries.add(`"${houseNum} ${streetBase}" "${lookupTown}" CT property vgsi.com OR propertyrecordcards.com`);
+  searchQueries.add(`"${houseNum} ${streetBase}" "${lookupTown}" CT assessor property owner assessment`);
+  for (const v of variants.slice(0, 2)) {
     const vParts = v.match(/^(\d+)\s+(.+)$/i);
-    if (vParts) searchQueries.add(`"${vParts[1]} ${vParts[2]}" "${town}" CT property`);
+    if (vParts) searchQueries.add(`"${vParts[1]} ${vParts[2]}" "${lookupTown}" CT property`);
   }
-  const uniqueSearchQueries = [...searchQueries].slice(0, 4);
+  const uniqueSearchQueries = [...searchQueries].slice(0, 3);
 
-  // Fire both searches in parallel
   const allSearchResults = await Promise.all(uniqueSearchQueries.map(async (query) => {
     try {
       console.log(`Universal search: ${query}`);
       const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, limit: 5 }),
+        body: JSON.stringify({ query, limit: 4 }),
       });
       if (!searchResp.ok) return [];
       const searchData = await searchResp.json();
@@ -734,7 +732,7 @@ async function universalPropertySearch(apiKey: string, address: string, lookupTo
       }
 
       if (/assessor|propcard|property.*record|gis\.|cama|revaluation/i.test(url) ||
-          url.toLowerCase().includes(town.toLowerCase().replace(/\s+/g, ''))) {
+          url.toLowerCase().includes(lookupTown.replace(/\s+/g, ''))) {
         console.log(`Universal: trying page: ${url}`);
         const md = await firecrawlScrape(apiKey, url);
         if (md && md.length > 300) {
@@ -754,15 +752,14 @@ async function universalPropertySearch(apiKey: string, address: string, lookupTo
     }
   }
 
-  // Strategy 2: LLM-powered extraction from any property data source
   try {
-    console.log(`Strategy 2: smart extract for ${address}, ${town}`);
+    console.log(`Strategy 2: smart extract for ${address}, ${lookupTown}`);
     const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        query: `"${houseNum} ${streetBase}" "${town}" CT property owner year built square feet assessment`,
-        limit: 5,
+        query: `"${houseNum} ${streetBase}" "${lookupTown}" CT property owner year built square feet assessment`,
+        limit: 4,
       }),
     });
 
