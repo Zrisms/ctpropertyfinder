@@ -242,44 +242,152 @@ Deno.serve(async (req) => {
     const config = TOWN_DB[townLower];
 
     if (!config) {
-      return json({
-        success: false,
-        error: `${town}, CT is not recognized as a Connecticut town.`,
-        searchUrl: `https://www.google.com/search?q=${encodeURIComponent(`${town} CT property assessor database`)}`,
-      });
+      // Even unrecognized towns get the universal fallback
+      console.log(`Town "${town}" not in DB, trying universal fallback`);
+      return await universalPropertySearch(apiKey, normalizedAddress, town);
     }
 
-    switch (config.platform) {
-      case 'vgs':
-        return await scrapeVGS(apiKey, config.slug!, normalizedAddress, town);
-
-      case 'mapxpress':
-        return await scrapeMapXpress(apiKey, config.url!, normalizedAddress, town);
-
-      case 'qds':
-        return await scrapeQDS(apiKey, config.url!, normalizedAddress, town);
-
-      case 'act':
-        return await scrapeACTDataScout(apiKey, config.url!, normalizedAddress, town);
-
-      case 'ias':
-        return await scrapeIASCLT(apiKey, config.url!, normalizedAddress, town);
-
-      case 'prc':
-        return await scrapePRC(apiKey, config.townCode!, normalizedAddress, town);
-
-      case 'equality':
-        return await scrapeEqualityCama(apiKey, config.url!, normalizedAddress, town);
-
-      case 'custom':
-      default:
-        return await scrapeGenericWithFallback(apiKey, config.url!, normalizedAddress, town, config.label || `${town} Assessor`);
+    // Try platform-specific scraper first
+    let result: Response;
+    try {
+      switch (config.platform) {
+        case 'vgs':
+          result = await scrapeVGS(apiKey, config.slug!, normalizedAddress, town);
+          break;
+        case 'mapxpress':
+          result = await scrapeMapXpress(apiKey, config.url!, normalizedAddress, town);
+          break;
+        case 'qds':
+          result = await scrapeQDS(apiKey, config.url!, normalizedAddress, town);
+          break;
+        case 'act':
+          result = await scrapeACTDataScout(apiKey, config.url!, normalizedAddress, town);
+          break;
+        case 'ias':
+          result = await scrapeIASCLT(apiKey, config.url!, normalizedAddress, town);
+          break;
+        case 'prc':
+          result = await scrapePRC(apiKey, config.townCode!, normalizedAddress, town);
+          break;
+        case 'equality':
+          result = await scrapeEqualityCama(apiKey, config.url!, normalizedAddress, town);
+          break;
+        case 'custom':
+        default:
+          result = await scrapeGenericWithFallback(apiKey, config.url!, normalizedAddress, town, config.label || `${town} Assessor`);
+          break;
+      }
+    } catch (e) {
+      console.error(`Platform ${config.platform} threw:`, e);
+      result = json({ success: false });
     }
+
+    // Check if platform scraper succeeded — if not, try universal fallback
+    const cloned = result.clone();
+    try {
+      const body = await cloned.json();
+      if (body.success) return result;
+      console.log(`Platform ${config.platform} failed for ${town}, trying universal fallback...`);
+    } catch {
+      console.log(`Could not parse platform response, trying universal fallback...`);
+    }
+
+    return await universalPropertySearch(apiKey, normalizedAddress, town, config.url);
   } catch (error) {
     console.error("Error:", error);
     return json({ success: false, error: error instanceof Error ? error.message : "Search failed" }, 500);
   }
 });
+
+// ========== UNIVERSAL FALLBACK SEARCH ==========
+// Tries multiple web search strategies to find any CT property data
+async function universalPropertySearch(apiKey: string, address: string, town: string, fallbackUrl?: string) {
+  console.log(`Universal fallback search: ${address}, ${town}, CT`);
+
+  const addrParts = address.match(/^(\d+)\s+(.+)$/i);
+  const houseNum = addrParts?.[1] || '';
+  const streetFull = addrParts?.[2] || address;
+  const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, '').trim();
+
+  // Strategy 1: Search for VGS page (many CT towns are on VGS even if not in our DB)
+  const searchQueries = [
+    `"${houseNum} ${streetBase}" "${town}" CT property vgsi.com`,
+    `"${houseNum} ${streetBase}" "${town}" CT assessor property owner`,
+    `"${address}" "${town}" Connecticut property record card`,
+    `${houseNum} ${streetBase} ${town} CT property tax assessment owner`,
+  ];
+
+  for (const query of searchQueries) {
+    try {
+      console.log(`Universal search: ${query}`);
+      const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, limit: 5 }),
+      });
+
+      if (!searchResp.ok) continue;
+      const searchData = await searchResp.json();
+      const results = searchData.data || [];
+
+      for (const result of results) {
+        const url = result.url || '';
+        // Skip real estate listing sites
+        if (/zillow|realtor|trulia|redfin|homes\.com|movoto|homesnap/i.test(url)) continue;
+
+        // VGS parcel page
+        if (url.includes('vgsi.com') && url.includes('Parcel.aspx')) {
+          console.log(`Universal: found VGS parcel: ${url}`);
+          return await scrapePropertyDetail(apiKey, url, address, town);
+        }
+
+        // PRC page
+        if (url.includes('propertyrecordcards.com') && url.includes('uniqueid=')) {
+          console.log(`Universal: found PRC page: ${url}`);
+          const md = await firecrawlScrape(apiKey, url);
+          if (md) {
+            const extracted = extractPRCData(md, address, town) || extractGenericPropertyData(md, address, town);
+            if (extracted) {
+              extracted.propertyCardUrl = url;
+              if (extracted.isLLC) {
+                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+              }
+              return json({ success: true, property: extracted });
+            }
+          }
+        }
+
+        // Any assessor/property page
+        if (/assessor|propcard|property.*record|gis\.|cama|revaluation/i.test(url) ||
+            url.toLowerCase().includes(town.toLowerCase().replace(/\s+/g, ''))) {
+          console.log(`Universal: trying page: ${url}`);
+          const md = await firecrawlScrape(apiKey, url);
+          if (md && md.length > 300) {
+            const extracted = extractVGSData(md, address, town) ||
+                              extractQDSCardData(md, address, town) ||
+                              extractPRCData(md, address, town) ||
+                              extractGenericPropertyData(md, address, town);
+            if (extracted) {
+              extracted.propertyCardUrl = url;
+              if (extracted.isLLC) {
+                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+              }
+              return json({ success: true, property: extracted });
+            }
+          }
+        }
+      }
+    } catch (e) { console.error("Universal search error:", e); }
+  }
+
+  // Final fallback URL
+  const searchUrl = fallbackUrl || `https://www.google.com/search?q=${encodeURIComponent(`${address} ${town} CT property assessor`)}`;
+  return json({
+    success: false,
+    error: `Could not find property data for ${address} in ${town}. Try searching the assessor database directly.`,
+    searchUrl,
+  });
+}
 
 // ========== VGS SCRAPING ==========
 async function scrapeVGS(apiKey: string, slug: string, address: string, town: string) {
