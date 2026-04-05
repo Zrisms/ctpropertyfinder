@@ -49,26 +49,35 @@ const Index = () => {
         <div className="orb-3 absolute -bottom-40 left-1/3 w-[450px] h-[450px] rounded-full bg-accent/6 blur-[140px]" />
       </div>
 
-      {/* Header */}
-      <header className="relative pt-24 pb-32 px-6">
+      {/* Header — compact when results showing */}
+      <header className={`relative px-6 transition-all duration-500 ${propertyData ? 'pt-8 pb-6' : 'pt-24 pb-32'}`}>
         <div className="max-w-3xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass text-xs font-medium text-primary mb-8 animate-fade-in" style={{ opacity: 0 }}>
-            <Sparkles className="h-3.5 w-3.5" />
-            Connecticut Property Intelligence
-          </div>
-          <h1 className="text-5xl md:text-6xl lg:text-7xl font-semibold tracking-tight leading-[1.05] mb-6 animate-fade-in" style={{ animationDelay: '0.1s', opacity: 0 }}>
-            <span className="text-shimmer">Property Lookup</span>
-          </h1>
-          <p className="text-lg md:text-xl text-muted-foreground font-light leading-relaxed max-w-lg mx-auto animate-fade-in" style={{ animationDelay: '0.2s', opacity: 0 }}>
-            Owners, valuations, building details, and LLC records — all in one search.
-          </p>
+          {!propertyData && (
+            <>
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass text-xs font-medium text-primary mb-8 animate-fade-in" style={{ opacity: 0 }}>
+                <Sparkles className="h-3.5 w-3.5" />
+                Connecticut Property Intelligence
+              </div>
+              <h1 className="text-5xl md:text-6xl lg:text-7xl font-semibold tracking-tight leading-[1.05] mb-6 animate-fade-in" style={{ animationDelay: '0.1s', opacity: 0 }}>
+                <span className="text-shimmer">Property Lookup</span>
+              </h1>
+              <p className="text-lg md:text-xl text-muted-foreground font-light leading-relaxed max-w-lg mx-auto animate-fade-in" style={{ animationDelay: '0.2s', opacity: 0 }}>
+                Owners, valuations, building details, and LLC records — all in one search.
+              </p>
+            </>
+          )}
+          {propertyData && (
+            <h1 className="text-2xl font-semibold tracking-tight">
+              <span className="text-shimmer">Property Lookup</span>
+            </h1>
+          )}
         </div>
       </header>
 
       {/* Search */}
-      <main className="relative px-6 -mt-12 z-10">
-        <div className="max-w-xl mx-auto animate-fade-in" style={{ animationDelay: '0.3s', opacity: 0 }}>
-          <div className="glass-elevated rainbow-border rounded-3xl p-8 glow-blue">
+      <main className={`relative px-6 z-10 ${propertyData ? '' : '-mt-12'}`}>
+        <div className={`mx-auto animate-fade-in ${propertyData ? 'max-w-4xl' : 'max-w-xl'}`} style={{ animationDelay: '0.3s', opacity: 0 }}>
+          <div className={`glass-elevated rainbow-border rounded-3xl glow-blue ${propertyData ? 'p-4' : 'p-8'}`}>
             <AddressSearch onSearch={handleSearch} isLoading={isLoading} />
           </div>
         </div>
