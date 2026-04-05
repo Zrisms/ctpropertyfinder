@@ -1588,12 +1588,11 @@ async function scrapeGenericWithFallback(
 // ========== SHARED HELPERS ==========
 async function scrapePropertyDetail(apiKey: string, url: string, address: string, town: string) {
   console.log(`Scraping property detail: ${url}`);
-  const detailMd = await firecrawlScrape(apiKey, url);
+  const detailMd = await firecrawlScrapeFullPage(apiKey, url);
   if (detailMd) {
     const extracted = extractVGSData(detailMd, address, town);
     if (extracted && extracted.owner && !extracted.owner.includes("Enter an")) {
       extracted.propertyCardUrl = url;
-      // LLC lookup removed - handled separately by frontend
       return json({ success: true, property: extracted });
     }
   }
