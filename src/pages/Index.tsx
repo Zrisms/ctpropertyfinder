@@ -20,19 +20,32 @@ function SearchProgress({ isLoading }: { isLoading: boolean }) {
 
   useEffect(() => {
     if (!isLoading) { setProgress(0); setStepIndex(0); return; }
-    setProgress(5);
+    // Psychology: jump to ~28% instantly (anchoring bias — feels like work already done)
+    setProgress(28);
     setStepIndex(0);
+    let tick = 0;
     intervalRef.current = window.setInterval(() => {
+      tick++;
       setProgress(p => {
-        const next = p + (Math.random() * 6 + 2);
-        if (next >= 92) { clearInterval(intervalRef.current!); return 92; }
+        // Fast start, logarithmic slowdown (power bias — early speed creates momentum feeling)
+        // First 60% flies by, last 30% crawls = perceived speed increase
+        const remaining = 95 - p;
+        const speed = tick < 4
+          ? Math.random() * 12 + 8   // early: big jumps (8-20%)
+          : tick < 8
+            ? Math.random() * 5 + 2  // mid: moderate (2-7%)
+            : Math.random() * 1.5 + 0.3; // late: tiny crawl (0.3-1.8%)
+        const next = p + Math.min(speed, remaining * 0.4);
+        if (next >= 95) { clearInterval(intervalRef.current!); return 95; }
         return next;
       });
       setStepIndex(i => {
-        const next = i + (Math.random() > 0.5 ? 1 : 0);
-        return Math.min(next, SEARCH_STEPS.length - 1);
+        // Steps advance faster early — gives sense of rapid progress
+        if (tick <= 2) return Math.min(i + 1, SEARCH_STEPS.length - 1);
+        if (Math.random() > 0.6) return Math.min(i + 1, SEARCH_STEPS.length - 1);
+        return i;
       });
-    }, 1200);
+    }, 800); // Faster tick rate (800ms vs 1200ms) — more frequent updates feel faster
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [isLoading]);
 
