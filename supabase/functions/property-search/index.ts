@@ -618,41 +618,7 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
 
   console.log(`VGS: ${allVariants.length} address variants, ${searchTexts.size} search texts`);
 
-  // Strategy 1: Firecrawl web search to find the property page (parallel queries with variants)
-  try {
-    console.log(`Searching for property via Firecrawl search`);
-    const queries = new Set<string>();
-    queries.add(`"${address}" "${town}" CT property vgsi.com`);
-    queries.add(`"${houseNum} ${streetBase}" "${town}" CT vgsi.com`);
-    // Add variant-based queries (limit to 4 total to stay fast)
-    for (const v of allVariants.slice(0, 3)) {
-      queries.add(`"${v}" "${town}" CT vgsi.com`);
-    }
-    const uniqueQueries = [...queries].slice(0, 4);
-
-    const searchResults = await Promise.all(uniqueQueries.map(async (query) => {
-      const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, limit: 5 }),
-      });
-      if (!searchResp.ok) return [];
-      const searchData = await searchResp.json();
-      return searchData.data || [];
-    }));
-
-    for (const results of searchResults) {
-      for (const result of results) {
-        const url = result.url || '';
-        if (url.includes('vgsi.com') && url.includes('Parcel.aspx')) {
-          console.log(`Found VGS parcel page: ${url}`);
-          return await scrapePropertyDetail(apiKey, url, address, town);
-        }
-      }
-    }
-  } catch (e) { console.error("Search error:", e); }
-
-  // Strategy 2: Use Firecrawl actions on VGS search page — try each search text variant
+  // Use Firecrawl actions on VGS search page — try each search text variant
   const searchTextArr = [...searchTexts];
   for (const searchText of searchTextArr) {
     try {
