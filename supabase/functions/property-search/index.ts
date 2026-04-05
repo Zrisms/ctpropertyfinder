@@ -427,7 +427,9 @@ function extractVGSData(markdown: string, address: string, town: string) {
   const frontage = tableGrab('Frontage');
   const depth = tableGrab('Depth');
   const useCode = tableGrab('Use Code');
-  const useDescription = tableGrab('Description');
+  // Use Description comes right after Use Code in Land Use section
+  const useDescMatch = text.match(/Use Code\s*\|\s*\d+[\s\S]*?\|\s*Description\s*\|\s*([^|]*?)\s*\|/i);
+  const useDescription = useDescMatch?.[1]?.trim() || '';
   const zoning = tableGrab('Zone');
   const neighborhood = tableGrab('Neighborhood') || tableGrab('NBHD Code');
   const totalMarketLand = tableGrab('Total Market Land');
