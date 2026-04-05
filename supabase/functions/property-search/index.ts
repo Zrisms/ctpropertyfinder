@@ -300,12 +300,8 @@ const TOWN_DB: Record<string, TownConfig> = {
   woodbridge: { platform: "prc", townCode: "167" },
   woodbury: { platform: "prc", townCode: "168" },
 
-  // === Avon (town assessor website) ===
-  avon: {
-    platform: "custom",
-    url: "https://www.avonct.gov/departments/assessor/index.php",
-    label: "Town of Avon Assessor",
-  },
+  // === Avon (Tighebond ArcGIS REST API — direct JSON, no scraping) ===
+  avon: { platform: "avon_gis", slug: "avon" },
 
   // === IAS-CLT Towns ===
   bethel: { platform: "ias", url: "http://bethel.ias-clt.com/", label: "Bethel Assessor" },
