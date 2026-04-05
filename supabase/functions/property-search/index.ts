@@ -701,7 +701,6 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
   const searchUrl = `https://gis.vgsi.com/${slug}/Search.aspx`;
   const baseUrl = `https://gis.vgsi.com/${slug}`;
 
-  // Parse address to get number and street base (without suffix like DR/RD/ST)
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
   const houseNum = addrParts?.[1] || "";
   const streetFull = addrParts?.[2] || address;
@@ -712,9 +711,7 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
     )
     .trim();
 
-  // Generate all address variants (PARK → PK, PRK, etc.)
   const allVariants = getAddressVariants(address);
-  // Also generate search texts for VGS autocomplete (number + street variants)
   const searchTexts = new Set<string>();
   searchTexts.add(houseNum ? `${houseNum} ${streetBase.toLowerCase()}` : address.toLowerCase());
   for (const v of allVariants) {
@@ -724,7 +721,6 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
 
   console.log(`VGS: ${allVariants.length} address variants, ${searchTexts.size} search texts`);
 
-  // Use Firecrawl actions on VGS search page — try each search text variant
   const searchTextArr = [...searchTexts];
   for (const searchText of searchTextArr) {
     try {
@@ -757,6 +753,68 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
         const html = data.data?.html || data.html || "";
         const finalUrl = data.data?.metadata?.url || data.data?.metadata?.sourceURL || "";
 
+        // Extract PID from URL or page content
+        let pid = "";
+        const pidFromUrl = finalUrl.match(/[Pp]id=(\d+)/);
+        if (pidFromUrl) pid = pidFromUrl[1];
+        if (!pid) {
+          const pidFromContent = (html + markdown).match(/Parcel\.aspx\?[Pp]id=(\d+)/);
+          if (pidFromContent) pid = pidFromContent[1];
+        }
+
+        if (pid) {
+          // STEP 1: Scrape the full property card print view (shows ALL data on one page)
+          const printUrl = `${baseUrl}/Parcel.aspx?Pid=${pid}`;
+          console.log(`VGS: Scraping full property detail: ${printUrl}`);
+          const fullMd = await firecrawlScrapeFullPage(apiKey, printUrl);
+          if (fullMd) {
+            const extracted = extractVGSData(fullMd, address, town);
+            if (extracted && extracted.owner && !extracted.owner.includes("Enter an")) {
+              extracted.propertyCardUrl = printUrl;
+
+              // STEP 2: Try to get additional data from tabbed sections
+              // Scrape with tab clicks to get Building, Land, and Ownership History tabs
+              try {
+                const tabResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    url: printUrl,
+                    formats: ["markdown"],
+                    onlyMainContent: false,
+                    waitFor: 1000,
+                    actions: [
+                      { type: "wait", milliseconds: 500 },
+                      // Click "Building" tab
+                      { type: "click", selector: 'a[href*="Building"], a:has-text("Building Information"), #tabBuilding, [data-tab="building"]' },
+                      { type: "wait", milliseconds: 1500 },
+                    ],
+                  }),
+                });
+                if (tabResp.ok) {
+                  const tabData = await tabResp.json();
+                  const tabMd = tabData.data?.markdown || tabData.markdown || "";
+                  if (tabMd.length > 200) {
+                    // Merge any missing building fields from tab data
+                    const tabExtracted = extractVGSData(tabMd, address, town);
+                    if (tabExtracted) {
+                      mergeVGSFields(extracted, tabExtracted);
+                    }
+                  }
+                }
+              } catch (e) {
+                console.log("Tab scraping optional, continuing:", e);
+              }
+
+              return json({ success: true, property: extracted });
+            }
+          }
+
+          // Fallback: scrape the basic detail page
+          return await scrapePropertyDetail(apiKey, `${baseUrl}/Parcel.aspx?Pid=${pid}`, address, town);
+        }
+
+        // If we landed on the detail page directly
         if (
           finalUrl.includes("Parcel.aspx") ||
           markdown.includes("Parcel ID") ||
@@ -765,14 +823,8 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
           const extracted = extractVGSData(markdown, address, town);
           if (extracted && extracted.owner && !extracted.owner.includes("Enter an")) {
             extracted.propertyCardUrl = finalUrl;
-// LLC lookup removed - handled separately by frontend
             return json({ success: true, property: extracted });
           }
-        }
-
-        const pidMatch = (html + markdown).match(/Parcel\.aspx\?[Pp]id=(\d+)/);
-        if (pidMatch) {
-          return await scrapePropertyDetail(apiKey, `${baseUrl}/Parcel.aspx?Pid=${pidMatch[1]}`, address, town);
         }
       }
     } catch (e) {
@@ -785,6 +837,30 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
     error: `Could not find property in ${town}. Try the assessor database directly.`,
     searchUrl,
   });
+}
+
+// Merge missing fields from secondary VGS scrape into primary
+function mergeVGSFields(primary: any, secondary: any) {
+  const fields = [
+    'yearBuilt', 'buildingStyle', 'stories', 'livingArea', 'totalRooms', 'bedrooms',
+    'totalBaths', 'halfBaths', 'grade', 'exteriorWall', 'roofStructure', 'roofCover',
+    'interiorWall', 'flooring', 'heating', 'heatingFuel', 'cooling', 'garage', 'pool',
+    'fireplace', 'foundation', 'finBsmntArea', 'finBsmntQual', 'bathStyle', 'kitchenStyle',
+    'interiorCondition', 'replacementCost', 'buildingPercentGood', 'buildingPhoto',
+    'occupancy', 'totalXtraFixtures', 'model',
+  ];
+  for (const f of fields) {
+    if (!primary[f] && secondary[f]) primary[f] = secondary[f];
+  }
+  if ((!primary.subAreas || primary.subAreas.length === 0) && secondary.subAreas?.length > 0) {
+    primary.subAreas = secondary.subAreas;
+  }
+  if ((!primary.ownershipHistory || primary.ownershipHistory.length === 0) && secondary.ownershipHistory?.length > 0) {
+    primary.ownershipHistory = secondary.ownershipHistory;
+  }
+  if ((!primary.valuationHistory || primary.valuationHistory.length === 0) && secondary.valuationHistory?.length > 0) {
+    primary.valuationHistory = secondary.valuationHistory;
+  }
 }
 
 // ========== MAPXPRESS SCRAPING ==========
