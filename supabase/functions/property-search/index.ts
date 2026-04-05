@@ -1104,36 +1104,18 @@ async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: stri
 async function scrapeIASCLT(apiKey: string, baseUrl: string, address: string, town: string) {
   try {
     console.log(`Scraping IAS-CLT for ${town}: ${baseUrl}`);
-
-    // IAS-CLT sites have address dropdowns - use search + scrape
-    const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: `"${address}" "${town}" CT property ias-clt.com`, limit: 5 }),
-    });
-
-    if (searchResp.ok) {
-      const data = await searchResp.json();
-      const results = data.data || [];
-      for (const result of results) {
-        const url = result.url || '';
-        if (url.includes('ias-clt.com') || url.includes(town.toLowerCase())) {
-          const md = await firecrawlScrape(apiKey, url);
-          if (md) {
-            const extracted = extractGenericPropertyData(md, address, town);
-            if (extracted) {
-              extracted.propertyCardUrl = url;
-              if (extracted.isLLC) {
-                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
-              }
-              return json({ success: true, property: extracted });
-            }
-          }
+    const md = await firecrawlScrape(apiKey, baseUrl);
+    if (md) {
+      const extracted = extractGenericPropertyData(md, address, town);
+      if (extracted) {
+        extracted.propertyCardUrl = baseUrl;
+        if (extracted.isLLC) {
+          try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
         }
+        return json({ success: true, property: extracted });
       }
     }
   } catch (e) { console.error("IAS error:", e); }
-
   return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
 }
 
