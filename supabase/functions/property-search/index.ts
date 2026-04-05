@@ -539,7 +539,7 @@ async function smartExtractProperty(apiKey: string, address: string, town: strin
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
   const houseNum = addrParts?.[1] || '';
   const streetFull = addrParts?.[2] || address;
-  const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, '').trim();
+  const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK)\.?$/i, '').trim();
 
   console.log(`Smart extract: ${address}, ${town}`);
   const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
