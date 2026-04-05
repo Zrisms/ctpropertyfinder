@@ -748,7 +748,13 @@ function parseGrotonPropertyCard(html: string) {
   const districtInfo = extractSection('District') || [];
 
   const ownerMatch = html.match(/Current Owner<\/b><\/td>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>/i);
-  const owner = ownerMatch ? ownerMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : null;
+  const rawOwner = ownerMatch ? ownerMatch[1].replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim() : null;
+  // Split owner name from mailing address (owner is typically first line before the street address)
+  let owner = rawOwner;
+  if (rawOwner) {
+    const addrSplit = rawOwner.match(/^(.+?)\s+(\d+\s+\w)/);
+    if (addrSplit) owner = addrSplit[1].trim();
+  }
 
   const buildingFields: Record<string, string | null> = {};
   for (const label of ['Style:', 'Exterior:', 'Attic:', 'Stories:', 'Basement:', 'Year Built:', 'Tot Living Area:', 'Fuel:', 'Heating:']) {
