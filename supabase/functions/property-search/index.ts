@@ -800,39 +800,7 @@ async function scrapeQDS(apiKey: string, baseUrl: string, address: string, town:
   }
 }
 
-async function scrapeQDSViaSearch(apiKey: string, baseUrl: string, address: string, town: string) {
-  // Fallback: try Firecrawl web search
-  try {
-    const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: `"${address}" "${town}" CT assessor property`, limit: 5 }),
-    });
-
-    if (searchResp.ok) {
-      const data = await searchResp.json();
-      const results = data.data || [];
-      for (const result of results) {
-        const url = result.url || '';
-        if (url.includes('assessor') || url.includes('propcard')) {
-          const md = await firecrawlScrape(apiKey, url);
-          if (md) {
-            const extracted = extractQDSCardData(md, address, town) || extractGenericPropertyData(md, address, town);
-            if (extracted) {
-              extracted.propertyCardUrl = url;
-              if (extracted.isLLC) {
-                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
-              }
-              return json({ success: true, property: extracted });
-            }
-          }
-        }
-      }
-    }
-  } catch (e) { console.error("QDS search fallback error:", e); }
-
-  return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
-}
+// QDS search fallback removed — direct scraping only
 
 // ========== PROPERTY RECORD CARDS (PRC) SCRAPING ==========
 async function scrapePRC(apiKey: string, townCode: string, address: string, town: string) {
