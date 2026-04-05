@@ -11,6 +11,12 @@ const ABBREVIATIONS: Record<string, string> = {
   parkway: 'pkwy', turnpike: 'tpke', extension: 'ext',
 };
 
+// Reverse map: ST → STREET, LN → LANE etc.
+const REVERSE_ABBR: Record<string, string> = {};
+for (const [full, abbr] of Object.entries(ABBREVIATIONS)) {
+  REVERSE_ABBR[abbr.toUpperCase()] = full.toUpperCase();
+}
+
 function normalizeAddress(address: string): string {
   let normalized = address.trim();
   for (const [full, abbr] of Object.entries(ABBREVIATIONS)) {
@@ -18,6 +24,27 @@ function normalizeAddress(address: string): string {
     normalized = normalized.replace(re, abbr.toUpperCase());
   }
   return normalized;
+}
+
+// Get alternate address forms for matching (e.g., "8 LINDEN LN" → also try "8 LINDEN LANE")
+function getAddressVariants(address: string): string[] {
+  const variants = [address];
+  const upper = address.toUpperCase();
+  // Try expanding abbreviation to full word
+  for (const [abbr, full] of Object.entries(REVERSE_ABBR)) {
+    const re = new RegExp(`\\b${abbr}\\.?\\b`, 'g');
+    if (re.test(upper)) {
+      variants.push(upper.replace(re, full));
+    }
+  }
+  // Try abbreviating full word
+  for (const [full, abbr] of Object.entries(ABBREVIATIONS)) {
+    const re = new RegExp(`\\b${full.toUpperCase()}\\b`, 'g');
+    if (re.test(upper)) {
+      variants.push(upper.replace(re, abbr.toUpperCase()));
+    }
+  }
+  return [...new Set(variants)];
 }
 
 // ========== PLATFORM TYPES ==========
@@ -242,44 +269,152 @@ Deno.serve(async (req) => {
     const config = TOWN_DB[townLower];
 
     if (!config) {
-      return json({
-        success: false,
-        error: `${town}, CT is not recognized as a Connecticut town.`,
-        searchUrl: `https://www.google.com/search?q=${encodeURIComponent(`${town} CT property assessor database`)}`,
-      });
+      // Even unrecognized towns get the universal fallback
+      console.log(`Town "${town}" not in DB, trying universal fallback`);
+      return await universalPropertySearch(apiKey, normalizedAddress, town);
     }
 
-    switch (config.platform) {
-      case 'vgs':
-        return await scrapeVGS(apiKey, config.slug!, normalizedAddress, town);
-
-      case 'mapxpress':
-        return await scrapeMapXpress(apiKey, config.url!, normalizedAddress, town);
-
-      case 'qds':
-        return await scrapeQDS(apiKey, config.url!, normalizedAddress, town);
-
-      case 'act':
-        return await scrapeACTDataScout(apiKey, config.url!, normalizedAddress, town);
-
-      case 'ias':
-        return await scrapeIASCLT(apiKey, config.url!, normalizedAddress, town);
-
-      case 'prc':
-        return await scrapePRC(apiKey, config.townCode!, normalizedAddress, town);
-
-      case 'equality':
-        return await scrapeEqualityCama(apiKey, config.url!, normalizedAddress, town);
-
-      case 'custom':
-      default:
-        return await scrapeGenericWithFallback(apiKey, config.url!, normalizedAddress, town, config.label || `${town} Assessor`);
+    // Try platform-specific scraper first
+    let result: Response;
+    try {
+      switch (config.platform) {
+        case 'vgs':
+          result = await scrapeVGS(apiKey, config.slug!, normalizedAddress, town);
+          break;
+        case 'mapxpress':
+          result = await scrapeMapXpress(apiKey, config.url!, normalizedAddress, town);
+          break;
+        case 'qds':
+          result = await scrapeQDS(apiKey, config.url!, normalizedAddress, town);
+          break;
+        case 'act':
+          result = await scrapeACTDataScout(apiKey, config.url!, normalizedAddress, town);
+          break;
+        case 'ias':
+          result = await scrapeIASCLT(apiKey, config.url!, normalizedAddress, town);
+          break;
+        case 'prc':
+          result = await scrapePRC(apiKey, config.townCode!, normalizedAddress, town);
+          break;
+        case 'equality':
+          result = await scrapeEqualityCama(apiKey, config.url!, normalizedAddress, town);
+          break;
+        case 'custom':
+        default:
+          result = await scrapeGenericWithFallback(apiKey, config.url!, normalizedAddress, town, config.label || `${town} Assessor`);
+          break;
+      }
+    } catch (e) {
+      console.error(`Platform ${config.platform} threw:`, e);
+      result = json({ success: false });
     }
+
+    // Check if platform scraper succeeded — if not, try universal fallback
+    const cloned = result.clone();
+    try {
+      const body = await cloned.json();
+      if (body.success) return result;
+      console.log(`Platform ${config.platform} failed for ${town}, trying universal fallback...`);
+    } catch {
+      console.log(`Could not parse platform response, trying universal fallback...`);
+    }
+
+    return await universalPropertySearch(apiKey, normalizedAddress, town, config.url);
   } catch (error) {
     console.error("Error:", error);
     return json({ success: false, error: error instanceof Error ? error.message : "Search failed" }, 500);
   }
 });
+
+// ========== UNIVERSAL FALLBACK SEARCH ==========
+// Tries multiple web search strategies to find any CT property data
+async function universalPropertySearch(apiKey: string, address: string, town: string, fallbackUrl?: string) {
+  console.log(`Universal fallback search: ${address}, ${town}, CT`);
+
+  const addrParts = address.match(/^(\d+)\s+(.+)$/i);
+  const houseNum = addrParts?.[1] || '';
+  const streetFull = addrParts?.[2] || address;
+  const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, '').trim();
+
+  // Strategy 1: Search for VGS page (many CT towns are on VGS even if not in our DB)
+  const searchQueries = [
+    `"${houseNum} ${streetBase}" "${town}" CT property vgsi.com`,
+    `"${houseNum} ${streetBase}" "${town}" CT assessor property owner`,
+    `"${address}" "${town}" Connecticut property record card`,
+    `${houseNum} ${streetBase} ${town} CT property tax assessment owner`,
+  ];
+
+  for (const query of searchQueries) {
+    try {
+      console.log(`Universal search: ${query}`);
+      const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, limit: 5 }),
+      });
+
+      if (!searchResp.ok) continue;
+      const searchData = await searchResp.json();
+      const results = searchData.data || [];
+
+      for (const result of results) {
+        const url = result.url || '';
+        // Skip real estate listing sites and generic aggregators
+        if (/zillow|realtor|trulia|redfin|homes\.com|movoto|homesnap|countyoffice|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch/i.test(url)) continue;
+
+        // VGS parcel page
+        if (url.includes('vgsi.com') && url.includes('Parcel.aspx')) {
+          console.log(`Universal: found VGS parcel: ${url}`);
+          return await scrapePropertyDetail(apiKey, url, address, town);
+        }
+
+        // PRC page
+        if (url.includes('propertyrecordcards.com') && url.includes('uniqueid=')) {
+          console.log(`Universal: found PRC page: ${url}`);
+          const md = await firecrawlScrape(apiKey, url);
+          if (md) {
+            const extracted = extractPRCData(md, address, town) || extractGenericPropertyData(md, address, town);
+            if (extracted) {
+              extracted.propertyCardUrl = url;
+              if (extracted.isLLC) {
+                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+              }
+              return json({ success: true, property: extracted });
+            }
+          }
+        }
+
+        // Any assessor/property page
+        if (/assessor|propcard|property.*record|gis\.|cama|revaluation/i.test(url) ||
+            url.toLowerCase().includes(town.toLowerCase().replace(/\s+/g, ''))) {
+          console.log(`Universal: trying page: ${url}`);
+          const md = await firecrawlScrape(apiKey, url);
+          if (md && md.length > 300) {
+            const extracted = extractVGSData(md, address, town) ||
+                              extractQDSCardData(md, address, town) ||
+                              extractPRCData(md, address, town) ||
+                              extractGenericPropertyData(md, address, town);
+            if (extracted) {
+              extracted.propertyCardUrl = url;
+              if (extracted.isLLC) {
+                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+              }
+              return json({ success: true, property: extracted });
+            }
+          }
+        }
+      }
+    } catch (e) { console.error("Universal search error:", e); }
+  }
+
+  // Final fallback URL
+  const searchUrl = fallbackUrl || `https://www.google.com/search?q=${encodeURIComponent(`${address} ${town} CT property assessor`)}`;
+  return json({
+    success: false,
+    error: `Could not find property data for ${address} in ${town}. Try searching the assessor database directly.`,
+    searchUrl,
+  });
+}
 
 // ========== VGS SCRAPING ==========
 async function scrapeVGS(apiKey: string, slug: string, address: string, town: string) {
@@ -999,7 +1134,7 @@ async function scrapeGenericWithFallback(apiKey: string, baseUrl: string, addres
       for (const result of results) {
         const url = result.url || '';
         // Skip generic listing sites
-        if (url.includes('zillow') || url.includes('realtor') || url.includes('trulia') || url.includes('redfin')) continue;
+        if (/zillow|realtor|trulia|redfin|homes\.com|movoto|homesnap|countyoffice|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch/i.test(url)) continue;
         if (url.includes(town.toLowerCase().replace(/\s+/g, '')) || url.includes('assessor') || url.includes('property')) {
           const md = await firecrawlScrape(apiKey, url);
           if (md && md.length > 300) {
@@ -1342,7 +1477,6 @@ function extractQDSCardData(markdown: string, address: string, town: string) {
     parcelId, mblu: mapMatch?.[1] ? `${mapMatch[1]}/${lotMatch?.[1] || ''}` : '',
     accountNumber: '', buildingCount: String(assessments.filter(a => a.category.toLowerCase().includes('building')).length || ''),
     bookPage, certificate: '', instrument: '',
-    bookPage, certificate: '', instrument: '',
     assessedValue: fmt$(netAssessment || totalAssessment),
     totalAppraisal: fmt$(costValue || mktValue),
     totalMarketValue: fmt$(mktValue),
@@ -1460,7 +1594,10 @@ function extractGenericPropertyData(markdown: string, address: string, town: str
   const cooling = grab(['AC Type', 'Air Conditioning', 'Cooling', 'AC']);
 
   owner = owner.replace(/[*#\[\]]/g, '').replace(/<br\/?>/gi, ' ').trim();
-  if (!owner || owner.length < 2) return null;
+  // Reject if owner looks like garbage (too long = scraped paragraph, or too short)
+  if (!owner || owner.length < 2 || owner.length > 100) return null;
+  // Reject if owner contains URLs or markdown artifacts
+  if (/https?:\/\/|\.com|\.org|\.net|\[.*\]\(/.test(owner)) return null;
 
   const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner);
   const fmt$ = (v: string) => v ? `$${v}` : '';
