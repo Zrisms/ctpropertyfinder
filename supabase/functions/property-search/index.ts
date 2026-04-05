@@ -818,7 +818,17 @@ async function scrapeGrotonGIS(address: string, town: string): Promise<Response>
   }
 
   const arcData = await arcRes.json();
-  const features = arcData.features || [];
+  let features = arcData.features || [];
+  
+  // Filter to exact house number match
+  if (houseNum && features.length > 1) {
+    const exact = features.filter((f: any) => {
+      const loc = (f.attributes.PROPERTY_LOCATION || '').trim();
+      return loc.startsWith(houseNum + ' ');
+    });
+    if (exact.length > 0) features = exact;
+  }
+  
   if (features.length === 0) {
     return json({ success: false, error: `No matching address found in Groton for "${address}"`, searchUrl: 'https://maps.groton-ct.gov' });
   }
