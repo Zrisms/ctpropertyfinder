@@ -33,7 +33,7 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
     debounceRef.current = window.setTimeout(async () => {
       setIsFetching(true);
       try {
-        const q = town ? `${address}, ${town}` : address;
+        const q = `${address}, Connecticut`;
         const { data, error } = await supabase.functions.invoke("address-autocomplete", { body: { query: q } });
         if (!error && data?.suggestions) setAddressSuggestions(data.suggestions);
       } catch {}
