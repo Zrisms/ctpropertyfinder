@@ -213,7 +213,7 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
 
 function Section({ title, children, full }: { title: string; children: React.ReactNode; full?: boolean }) {
   return (
-    <div className={`glass rounded-2xl p-5 ${full ? 'col-span-full' : ''}`}>
+    <div className={`glass rounded-2xl p-5 hover-lift ${full ? 'col-span-full' : ''}`}>
       <h3 className="apple-section-title mb-3">{title}</h3>
       <div>{children}</div>
     </div>
