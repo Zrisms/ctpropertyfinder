@@ -59,7 +59,7 @@ const Index = () => {
                 Connecticut Property Intelligence
               </div>
               <h1 className="text-5xl md:text-6xl lg:text-7xl font-semibold tracking-tight leading-[1.05] mb-6 animate-fade-in" style={{ animationDelay: '0.1s', opacity: 0 }}>
-                <span className="text-shimmer">Property Lookup</span>
+                <span className="text-shimmer">Foyr</span>
               </h1>
               <p className="text-lg md:text-xl text-muted-foreground font-light leading-relaxed max-w-lg mx-auto animate-fade-in" style={{ animationDelay: '0.2s', opacity: 0 }}>
                 Owners, valuations, building details, and LLC records — all in one search.
@@ -68,7 +68,7 @@ const Index = () => {
           )}
           {propertyData && (
             <h1 className="text-2xl font-semibold tracking-tight">
-              <span className="text-shimmer">Property Lookup</span>
+              <span className="text-shimmer">Foyr</span>
             </h1>
           )}
         </div>
@@ -110,7 +110,7 @@ const Index = () => {
 
       <footer className="relative border-t border-border/30">
         <div className="max-w-4xl mx-auto px-6 py-6 flex items-center justify-between text-xs text-muted-foreground/40">
-          <span>CT Property Lookup</span>
+          <span>Foyr</span>
           <span>Public records</span>
         </div>
       </footer>
