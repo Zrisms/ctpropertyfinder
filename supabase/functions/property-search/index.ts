@@ -2073,27 +2073,31 @@ async function searchCTBusiness(_apiKey: string, businessName: string) {
   const CT_AGENTS_API = 'https://data.ct.gov/resource/qh2m-n44y.json';
 
   const cleanName = businessName.replace(/[^a-zA-Z0-9\s&]/g, '').trim();
-  console.log(`Searching CT Open Data for: ${cleanName}`);
+  const shortName = cleanName.replace(/\s*(LLC|L\.?L\.?C\.?|Inc|Corp)\s*$/i, '').trim();
+  console.log(`LLC lookup: ${cleanName}`);
 
   try {
-    const searchQuery = encodeURIComponent(`upper(name) like '%${cleanName.toUpperCase()}%'`);
-    const bizUrl = `${CT_BUSINESS_API}?$where=${searchQuery}&$limit=5`;
-    const bizResp = await fetch(bizUrl);
-    if (!bizResp.ok) return makeFallbackLLC(cleanName);
+    // Fire both full-name and short-name queries in parallel
+    const fullQuery = encodeURIComponent(`upper(name) like '%${cleanName.toUpperCase()}%'`);
+    const shortQuery = shortName !== cleanName
+      ? encodeURIComponent(`upper(name) like '%${shortName.toUpperCase()}%'`)
+      : null;
 
-    const businesses = await bizResp.json();
-    if (!Array.isArray(businesses) || businesses.length === 0) {
-      const shortName = cleanName.replace(/\s*(LLC|L\.?L\.?C\.?|Inc|Corp)\s*$/i, '').trim();
-      const retryQuery = encodeURIComponent(`upper(name) like '%${shortName.toUpperCase()}%'`);
-      const retryResp = await fetch(`${CT_BUSINESS_API}?$where=${retryQuery}&$limit=5`);
-      if (retryResp.ok) {
-        const retryData = await retryResp.json();
-        if (!Array.isArray(retryData) || retryData.length === 0) return makeFallbackLLC(cleanName);
-        return await buildLLCDetails(retryData, cleanName, CT_AGENTS_API);
-      }
-      return makeFallbackLLC(cleanName);
+    const fetches = [
+      fetch(`${CT_BUSINESS_API}?$where=${fullQuery}&$limit=5`),
+    ];
+    if (shortQuery) fetches.push(fetch(`${CT_BUSINESS_API}?$where=${shortQuery}&$limit=5`));
+
+    const responses = await Promise.all(fetches);
+    let businesses: any[] = [];
+
+    for (const resp of responses) {
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      if (Array.isArray(data) && data.length > 0) { businesses = data; break; }
     }
 
+    if (businesses.length === 0) return makeFallbackLLC(cleanName);
     return await buildLLCDetails(businesses, cleanName, CT_AGENTS_API);
   } catch (e) {
     console.error('CT Open Data error:', e);
@@ -2122,11 +2126,12 @@ async function buildLLCDetails(businesses: Record<string, unknown>[], searchName
   const email = (biz.business_email_address as string) || '';
   const naicsCode = (biz.naics_code as string) || '';
 
+  // Fetch agents in parallel (already started building response)
   const principals: { name: string; title: string; address: string; residentialAddress: string }[] = [];
 
   if (bizKey) {
     try {
-      const agentResp = await fetch(`${agentsApi}?business_key=${encodeURIComponent(bizKey)}`);
+      const agentResp = await fetch(`${agentsApi}?business_key=${encodeURIComponent(bizKey)}&$limit=20`);
       if (agentResp.ok) {
         const agents = await agentResp.json();
         if (Array.isArray(agents)) {
