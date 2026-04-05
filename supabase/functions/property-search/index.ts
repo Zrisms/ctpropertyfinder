@@ -456,6 +456,9 @@ Deno.serve(async (req) => {
         case "arcgis_rest":
           result = await scrapeAvonGIS(apiKey, normalizedAddress, lookupTown);
           break;
+        case "groton_gis":
+          result = await scrapeGrotonGIS(normalizedAddress, lookupTown);
+          break;
         default:
           result = json({ success: false });
           break;
