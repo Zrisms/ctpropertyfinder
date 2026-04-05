@@ -1392,14 +1392,57 @@ function extractPRCData(markdown: string, address: string, town: string) {
 async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: string, town: string) {
   try {
     console.log(`Scraping ACT Data Scout for ${town}: ${baseUrl}`);
-    // Scrape the base URL directly
-    const md = await firecrawlScrape(apiKey, baseUrl);
-    if (md) {
-      const extracted = extractGenericPropertyData(md, address, town);
-      if (extracted) {
-        extracted.propertyCardUrl = baseUrl;
-// LLC lookup removed - handled separately by frontend
-        return json({ success: true, property: extracted });
+    const addrParts = address.match(/^(\d+)\s+(.+)$/i);
+    const houseNum = addrParts?.[1] || "";
+    const streetBase = (addrParts?.[2] || address)
+      .replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY)\.?$/i, "").trim();
+
+    // ACT Data Scout: use Firecrawl actions to search
+    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: baseUrl,
+        formats: ["markdown", "html", "links"],
+        onlyMainContent: false,
+        waitFor: 2000,
+        actions: [
+          { type: "wait", milliseconds: 1000 },
+          { type: "click", selector: 'input[name*="StreetNumber"], input[name*="streetNumber"], input[id*="StreetNumber"], input[placeholder*="Number"], input[placeholder*="number"]' },
+          { type: "write", text: houseNum },
+          { type: "click", selector: 'input[name*="StreetName"], input[name*="streetName"], input[id*="StreetName"], input[placeholder*="Street"], input[placeholder*="street"]' },
+          { type: "write", text: streetBase },
+          { type: "click", selector: 'button[type="submit"], input[type="submit"], button:has-text("Search"), a:has-text("Search"), input[value="Search"]' },
+          { type: "wait", milliseconds: 3000 },
+        ],
+      }),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      const markdown = data.data?.markdown || data.markdown || "";
+      const html = data.data?.html || data.html || "";
+      const links = data.data?.links || data.links || [];
+
+      if (markdown.length > 300) {
+        // Look for property detail links
+        const detailLink = links.find((l: string) => l.includes("PropertyDetail") || l.includes("parcel") || l.includes("detail"));
+        if (detailLink) {
+          console.log(`ACT: Following detail link: ${detailLink}`);
+          const detailMd = await firecrawlScrapeFullPage(apiKey, detailLink);
+          if (detailMd) {
+            const extracted = extractGenericPropertyData(detailMd, address, town);
+            if (extracted) {
+              extracted.propertyCardUrl = detailLink;
+              return json({ success: true, property: extracted });
+            }
+          }
+        }
+        const extracted = extractGenericPropertyData(markdown, address, town);
+        if (extracted) {
+          extracted.propertyCardUrl = data.data?.metadata?.url || baseUrl;
+          return json({ success: true, property: extracted });
+        }
       }
     }
   } catch (e) {
@@ -1416,12 +1459,66 @@ async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: stri
 async function scrapeIASCLT(apiKey: string, baseUrl: string, address: string, town: string) {
   try {
     console.log(`Scraping IAS-CLT for ${town}: ${baseUrl}`);
-    const md = await firecrawlScrape(apiKey, baseUrl);
+    const addrParts = address.match(/^(\d+)\s+(.+)$/i);
+    const houseNum = addrParts?.[1] || "";
+    const streetBase = (addrParts?.[2] || address)
+      .replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY)\.?$/i, "").trim();
+
+    // IAS-CLT: use Firecrawl actions to search for address
+    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: baseUrl,
+        formats: ["markdown", "html", "links"],
+        onlyMainContent: false,
+        waitFor: 2000,
+        actions: [
+          { type: "wait", milliseconds: 1000 },
+          { type: "click", selector: 'input[name*="addr"], input[name*="street"], input[id*="txtStreet"], input[id*="txtAddress"], input[type="text"]' },
+          { type: "write", text: `${houseNum} ${streetBase}` },
+          { type: "click", selector: 'input[type="submit"], button[type="submit"], input[value="Search"], input[value="Go"], button:has-text("Search")' },
+          { type: "wait", milliseconds: 3000 },
+        ],
+      }),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      const markdown = data.data?.markdown || data.markdown || "";
+      const links = data.data?.links || data.links || [];
+      const finalUrl = data.data?.metadata?.url || "";
+
+      if (markdown.length > 300) {
+        // Check for property detail links
+        const detailLinks = links.filter((l: string) =>
+          l.includes("parcel") || l.includes("detail") || l.includes("property") || l.includes("account")
+        );
+        for (const link of detailLinks.slice(0, 3)) {
+          console.log(`IAS: Following detail link: ${link}`);
+          const detailMd = await firecrawlScrapeFullPage(apiKey, link);
+          if (detailMd && detailMd.length > 300) {
+            const extracted = extractGenericPropertyData(detailMd, address, town);
+            if (extracted) {
+              extracted.propertyCardUrl = link;
+              return json({ success: true, property: extracted });
+            }
+          }
+        }
+        const extracted = extractGenericPropertyData(markdown, address, town);
+        if (extracted) {
+          extracted.propertyCardUrl = finalUrl || baseUrl;
+          return json({ success: true, property: extracted });
+        }
+      }
+    }
+
+    // Fallback: simple scrape
+    const md = await firecrawlScrapeFullPage(apiKey, baseUrl);
     if (md) {
       const extracted = extractGenericPropertyData(md, address, town);
       if (extracted) {
         extracted.propertyCardUrl = baseUrl;
-// LLC lookup removed - handled separately by frontend
         return json({ success: true, property: extracted });
       }
     }
