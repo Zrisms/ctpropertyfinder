@@ -762,7 +762,7 @@ async function universalPropertySearch(apiKey: string, address: string, lookupTo
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        query: `"${houseNum} ${streetBase}" "${lookupTown}" CT property owner year built square feet assessment`,
+        query: `"${houseNum} ${streetBase}" "${lookupTown}" CT assessor property record card owner`,
         limit: 4,
       }),
     });
