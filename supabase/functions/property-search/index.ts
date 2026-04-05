@@ -479,7 +479,8 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
       // Merged property data — fill gaps from each source
       const merged: Record<string, string> = {};
 
-      for (const url of validUrls) {
+      // Scrape all sources in PARALLEL for speed
+      const scrapePromises = validUrls.map(async (url: string) => {
         try {
           console.log(`Strategy 2: extracting from ${url}`);
           const scrapeResp = await fetch('https://api.firecrawl.dev/v1/scrape', {
@@ -491,26 +492,28 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
               extract: { prompt: extractPrompt, schema: extractSchema },
             }),
           });
-          if (!scrapeResp.ok) { console.log(`Scrape failed ${scrapeResp.status} for ${url}`); continue; }
+          if (!scrapeResp.ok) { console.log(`Scrape failed ${scrapeResp.status} for ${url}`); return null; }
           const scrapeData = await scrapeResp.json();
-          const extracted = scrapeData?.data?.extract || scrapeData?.extract;
-          if (!extracted) continue;
+          return scrapeData?.data?.extract || scrapeData?.extract || null;
+        } catch (e) { console.error(`Strategy 2 error for ${url}:`, e); return null; }
+      });
 
-          console.log(`Extracted from ${url}: owner=${extracted.owner}, yearBuilt=${extracted.yearBuilt}, sqft=${extracted.sqft}`);
+      const extractResults = await Promise.allSettled(scrapePromises);
 
-          // Merge: fill empty fields from this source
-          for (const [key, val] of Object.entries(extracted)) {
-            const v = (val as string || '').trim();
-            if (v && v.length > 0 && !merged[key]) {
-              // Validate owner field
-              if (key === 'owner') {
-                if (v.length < 4 || /^(Sold|For Sale|Pending|N\/A|Unknown|Street View|Not Available|Contact|View|Details)$/i.test(v)) continue;
-                if (/https?:\/\/|\.com|\.org/.test(v)) continue;
-              }
-              merged[key] = v;
+      for (const result of extractResults) {
+        if (result.status !== 'fulfilled' || !result.value) continue;
+        const extracted = result.value;
+        console.log(`Extracted: owner=${extracted.owner}, yearBuilt=${extracted.yearBuilt}, sqft=${extracted.sqft}`);
+        for (const [key, val] of Object.entries(extracted)) {
+          const v = (val as string || '').trim();
+          if (v && v.length > 0 && !merged[key]) {
+            if (key === 'owner') {
+              if (v.length < 4 || /^(Sold|For Sale|Pending|N\/A|Unknown|Street View|Not Available|Contact|View|Details)$/i.test(v)) continue;
+              if (/https?:\/\/|\.com|\.org/.test(v)) continue;
             }
+            merged[key] = v;
           }
-        } catch (e) { console.error(`Strategy 2 error for ${url}:`, e); }
+        }
       }
 
       // If we got an owner, build the result
