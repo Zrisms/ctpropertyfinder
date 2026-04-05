@@ -286,31 +286,46 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
   const searchUrl = `https://gis.vgsi.com/${slug}/Search.aspx`;
   const baseUrl = `https://gis.vgsi.com/${slug}`;
 
+  // Parse address to get number and street base (without suffix like DR/RD/ST)
+  const addrParts = address.match(/^(\d+)\s+(.+)$/i);
+  const houseNum = addrParts?.[1] || '';
+  const streetFull = addrParts?.[2] || address;
+  const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, '').trim();
+  // For autocomplete, just use number + street base (e.g., "25 arlington")
+  const searchText = houseNum ? `${houseNum} ${streetBase.toLowerCase()}` : address.toLowerCase();
+
   // Strategy 1: Firecrawl web search to find the property page
   try {
     console.log(`Searching for property via Firecrawl search`);
-    const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: `"${address}" "${town}" CT property vgsi.com`, limit: 5 }),
-    });
+    // Try with full address first, then street base
+    for (const query of [
+      `"${address}" "${town}" CT property vgsi.com`,
+      `"${houseNum} ${streetBase}" "${town}" CT vgsi.com`,
+      `${houseNum} ${streetBase} ${town} CT property assessor`,
+    ]) {
+      const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, limit: 5 }),
+      });
 
-    if (searchResp.ok) {
-      const searchData = await searchResp.json();
-      const results = searchData.data || [];
-      for (const result of results) {
-        const url = result.url || '';
-        if (url.includes('vgsi.com') && url.includes('Parcel.aspx')) {
-          console.log(`Found VGS parcel page: ${url}`);
-          return await scrapePropertyDetail(apiKey, url, address, town);
+      if (searchResp.ok) {
+        const searchData = await searchResp.json();
+        const results = searchData.data || [];
+        for (const result of results) {
+          const url = result.url || '';
+          if (url.includes('vgsi.com') && url.includes('Parcel.aspx')) {
+            console.log(`Found VGS parcel page: ${url}`);
+            return await scrapePropertyDetail(apiKey, url, address, town);
+          }
         }
       }
     }
   } catch (e) { console.error("Search error:", e); }
 
-  // Strategy 2: Use Firecrawl actions on VGS search page
+  // Strategy 2: Use Firecrawl actions on VGS search page with autocomplete
   try {
-    console.log(`Trying VGS with actions`);
+    console.log(`Trying VGS with actions (search: "${searchText}")`);
     const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -321,10 +336,10 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
         actions: [
           { type: 'wait', milliseconds: 1000 },
           { type: 'click', selector: 'input[id*="TextBox_Search"], input[id*="txtSearch"], input[type="text"]' },
-          { type: 'write', text: address },
-          { type: 'wait', milliseconds: 3000 },
-          { type: 'click', selector: '.ui-autocomplete li a, .ui-menu-item a, ul.ui-autocomplete li' },
-          { type: 'wait', milliseconds: 5000 },
+          { type: 'write', text: searchText },
+          { type: 'wait', milliseconds: 4000 },
+          { type: 'click', selector: '.ui-autocomplete li:first-child a, .ui-menu-item:first-child a, ul.ui-autocomplete li:first-child' },
+          { type: 'wait', milliseconds: 6000 },
         ],
       }),
     });
@@ -335,7 +350,7 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
       const html = data.data?.html || data.html || '';
       const finalUrl = data.data?.metadata?.url || data.data?.metadata?.sourceURL || '';
 
-      if (finalUrl.includes('Parcel.aspx') || markdown.includes('Parcel ID')) {
+      if (finalUrl.includes('Parcel.aspx') || markdown.includes('Parcel ID') || markdown.includes('Total Market Value')) {
         const extracted = extractVGSData(markdown, address, town);
         if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
           extracted.propertyCardUrl = finalUrl;
