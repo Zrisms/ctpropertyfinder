@@ -745,17 +745,25 @@ function extractPRCData(markdown: string, address: string, town: string) {
   const totalRow = text.match(/\|\s*Total\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*\|/i);
   if (totalRow) { totalAppraised = totalRow[1]; totalAssessed = totalRow[2]; }
 
-  // Owner from "Owner's Data" cell (uses <br> separators)
+  // Owner from "Owner's Data" cell - format: "| NAME<br>ADDRESS<br>CITY, ST ZIP |"
   let owner = '', coOwner = '', ownerAddress = '';
-  const ownerMatch = text.match(/Owner'?s?\s*Data[\s|]*\n?\|?\s*([^|]+)\|/i);
+  const ownerMatch = text.match(/Owner'?s?\s*Data\s*\|[\s\n]*\|[\s-]*\|[\s\n]*\|\s*([^|]+)\|/i);
   if (ownerMatch) {
-    const parts = ownerMatch[1].replace(/<br\/?>/gi, '\n').split('\n').map(s => s.trim()).filter(Boolean);
+    const raw = ownerMatch[1].replace(/<br\s*\/?>/gi, '\n').trim();
+    const parts = raw.split('\n').map(s => s.trim()).filter(Boolean);
     owner = parts[0] || '';
+    // Check if second line looks like a co-owner (contains & or name-like pattern)
     if (parts.length > 2) {
-      coOwner = parts[1] || '';
-      ownerAddress = parts.slice(2).join(', ');
-    } else {
       ownerAddress = parts.slice(1).join(', ');
+    } else if (parts.length === 2) {
+      ownerAddress = parts[1];
+    }
+  }
+  // Fallback: try simpler pattern
+  if (!owner || owner === '---') {
+    const simpleFallback = text.match(/\|\s*([A-Z][A-Z\s&,.']+?)<br/i);
+    if (simpleFallback) {
+      owner = simpleFallback[1].trim();
     }
   }
 
