@@ -1598,18 +1598,21 @@ async function scrapeCustomSite(apiKey: string, siteUrl: string, address: string
 
   console.log(`Dynamic scrape: ${siteUrl} for "${address}" in ${town}`);
 
-  // STRATEGY 1: Try Firecrawl actions to search on the page
+  // STRATEGY 1: Try Firecrawl actions to search on the page (with timeout)
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000); // 20s max
     const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      signal: controller.signal,
       body: JSON.stringify({
         url: siteUrl,
         formats: ["markdown", "html", "links"],
         onlyMainContent: false,
-        waitFor: 3000,
+        waitFor: 2000,
         actions: [
-          { type: "wait", milliseconds: 1500 },
+          { type: "wait", milliseconds: 1000 },
           // Try to find and fill any search/address input
           { type: "click", selector: [
             'input[name*="address" i]', 'input[name*="street" i]', 'input[name*="search" i]',
