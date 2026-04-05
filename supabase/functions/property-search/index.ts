@@ -21,11 +21,12 @@ function normalizeAddress(address: string): string {
 }
 
 // ========== PLATFORM TYPES ==========
-type Platform = 'vgs' | 'mapxpress' | 'qds' | 'act' | 'ias' | 'equality' | 'patriot' | 'custom';
+type Platform = 'vgs' | 'mapxpress' | 'qds' | 'act' | 'ias' | 'equality' | 'prc' | 'custom';
 
 interface TownConfig {
   platform: Platform;
   slug?: string;       // VGS slug or MapXpress subdomain
+  townCode?: string;   // PropertyRecordCards.com town code
   url?: string;        // Direct URL for custom/other platforms
   label?: string;      // Human-readable platform name
 }
