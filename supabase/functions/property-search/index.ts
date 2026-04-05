@@ -1058,46 +1058,6 @@ async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: stri
   } catch (e) { console.error("ACT error:", e); }
   return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
 }
-        }
-      }
-    }
-
-    // Try with actions
-    const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: baseUrl,
-        formats: ['markdown', 'html'],
-        waitFor: 1500,
-        actions: [
-          { type: 'wait', milliseconds: 1000 },
-          { type: 'click', selector: 'input[name*="street"], input[name*="addr"], input[placeholder*="Address"], input[type="text"]' },
-          { type: 'write', text: address },
-          { type: 'click', selector: 'button[type="submit"], input[type="submit"], button:contains("Search")' },
-          { type: 'wait', milliseconds: 3000 },
-        ],
-      }),
-    });
-
-    if (resp.ok) {
-      const data = await resp.json();
-      const markdown = data.data?.markdown || data.markdown || '';
-      if (markdown.length > 200) {
-        const extracted = extractGenericPropertyData(markdown, address, town);
-        if (extracted) {
-          extracted.propertyCardUrl = baseUrl;
-          if (extracted.isLLC) {
-            try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
-          }
-          return json({ success: true, property: extracted });
-        }
-      }
-    }
-  } catch (e) { console.error("ACT error:", e); }
-
-  return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
-}
 
 // ========== IAS-CLT SCRAPING ==========
 async function scrapeIASCLT(apiKey: string, baseUrl: string, address: string, town: string) {
