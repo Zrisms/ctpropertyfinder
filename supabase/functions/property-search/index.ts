@@ -8,7 +8,7 @@ const ABBREVIATIONS: Record<string, string> = {
   street: 'st', road: 'rd', drive: 'dr', avenue: 'ave', lane: 'ln',
   court: 'ct', circle: 'cir', boulevard: 'blvd', place: 'pl',
   terrace: 'ter', way: 'way', trail: 'trl', highway: 'hwy',
-  parkway: 'pkwy', turnpike: 'tpke', extension: 'ext',
+  parkway: 'pkwy', turnpike: 'tpke', extension: 'ext', park: 'pk',
 };
 
 // Reverse map: ST → STREET, LN → LANE etc.
@@ -16,6 +16,52 @@ const REVERSE_ABBR: Record<string, string> = {};
 for (const [full, abbr] of Object.entries(ABBREVIATIONS)) {
   REVERSE_ABBR[abbr.toUpperCase()] = full.toUpperCase();
 }
+
+// Additional non-standard abbreviations used by some assessor databases
+const EXTRA_SUFFIX_VARIANTS: Record<string, string[]> = {
+  'PARK':      ['PK', 'PRK'],
+  'PK':        ['PARK', 'PRK'],
+  'PRK':       ['PARK', 'PK'],
+  'PARKWAY':   ['PKWY', 'PKY', 'PKWAY'],
+  'PKWY':      ['PARKWAY', 'PKY', 'PKWAY'],
+  'DRIVE':     ['DR', 'DRV', 'DRIV'],
+  'DR':        ['DRIVE', 'DRV'],
+  'STREET':    ['ST', 'STR'],
+  'ST':        ['STREET', 'STR'],
+  'ROAD':      ['RD'],
+  'RD':        ['ROAD'],
+  'AVENUE':    ['AVE', 'AV'],
+  'AVE':       ['AVENUE', 'AV'],
+  'LANE':      ['LN', 'LA'],
+  'LN':        ['LANE', 'LA'],
+  'COURT':     ['CT', 'CRT'],
+  'CT':        ['COURT', 'CRT'],
+  'CIRCLE':    ['CIR', 'CRCL', 'CIRCL'],
+  'CIR':       ['CIRCLE', 'CRCL'],
+  'BOULEVARD': ['BLVD', 'BLV'],
+  'BLVD':      ['BOULEVARD', 'BLV'],
+  'PLACE':     ['PL', 'PLC'],
+  'PL':        ['PLACE', 'PLC'],
+  'TERRACE':   ['TER', 'TERR', 'TRCE'],
+  'TER':       ['TERRACE', 'TERR', 'TRCE'],
+  'TRAIL':     ['TRL', 'TR'],
+  'TRL':       ['TRAIL', 'TR'],
+  'HIGHWAY':   ['HWY', 'HIWAY'],
+  'HWY':       ['HIGHWAY'],
+  'TURNPIKE':  ['TPKE', 'TPK'],
+  'TPKE':      ['TURNPIKE', 'TPK'],
+  'EXTENSION': ['EXT', 'EXTN'],
+  'EXT':       ['EXTENSION', 'EXTN'],
+  'WAY':       ['WY'],
+  'WY':        ['WAY'],
+  'RIDGE':     ['RDG', 'RDGE'],
+  'RDG':       ['RIDGE'],
+  'CROSSING':  ['XING', 'XNG'],
+  'XING':      ['CROSSING'],
+  'PATH':      ['PTH'],
+  'PTH':       ['PATH'],
+  'RUN':       ['RN'],
+};
 
 function normalizeAddress(address: string): string {
   let normalized = address.trim();
@@ -26,25 +72,33 @@ function normalizeAddress(address: string): string {
   return normalized;
 }
 
-// Get alternate address forms for matching (e.g., "8 LINDEN LN" → also try "8 LINDEN LANE")
+// Get ALL alternate address forms for matching
+// e.g., "34 OWENOKE PARK" → ["34 OWENOKE PARK", "34 OWENOKE PK", "34 OWENOKE PRK"]
 function getAddressVariants(address: string): string[] {
-  const variants = [address];
+  const variants = new Set<string>([address]);
   const upper = address.toUpperCase();
-  // Try expanding abbreviation to full word
+
+  // Standard expansions/abbreviations
   for (const [abbr, full] of Object.entries(REVERSE_ABBR)) {
     const re = new RegExp(`\\b${abbr}\\.?\\b`, 'g');
-    if (re.test(upper)) {
-      variants.push(upper.replace(re, full));
-    }
+    if (re.test(upper)) variants.add(upper.replace(re, full));
   }
-  // Try abbreviating full word
   for (const [full, abbr] of Object.entries(ABBREVIATIONS)) {
     const re = new RegExp(`\\b${full.toUpperCase()}\\b`, 'g');
+    if (re.test(upper)) variants.add(upper.replace(re, abbr.toUpperCase()));
+  }
+
+  // Extra suffix variants (PK ↔ PARK ↔ PRK, etc.)
+  for (const [suffix, alts] of Object.entries(EXTRA_SUFFIX_VARIANTS)) {
+    const re = new RegExp(`\\b${suffix}\\b`, 'g');
     if (re.test(upper)) {
-      variants.push(upper.replace(re, abbr.toUpperCase()));
+      for (const alt of alts) {
+        variants.add(upper.replace(re, alt));
+      }
     }
   }
-  return [...new Set(variants)];
+
+  return [...variants];
 }
 
 // Verify extracted address matches the searched address (prevent wrong-property results)
