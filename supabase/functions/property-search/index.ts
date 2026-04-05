@@ -185,8 +185,8 @@ const TOWN_DB: Record<string, TownConfig> = {
   "woodbridge":     { platform: 'prc', townCode: '167' },
   "woodbury":       { platform: 'prc', townCode: '168' },
 
-  // === QDS Towns (custom assessor sites) ===
-  "avon":           { platform: 'qds', url: 'http://assessor.avonct.gov/', label: 'Town of Avon Assessor' },
+  // === Custom / GIS Towns ===
+  "avon":           { platform: 'custom', url: 'https://hosting.tighebond.com/avonct_public/default.html', label: 'Town of Avon GIS' },
 
   // === IAS-CLT Towns ===
   "bethel":         { platform: 'ias', url: 'http://bethel.ias-clt.com/', label: 'Bethel Assessor' },
