@@ -265,6 +265,9 @@ Deno.serve(async (req) => {
       case 'ias':
         return await scrapeIASCLT(apiKey, config.url!, normalizedAddress, town);
 
+      case 'prc':
+        return await scrapePRC(apiKey, config.townCode!, normalizedAddress, town);
+
       case 'equality':
         return await scrapeEqualityCama(apiKey, config.url!, normalizedAddress, town);
 
