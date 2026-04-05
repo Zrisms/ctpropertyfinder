@@ -156,10 +156,11 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
               <span className="text-xs text-muted-foreground/60">CT Secretary of State</span>
+              <CopyNameBtn name={data.owner} />
               {data.llcDetails.businessProfileUrl && (
                 <a href={data.llcDetails.businessProfileUrl} target="_blank" rel="noopener noreferrer"
                   className="text-xs text-primary hover:underline inline-flex items-center gap-1">
-                  <ExternalLink className="h-3 w-3" /> View CT Profile
+                  <ExternalLink className="h-3 w-3" /> Search CT SOS
                 </a>
               )}
             </div>
