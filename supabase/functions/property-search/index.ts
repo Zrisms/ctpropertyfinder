@@ -998,7 +998,7 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
               selector:
                 ".ui-autocomplete li:first-child a, .ui-menu-item:first-child a, ul.ui-autocomplete li:first-child",
             },
-            { type: "wait", milliseconds: 3000 },
+            { type: "wait", milliseconds: 2000 },
           ],
         }),
       });
