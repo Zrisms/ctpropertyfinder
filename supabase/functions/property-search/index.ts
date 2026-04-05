@@ -440,8 +440,8 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
 
   // Strategy 1: Search official assessor sources (limit to 2 queries to save time)
   const searchQueries = [
-    `"${houseNum} ${streetBase}" "${town}" CT property vgsi.com OR propertyrecordcards.com`,
-    `"${houseNum} ${streetBase}" "${town}" CT assessor property owner assessment`,
+    `"${houseNum} ${streetBase}" "${town}" CT property vgsi.com OR propertyrecordcards.com OR .gov OR .us`,
+    `"${houseNum} ${streetBase}" "${town}" Connecticut assessor property record card site:.gov OR site:.us OR site:vgsi.com`,
   ];
 
   for (const query of searchQueries) {
