@@ -32,7 +32,17 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
     const q = town.toLowerCase();
     const starts = CT_TOWNS.filter((t) => t.toLowerCase().startsWith(q));
     const contains = CT_TOWNS.filter((t) => !t.toLowerCase().startsWith(q) && t.toLowerCase().includes(q));
-    return [...starts, ...contains].slice(0, 6);
+    // Fuzzy: allow 1-char difference for short inputs, 2 for longer
+    const fuzzy = q.length >= 3 ? CT_TOWNS.filter((t) => {
+      const tl = t.toLowerCase();
+      if (tl.startsWith(q) || tl.includes(q)) return false;
+      let dist = 0;
+      const minLen = Math.min(q.length, tl.length);
+      for (let i = 0; i < minLen; i++) { if (q[i] !== tl[i]) dist++; }
+      dist += Math.abs(q.length - tl.length);
+      return dist <= (q.length <= 4 ? 1 : 2);
+    }) : [];
+    return [...starts, ...contains, ...fuzzy].slice(0, 6);
   }, [town]);
 
   useEffect(() => {
