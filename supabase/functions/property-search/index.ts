@@ -889,13 +889,15 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
       const resultHtml = await postResp.text();
       console.log(`PRC POST response length: ${resultHtml.length}`);
 
-      // Debug: check if we got results or still on search page
-      const hasResults = resultHtml.includes('uniqueid') || resultHtml.includes('PropertyResults');
-      const hasSearchForm = resultHtml.includes('btnPropertySearch');
-      console.log(`PRC POST: hasResults=${hasResults}, hasSearchForm=${hasSearchForm}`);
-
-      // Look for uniqueid in the results page
+      // Debug: search for any links or IDs in the response
+      const linkSample = resultHtml.match(/href="([^"]*Property[^"]*|[^"]*unique[^"]*|[^"]*Print[^"]*|[^"]*Result[^"]*)"/gi)?.slice(0, 5) || [];
+      console.log(`PRC POST links sample: ${JSON.stringify(linkSample)}`);
+      
+      // Also look for different URL patterns PRC might use
       const allIds = [...resultHtml.matchAll(/uniqueid=(\d+)/gi)].map(m => m[1]);
+      const altIds = [...resultHtml.matchAll(/pid=(\d+)/gi)].map(m => m[1]);
+      const resultIds = [...resultHtml.matchAll(/PropertyResults[^"]*?(\d{4,})/gi)].map(m => m[1]);
+      console.log(`PRC POST IDs: uniqueid=${allIds.length}, pid=${altIds.length}, resultIds=${resultIds.length}`);
       const uniqueIds = [...new Set(allIds)];
       console.log(`PRC POST: found ${uniqueIds.length} unique IDs`);
 
