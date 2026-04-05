@@ -136,7 +136,7 @@ function isAddressMatch(extractedAddr: string, searchAddr: string, houseNum: str
 }
 
 // ========== PLATFORM TYPES ==========
-type Platform = "vgs" | "mapxpress" | "qds" | "act" | "ias" | "equality" | "prc" | "avon_gis" | "custom";
+type Platform = "vgs" | "mapxpress" | "qds" | "act" | "ias" | "equality" | "prc" | "avon_gis" | "arcgis_rest" | "custom";
 
 interface TownConfig {
   platform: Platform;
@@ -312,12 +312,14 @@ const TOWN_DB: Record<string, TownConfig> = {
   "east hartford": { platform: "ias", url: "https://easthartford.ias-clt.com/", label: "East Hartford Assessor" },
   hartford: { platform: "ias", url: "https://hartford.ias-clt.com/", label: "Hartford Assessor" },
 
-  // === Towns with custom/dedicated assessment sites (scraped dynamically) ===
-  bloomfield: { platform: "custom", url: "https://bloomfield.mapxpress.net/", label: "Bloomfield GIS & Property Info" },
+  // === MapXpress Towns (direct ASP search + detail pages) ===
+  bloomfield: { platform: "mapxpress", slug: "bloomfield", url: "https://bloomfield.mapxpress.net" },
+  wethersfield: { platform: "mapxpress", slug: "wethersfield", url: "https://wethersfield.mapxpress.net" },
+  windsor: { platform: "mapxpress", slug: "windsor", url: "https://windsor.mapxpress.net" },
+  groton: { platform: "mapxpress", slug: "groton", url: "https://groton.mapxpress.net" },
+
+  // === Towns with custom/dedicated assessment sites ===
   darien: { platform: "custom", url: "https://assessment.darienct.gov/Search/commonsearch.aspx?mode=address", label: "Darien Assessor" },
-  groton: { platform: "custom", url: "https://www.groton-ct.gov/departments/gis/index.php", label: "Groton GIS Portal" },
-  wethersfield: { platform: "custom", url: "https://wethersfieldct.gov/171/Real-Estate", label: "Wethersfield Assessor" },
-  windsor: { platform: "custom", url: "https://www.windsorct.gov/541/Property-Cards", label: "Windsor Property Cards" },
 
   // === Remaining custom towns ===
   barkhamsted: { platform: "custom", url: "https://www.barkhamsted.us/", label: "Barkhamsted Assessor" },
@@ -449,6 +451,9 @@ Deno.serve(async (req) => {
           result = await scrapeEqualityCama(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
         case "avon_gis":
+          result = await scrapeAvonGIS(apiKey, normalizedAddress, lookupTown);
+          break;
+        case "arcgis_rest":
           result = await scrapeAvonGIS(apiKey, normalizedAddress, lookupTown);
           break;
         default:
@@ -866,53 +871,273 @@ function mergeVGSFields(primary: any, secondary: any) {
   }
 }
 
-// ========== MAPXPRESS SCRAPING ==========
+// ========== MAPXPRESS SCRAPING (via Firecrawl with known form structure) ==========
 async function scrapeMapXpress(apiKey: string, baseUrl: string, address: string, town: string) {
   try {
-    console.log(`Scraping MapXpress for ${town}: ${baseUrl}`);
+    const addrParts = address.match(/^(\d+)\s+(.+)$/i);
+    const houseNum = addrParts?.[1] || "";
+    const streetFull = addrParts?.[2] || address;
+    const streetBase = streetFull
+      .replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|PARK|TERRACE|TRAIL|HIGHWAY)\.?$/i, "")
+      .trim();
 
-    // Use Firecrawl actions to search on the MapXpress site directly
+    console.log(`MapXpress: searching ${baseUrl} for #${houseNum} on ${streetBase}`);
+    const portalUrl = `${baseUrl.replace(/\/$/, "")}/`;
+
+    // Use Firecrawl to: accept disclaimer → fill house number + street → submit → get results HTML
     const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        url: baseUrl,
-        formats: ["markdown", "html"],
+        url: portalUrl,
+        formats: ["html"],
+        onlyMainContent: false,
         waitFor: 1500,
         actions: [
-          { type: "wait", milliseconds: 1000 },
-          {
-            type: "click",
-            selector: 'input[name*="Address"], input[name*="address"], #txtAddress, input[placeholder*="Address"]',
-          },
-          { type: "write", text: address },
-          { type: "click", selector: 'input[type="submit"], button[type="submit"], #btnSearch' },
-          { type: "wait", milliseconds: 3000 },
+          { type: "wait", milliseconds: 500 },
+          { type: "click", selector: "a[href*='portal'], a:has-text('Accept'), a:has-text('Enter'), a:has-text('Agree'), a:has-text('ACCEPT')" },
+          { type: "wait", milliseconds: 800 },
+          { type: "click", selector: "input[name='houseno']" },
+          { type: "write", text: houseNum },
+          { type: "click", selector: "input[name='street']" },
+          { type: "write", text: streetBase },
+          { type: "click", selector: "input[name*='go'], input[type='image'], input[type='submit']" },
+          { type: "wait", milliseconds: 2500 },
         ],
       }),
     });
 
-    if (resp.ok) {
-      const data = await resp.json();
-      const markdown = data.data?.markdown || data.markdown || "";
-      if (markdown.length > 200) {
-        const extracted = extractMapXpressData(markdown, address, town);
-        if (extracted) {
-          extracted.propertyCardUrl = data.data?.metadata?.url || baseUrl;
-// LLC lookup removed - handled separately by frontend
-          return json({ success: true, property: extracted });
-        }
+    if (!resp.ok) {
+      console.log(`MapXpress Firecrawl failed: ${resp.status}`);
+      return json({ success: false, error: `Could not search ${town} MapXpress.`, searchUrl: baseUrl });
+    }
+
+    const data = await resp.json();
+    const html = data.data?.html || data.html || "";
+    console.log(`MapXpress search HTML: ${html.length} chars`);
+
+    // Parse UNIQUE_ID from results
+    const resultPattern = /(\d+)<br>\s*(R?\d+)<br>\s*([^<]+)<br>\s*(\d+\s+[^<]+)<br>/gi;
+    const matches: { uniqueId: string; account: string; owner: string; addr: string }[] = [];
+    let m;
+    while ((m = resultPattern.exec(html)) !== null) {
+      matches.push({ uniqueId: m[1], account: m[2].trim(), owner: m[3].trim(), addr: m[4].trim() });
+    }
+
+    // Also try detail link pattern
+    if (matches.length === 0) {
+      const detailLinks = [...html.matchAll(/detail\.asp\?UNIQUE_ID=(\d+)/gi)];
+      for (const dl of detailLinks) {
+        matches.push({ uniqueId: dl[1], account: "", owner: "", addr: "" });
       }
     }
+
+    console.log(`MapXpress: found ${matches.length} results`);
+    if (matches.length === 0) {
+      return json({ success: false, error: `No results for "${address}" in ${town}.`, searchUrl: baseUrl });
+    }
+
+    // Find best match
+    let bestMatch = matches[0];
+    if (matches.length > 1) {
+      const streetUpper = streetBase.toUpperCase();
+      const found = matches.find(r => r.addr.toUpperCase().startsWith(houseNum) && r.addr.toUpperCase().includes(streetUpper));
+      if (found) bestMatch = found;
+    }
+
+    // Scrape detail page
+    const detailUrl = `${baseUrl.replace(/\/$/, "")}/PAGES/detail.asp?UNIQUE_ID=${bestMatch.uniqueId}`;
+    console.log(`MapXpress: scraping detail: ${detailUrl}`);
+    const detailMd = await firecrawlScrapeFullPage(apiKey, detailUrl);
+    if (detailMd && detailMd.length > 200) {
+      const extracted = extractMapXpressDetailData(detailMd, address, town, bestMatch);
+      if (extracted) {
+        extracted.propertyCardUrl = detailUrl;
+        return json({ success: true, property: extracted });
+      }
+    }
+
+    // Return basic data from search if detail fails
+    if (bestMatch.owner) {
+      const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(bestMatch.owner);
+      return json({ success: true, property: {
+        address: bestMatch.addr, town, owner: bestMatch.owner, coOwner: "", ownerAddress: "", isLLC,
+        parcelId: bestMatch.uniqueId, mblu: "", accountNumber: bestMatch.account,
+        buildingCount: "", bookPage: "", certificate: "", instrument: "",
+        assessedValue: "", totalAppraisal: "", totalMarketValue: "", improvementsValue: "", landValue: "",
+        assessImprovements: "", assessLand: "", assessTotal: "", salePrice: "", saleDate: "",
+        lotSize: "", frontage: "", depth: "", useCode: "", useDescription: "", zoning: "", neighborhood: "",
+        totalMarketLand: "", landAppraisedValue: "", yearBuilt: "", buildingStyle: "", model: "", stories: "",
+        livingArea: "", replacementCost: "", buildingPercentGood: "", occupancy: "", totalRooms: "", bedrooms: "",
+        totalBaths: "", halfBaths: "", totalXtraFixtures: "", bathStyle: "", kitchenStyle: "", interiorCondition: "",
+        finBsmntArea: "", finBsmntQual: "", grade: "", exteriorWall: "", roofStructure: "", roofCover: "",
+        interiorWall: "", flooring: "", heating: "", heatingFuel: "", cooling: "", buildingPhoto: "",
+        garage: "", pool: "", fireplace: "", foundation: "", taxAmount: "",
+        ownershipHistory: [], subAreas: [], valuationHistory: [], propertyCardUrl: detailUrl, llcDetails: undefined as any,
+      }});
+    }
+
+    return json({ success: false, error: `Could not find "${address}" in ${town}.`, searchUrl: baseUrl });
   } catch (e) {
     console.error("MapXpress error:", e);
+    return json({ success: false, error: `Error searching ${town} MapXpress.`, searchUrl: baseUrl });
   }
+}
 
-  return json({
-    success: false,
-    error: `Could not find property in ${town}. Try searching the MapXpress database directly.`,
-    searchUrl: baseUrl,
-  });
+// Extract structured data from MapXpress detail.asp page
+function extractMapXpressDetailData(markdown: string, address: string, town: string, searchResult: { uniqueId: string; account: string; owner: string; addr: string } | null) {
+  const text = markdown;
+
+  const grab = (labels: string[]): string => {
+    for (const label of labels) {
+      const tableRe = new RegExp(`\\|\\s*${label}:?\\s*\\|\\s*([^|]*?)\\s*\\|`, "i");
+      const tm = text.match(tableRe);
+      if (tm?.[1]?.trim()) return tm[1].trim();
+      const colonRe = new RegExp(`${label}[:\\s]+([^\\n|]+)`, "i");
+      const cm = text.match(colonRe);
+      if (cm?.[1]?.trim()) return cm[1].trim();
+      const boldRe = new RegExp(`\\*\\*${label}\\*\\*[:\\s]*([^\\n|]+)`, "i");
+      const bm = text.match(boldRe);
+      if (bm?.[1]?.trim()) return bm[1].trim();
+    }
+    return "";
+  };
+
+  const dollarGrab = (labels: string[]): string => {
+    for (const label of labels) {
+      const re = new RegExp(`${label}[:\\s]*\\$?([\\d,]+)`, "i");
+      const m = text.match(re);
+      if (m?.[1]) return m[1].trim();
+    }
+    return "";
+  };
+
+  let owner = grab(["Owner", "Owner Name"]) || searchResult?.owner || "";
+  const coOwner = grab(["Co-Owner", "Second Name", "Second name"]);
+  let propertyAddress = grab(["Location", "Property Location", "Address"]) || searchResult?.addr || address;
+  const ownerAddress = grab(["Mailing Address", "Mail Address", "MAILING ADDRESS"]);
+  const parcelId = grab(["Unique ID", "Unique_ID", "PID"]) || searchResult?.uniqueId || "";
+  const accountNumber = grab(["Account", "Acct"]) || searchResult?.account || "";
+  const mbl = grab(["MBL", "Map/Block/Lot"]);
+
+  // Values
+  const bldgAppraised = dollarGrab(["Buildings Appraised", "Building Appraised", "Bldg Appraised"]);
+  const bldgAssessed = dollarGrab(["Buildings Assessed", "Building Assessed", "Bldg Assessed"]);
+  const landAppraised = dollarGrab(["Land Appraised"]);
+  const landAssessed = dollarGrab(["Land Assessed"]);
+  const totalAppraised = dollarGrab(["Total Appraised", "TOTAL Appraised"]);
+  const totalAssessed = dollarGrab(["Total Assessed", "TOTAL Assessed"]);
+
+  // Property info
+  const lotSize = grab(["Total Acres", "Lot Size", "Acres"]);
+  const landUse = grab(["Land Use", "Property Type", "Use"]);
+  const zoning = grab(["Zoning", "Zone"]);
+  const neighborhood = grab(["Neighborhood", "NBHD"]);
+  const foundation = grab(["Foundation"]);
+
+  // Sale info
+  const saleDate = grab(["Sale Date"]);
+  const salePrice = dollarGrab(["Sale Price"]);
+  const bookPage = grab(["Book / Page", "Book/Page", "Book \\/ Page"]);
+
+  // Building
+  const buildingGross = grab(["Building Gross", "Gross.*sqft"]);
+  const livingArea = grab(["Living Area", "Living.*sqft"]);
+  const buildingStyle = grab(["Building Style", "Style"]);
+  const buildingCondition = grab(["Building Condition", "Condition"]);
+  const totalRooms = grab(["Number of Rooms", "Rooms"]);
+  const bedrooms = grab(["Number of Bedrooms", "Bedrooms"]);
+  const totalBaths = grab(["Number of Bathrooms", "Bathrooms", "Baths"]);
+  const stories = grab(["Stories"]);
+  const roofStructure = grab(["Roof Structure", "Roof"]);
+  const exteriorWall = grab(["Primary Exterior", "Exterior Wall", "Exterior"]);
+  const heating = grab(["Heating/Cooling Type", "Heating", "Heat Type"]);
+  const heatingFuel = grab(["Heating Fuel", "Fuel"]);
+  const cooling = grab(["AC_Type", "AC Type", "Cooling"]);
+  const yearBuilt = grab(["Year Built"]);
+  const garage = grab(["Garage"]);
+  const pool = grab(["Pool"]);
+  const fireplace = grab(["Fireplace", "Fireplaces"]);
+
+  owner = owner.replace(/[*#\[\]|]/g, "").replace(/<br\/?>/gi, " ").replace(/\s+/g, " ").trim();
+  if (!owner || owner.length < 2) return null;
+
+  const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner);
+  const fmt$ = (v: string) => (v ? `$${v}` : "");
+
+  return {
+    address: propertyAddress,
+    town,
+    owner,
+    coOwner,
+    ownerAddress,
+    isLLC,
+    parcelId,
+    mblu: mbl,
+    accountNumber,
+    buildingCount: "",
+    bookPage,
+    certificate: "",
+    instrument: "",
+    assessedValue: fmt$(totalAssessed),
+    totalAppraisal: fmt$(totalAppraised),
+    totalMarketValue: fmt$(totalAppraised),
+    improvementsValue: fmt$(bldgAppraised),
+    landValue: fmt$(landAppraised),
+    assessImprovements: fmt$(bldgAssessed),
+    assessLand: fmt$(landAssessed),
+    assessTotal: fmt$(totalAssessed),
+    salePrice: salePrice ? `$${salePrice}` : "",
+    saleDate,
+    lotSize: lotSize ? `${lotSize} acres` : "",
+    frontage: "",
+    depth: "",
+    useCode: "",
+    useDescription: landUse,
+    zoning,
+    neighborhood,
+    totalMarketLand: "",
+    landAppraisedValue: fmt$(landAppraised),
+    yearBuilt,
+    buildingStyle,
+    model: "",
+    stories,
+    livingArea: livingArea ? `${livingArea} sq ft` : "",
+    replacementCost: "",
+    buildingPercentGood: "",
+    occupancy: "",
+    totalRooms,
+    bedrooms,
+    totalBaths,
+    halfBaths: "",
+    totalXtraFixtures: "",
+    bathStyle: "",
+    kitchenStyle: "",
+    interiorCondition: buildingCondition,
+    finBsmntArea: "",
+    finBsmntQual: "",
+    grade: "",
+    exteriorWall,
+    roofStructure,
+    roofCover: "",
+    interiorWall: "",
+    flooring: "",
+    heating,
+    heatingFuel,
+    cooling,
+    buildingPhoto: "",
+    garage,
+    pool,
+    fireplace,
+    foundation,
+    taxAmount: "",
+    ownershipHistory: [] as { owner: string; salePrice: string; bookPage: string; saleDate: string }[],
+    subAreas: [] as { code: string; description: string; grossArea: string; livingArea: string }[],
+    valuationHistory: [] as { year: string; improvements: string; land: string; total: string }[],
+    propertyCardUrl: "",
+    summaryCardUrl: "",
+    llcDetails: undefined as any,
+  };
 }
 
 // ========== QDS SCRAPING (Avon etc.) ==========
@@ -2111,11 +2336,7 @@ function extractVGSData(markdown: string, address: string, town: string) {
   };
 }
 
-// ========== MAPXPRESS DATA EXTRACTOR ==========
-function extractMapXpressData(markdown: string, address: string, town: string) {
-  // MapXpress uses a similar table format
-  return extractGenericPropertyData(markdown, address, town);
-}
+// extractMapXpressData is now replaced by extractMapXpressDetailData above
 
 // ========== QDS CARD DATA EXTRACTOR (Avon-style) ==========
 function extractQDSCardData(markdown: string, address: string, town: string) {
