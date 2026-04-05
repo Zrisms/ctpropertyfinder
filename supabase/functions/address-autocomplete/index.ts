@@ -3,6 +3,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Simple in-memory cache to reduce Nominatim calls
+const cache = new Map<string, { data: unknown; ts: number }>();
+const CACHE_TTL = 300_000; // 5 minutes
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -16,14 +20,20 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Use Nominatim with CT bounding box for Connecticut-specific results
+    const cacheKey = query.trim().toLowerCase();
+    const cached = cache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < CACHE_TTL) {
+      return new Response(JSON.stringify(cached.data), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const params = new URLSearchParams({
       q: `${query}, Connecticut, USA`,
       format: 'json',
       addressdetails: '1',
       limit: '8',
       countrycodes: 'us',
-      // CT bounding box
       viewbox: '-73.7278,42.0505,-71.7868,40.9509',
       bounded: '1',
     });
@@ -32,11 +42,19 @@ Deno.serve(async (req) => {
       `https://nominatim.openstreetmap.org/search?${params}`,
       {
         headers: {
-          'User-Agent': 'CTPropertyLookup/1.0',
+          'User-Agent': 'CTPropertyLookup/1.0 (property-search-app)',
           'Accept': 'application/json',
         },
       }
     );
+
+    // Handle rate limiting gracefully
+    if (response.status === 429) {
+      const result = { suggestions: [] };
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     if (!response.ok) {
       throw new Error(`Nominatim error: ${response.status}`);
@@ -53,23 +71,32 @@ Deno.serve(async (req) => {
         const town = a.city || a.town || a.village || a.hamlet || '';
         const street = [houseNumber, road].filter(Boolean).join(' ');
         return {
-          street: street,
-          town: town,
+          street,
+          town,
           display: [street, town].filter(Boolean).join(', ') + (town ? ', CT' : ''),
-          lat: r.lat,
-          lon: r.lon,
         };
       })
       .filter((s: any) => s.street && s.town);
 
-    return new Response(JSON.stringify({ suggestions }), {
+    const result = { suggestions };
+    cache.set(cacheKey, { data: result, ts: Date.now() });
+
+    // Prune old cache entries
+    if (cache.size > 200) {
+      const now = Date.now();
+      for (const [k, v] of cache) {
+        if (now - v.ts > CACHE_TTL) cache.delete(k);
+      }
+    }
+
+    return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
     console.error('Autocomplete error:', error);
     return new Response(
-      JSON.stringify({ suggestions: [], error: error.message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({ suggestions: [] }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });

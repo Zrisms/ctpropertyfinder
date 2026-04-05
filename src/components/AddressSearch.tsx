@@ -62,7 +62,7 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
       } finally {
         setIsFetchingSuggestions(false);
       }
-    }, 350);
+    }, 800);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
