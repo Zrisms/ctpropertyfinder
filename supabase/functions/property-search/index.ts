@@ -1429,13 +1429,7 @@ async function scrapePropertyDetail(apiKey: string, url: string, address: string
     const extracted = extractVGSData(detailMd, address, town);
     if (extracted && extracted.owner && !extracted.owner.includes("Enter an")) {
       extracted.propertyCardUrl = url;
-      if (extracted.isLLC) {
-        try {
-          extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
-        } catch (e) {
-          console.error("LLC error:", e);
-        }
-      }
+      // LLC lookup removed - handled separately by frontend
       return json({ success: true, property: extracted });
     }
   }
