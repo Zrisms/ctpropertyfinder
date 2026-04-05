@@ -766,7 +766,7 @@ async function scrapeQDS(apiKey: string, baseUrl: string, address: string, town:
 
     if (!propertyUrl) {
       console.log(`Property not found in street listing, trying search fallback`);
-      return await scrapeQDSViaSearch(apiKey, baseUrl, address, town);
+      return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
     }
 
     // Step 3: Fetch the property card page
