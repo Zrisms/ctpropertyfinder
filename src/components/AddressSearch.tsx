@@ -94,18 +94,20 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
   const filteredTowns = useMemo(() => {
     if (!town) return CT_TOWNS.slice(0, 6);
     const q = town.toLowerCase();
-    const starts = CT_TOWNS.filter((t) => t.toLowerCase().startsWith(q));
-    const contains = CT_TOWNS.filter((t) => !t.toLowerCase().startsWith(q) && t.toLowerCase().includes(q));
-    // Fuzzy: allow 1-char difference for short inputs, 2 for longer
-    const fuzzy = q.length >= 3 ? CT_TOWNS.filter((t) => {
-      const tl = t.toLowerCase();
-      if (tl.startsWith(q) || tl.includes(q)) return false;
-      let dist = 0;
-      const minLen = Math.min(q.length, tl.length);
-      for (let i = 0; i < minLen; i++) { if (q[i] !== tl[i]) dist++; }
-      dist += Math.abs(q.length - tl.length);
-      return dist <= (q.length <= 4 ? 1 : 2);
-    }) : [];
+    const starts: string[] = [], contains: string[] = [], fuzzy: string[] = [];
+    const maxDist = q.length <= 4 ? 1 : 2;
+    for (let i = 0; i < TOWNS_LOWER.length; i++) {
+      const tl = TOWNS_LOWER[i];
+      if (tl.startsWith(q)) { starts.push(CT_TOWNS[i]); }
+      else if (tl.includes(q)) { contains.push(CT_TOWNS[i]); }
+      else if (q.length >= 3) {
+        let dist = 0;
+        const minLen = Math.min(q.length, tl.length);
+        for (let j = 0; j < minLen; j++) { if (q[j] !== tl[j]) dist++; }
+        dist += Math.abs(q.length - tl.length);
+        if (dist <= maxDist) fuzzy.push(CT_TOWNS[i]);
+      }
+    }
     return [...starts, ...contains, ...fuzzy].slice(0, 6);
   }, [town]);
 
@@ -124,7 +126,7 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
         if (!error && data?.suggestions) setAddressSuggestions(data.suggestions);
       } catch {}
       finally { if (!controller.signal.aborted) setIsFetching(false); }
-    }, 150);
+    }, 100);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); abortRef.current?.abort(); };
   }, [address]);
 
