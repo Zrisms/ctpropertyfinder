@@ -1629,10 +1629,11 @@ async function scrapeCustomSite(apiKey: string, siteUrl: string, address: string
             'input[value="Search"]', 'input[value="Go"]', 'input[value="Find"]',
             'a:has-text("Search")', '.search-btn', '#btnSearch',
           ].join(", ") },
-          { type: "wait", milliseconds: 3000 },
+          { type: "wait", milliseconds: 2000 },
         ],
       }),
     });
+    clearTimeout(timeout);
 
     if (resp.ok) {
       const data = await resp.json();
