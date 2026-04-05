@@ -58,6 +58,7 @@ function isAddressMatch(extractedAddr: string, searchAddr: string, houseNum: str
   const searchWords = s.split(/\s+/).filter(w => w.length > 2 && !/^(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY)$/.test(w));
   const matchCount = searchWords.filter(w => e.includes(w)).length;
   return matchCount >= Math.min(2, searchWords.length);
+}
 
 
 // ========== PLATFORM TYPES ==========
