@@ -931,7 +931,7 @@ async function scrapeGrotonGIS(address: string, town: string): Promise<Response>
     model: "", stories: parsed.building['Stories'] || "",
     livingArea: parsed.building['Tot Living Area'] || "",
     replacementCost: "", buildingPercentGood: "", occupancy: "",
-    totalRooms: "", bedrooms: "", totalBaths: "", halfBaths: "",
+    totalRooms: "", bedrooms: parsed.building['Bedrooms'] || "", totalBaths: parsed.building['Bathrooms'] || "", halfBaths: parsed.building['Half Baths'] || "",
     totalXtraFixtures: "", bathStyle: "", kitchenStyle: "", interiorCondition: "",
     finBsmntArea: "", finBsmntQual: "", grade: "",
     exteriorWall: parsed.building['Exterior'] || "",
