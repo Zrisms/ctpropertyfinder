@@ -9,6 +9,39 @@ import { normalizeAddress } from "@/lib/address-utils";
 interface AddressSearchProps { onSearch: (address: string, town: string) => void; isLoading: boolean; }
 interface AddressSuggestion { street: string; town: string; display: string; }
 
+/** Parse a full pasted address like "67 Blakeslee Rd, Wallingford, CT 06492" */
+function parseFullAddress(input: string): { street: string; town: string } | null {
+  // Remove zip codes and state abbreviation
+  const cleaned = input.replace(/,?\s*CT\s*\d{0,5}/i, '').replace(/\d{5}(-\d{4})?$/, '').trim();
+  // Split by comma
+  const parts = cleaned.split(',').map(p => p.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    const street = parts[0];
+    // Town is the last meaningful part (skip state if present)
+    let townPart = parts[parts.length - 1];
+    if (/^(ct|connecticut)$/i.test(townPart) && parts.length >= 3) {
+      townPart = parts[parts.length - 2];
+    }
+    // Match town to CT_TOWNS
+    const townLower = townPart.toLowerCase().trim();
+    const matched = CT_TOWNS.find(t => t.toLowerCase() === townLower);
+    if (matched) return { street, town: matched };
+    // Fuzzy match
+    const fuzzy = CT_TOWNS.find(t => {
+      const tl = t.toLowerCase();
+      if (tl.startsWith(townLower) || townLower.startsWith(tl)) return true;
+      let dist = 0;
+      const minLen = Math.min(townLower.length, tl.length);
+      for (let i = 0; i < minLen; i++) { if (townLower[i] !== tl[i]) dist++; }
+      dist += Math.abs(townLower.length - tl.length);
+      return dist <= 2;
+    });
+    if (fuzzy) return { street, town: fuzzy };
+    return { street, town: townPart.trim() };
+  }
+  return null;
+}
+
 export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
   const [address, setAddress] = useState("");
   const [town, setTown] = useState("");
@@ -95,8 +128,24 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
             <X className="h-4 w-4" />
           </button>
         )}
-        <Input ref={addressInputRef} type="text" placeholder="Street address" value={address}
-          onChange={e => { setAddress(e.target.value); setTown(""); setShowAddressSuggestions(true); setActiveAddressIndex(-1); }}
+        <Input ref={addressInputRef} type="text" placeholder="Street address (or paste full address)" value={address}
+          onChange={e => {
+            const val = e.target.value;
+            const parsed = parseFullAddress(val);
+            if (parsed && val.includes(',')) {
+              setAddress(parsed.street); setTown(parsed.town); setShowAddressSuggestions(false);
+            } else {
+              setAddress(val); setTown(""); setShowAddressSuggestions(true); setActiveAddressIndex(-1);
+            }
+          }}
+          onPaste={e => {
+            const pasted = e.clipboardData.getData('text');
+            const parsed = parseFullAddress(pasted);
+            if (parsed) {
+              e.preventDefault();
+              setAddress(parsed.street); setTown(parsed.town); setShowAddressSuggestions(false);
+            }
+          }}
           onFocus={() => setShowAddressSuggestions(true)}
           onBlur={() => setTimeout(() => setShowAddressSuggestions(false), 200)}
           onKeyDown={handleAddressKeyDown} className={`${inputCls} pr-9`} />
