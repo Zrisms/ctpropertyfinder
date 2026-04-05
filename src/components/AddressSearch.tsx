@@ -44,7 +44,7 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
       abortRef.current = controller;
       setIsFetching(true);
       try {
-        const q = `${address}, Connecticut`;
+        const q = `${normalizeAddress(address)}, Connecticut`;
         const { data, error } = await supabase.functions.invoke("address-autocomplete", { body: { query: q } });
         if (controller.signal.aborted) return;
         if (!error && data?.suggestions) setAddressSuggestions(data.suggestions);
