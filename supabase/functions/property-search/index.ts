@@ -319,6 +319,9 @@ Deno.serve(async (req) => {
         case 'equality':
           result = await scrapeEqualityCama(apiKey, config.url!, normalizedAddress, town);
           break;
+        case 'avon_gis':
+          result = await scrapeAvonGIS(apiKey, normalizedAddress, town);
+          break;
         default:
           result = json({ success: false });
           break;
