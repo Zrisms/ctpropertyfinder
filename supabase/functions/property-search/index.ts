@@ -741,7 +741,7 @@ async function scrapeQDS(apiKey: string, baseUrl: string, address: string, town:
     if (!streetPageMd) {
       // Try alternate format
       const altUrl = `${baseUrl.replace(/\/$/, '')}/propcards/streets.html#${firstLetter}`;
-      return await scrapeQDSViaSearch(apiKey, baseUrl, address, town);
+      return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
     }
 
     // Step 2: Find the matching property link in the street page
