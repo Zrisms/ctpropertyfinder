@@ -393,23 +393,6 @@ Deno.serve(async (req) => {
       console.log(`Resolved lookup town: ${town} -> ${lookupTown}`);
     }
 
-    // ===== CHECK CACHE FIRST =====
-    try {
-      const sb = getSupabaseAdmin();
-      const { data: cached } = await sb
-        .from('property_cache')
-        .select('property_data')
-        .eq('address', normalizedAddress.toLowerCase())
-        .eq('town', lookupTown)
-        .maybeSingle();
-      if (cached?.property_data) {
-        console.log(`Cache HIT for ${normalizedAddress}, ${lookupTown}`);
-        return json({ success: true, property: cached.property_data });
-      }
-      console.log(`Cache MISS for ${normalizedAddress}, ${lookupTown}`);
-    } catch (e) {
-      console.error('Cache lookup error (continuing):', e);
-    }
 
     const apiKey = Deno.env.get('FIRECRAWL_API_KEY');
     if (!apiKey) {
