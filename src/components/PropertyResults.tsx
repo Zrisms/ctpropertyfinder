@@ -156,9 +156,9 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
         {data.improvementsValue && <TableRow label="Improvements" value={data.improvementsValue} />}
         {data.landValue && <TableRow label="Land" value={data.landValue} />}
         {data.totalMarketValue && <TableRow label="Total Market Value (Assessment)" value={data.totalMarketValue} highlight />}
-        {data.assessTotal && <TableRow label="Assessment Total" value={`$${data.assessTotal}`} />}
-        {data.assessImprovements && <TableRow label="Assessment - Improvements" value={`$${data.assessImprovements}`} />}
-        {data.assessLand && <TableRow label="Assessment - Land" value={`$${data.assessLand}`} />}
+        {data.assessTotal && <TableRow label="Assessment Total" value={data.assessTotal} />}
+        {data.assessImprovements && <TableRow label="Assessment - Improvements" value={data.assessImprovements} />}
+        {data.assessLand && <TableRow label="Assessment - Land" value={data.assessLand} />}
         {!data.totalAppraisal && !data.totalMarketValue && <EmptyRow />}
       </DetailSection>
 
