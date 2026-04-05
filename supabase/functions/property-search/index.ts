@@ -313,6 +313,54 @@ const TOWN_DB: Record<string, TownConfig> = {
   "woodstock":      { platform: 'custom', url: 'https://www.woodstockct.gov/', label: 'Woodstock Assessor' },
 };
 
+const TOWN_ALIASES: Record<string, string> = {
+  'south glastonbury': 'glastonbury',
+  'east glastonbury': 'glastonbury',
+  'south norwalk': 'norwalk',
+  'cos cob': 'greenwich',
+  'old greenwich': 'greenwich',
+  'riverside': 'greenwich',
+  'glenville': 'greenwich',
+  'central village': 'plainfield',
+  'moosup': 'plainfield',
+  'wauregan': 'plainfield',
+  'niantic': 'east lyme',
+  'pawcatuck': 'stonington',
+  'oakdale': 'montville',
+  'uncasville': 'montville',
+  'quaker hill': 'waterford',
+  'taftville': 'norwich',
+  'greenville': 'norwich',
+  'occum': 'norwich',
+  'amston': 'hebron',
+  'hadlyme': 'east haddam',
+  'higganum': 'haddam',
+  'north grosvenordale': 'thompson',
+  'grosvenordale': 'thompson',
+  'thompsonville': 'enfield',
+  'hazardville': 'enfield',
+};
+
+function resolveTownLookup(town: string): { lookupTown: string; config?: TownConfig } {
+  const townLower = town.toLowerCase().trim().replace(/\s+/g, ' ');
+  const exact = TOWN_DB[townLower];
+  if (exact) return { lookupTown: townLower, config: exact };
+
+  const aliasedTown = TOWN_ALIASES[townLower];
+  if (aliasedTown && TOWN_DB[aliasedTown]) {
+    return { lookupTown: aliasedTown, config: TOWN_DB[aliasedTown] };
+  }
+
+  const directionalMatch = townLower.match(/^(north|south|east|west)\s+(.+)$/);
+  if (directionalMatch) {
+    const baseTown = directionalMatch[2].trim();
+    const directionalBase = TOWN_DB[baseTown];
+    if (directionalBase) return { lookupTown: baseTown, config: directionalBase };
+  }
+
+  return { lookupTown: townLower, config: TOWN_DB[townLower] };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -326,18 +374,18 @@ Deno.serve(async (req) => {
     }
 
     const normalizedAddress = normalizeAddress(address);
-    const townLower = town.toLowerCase().trim();
+    const { lookupTown, config } = resolveTownLookup(town);
     console.log(`Searching: ${normalizedAddress}, ${town}, CT`);
+    if (lookupTown !== town.toLowerCase().trim()) {
+      console.log(`Resolved lookup town: ${town} -> ${lookupTown}`);
+    }
 
     const apiKey = Deno.env.get('FIRECRAWL_API_KEY');
     if (!apiKey) {
       return json({ success: false, error: "Scraping service not configured" }, 500);
     }
 
-    const config = TOWN_DB[townLower];
-
     if (!config) {
-      // Even unrecognized towns get the universal fallback
       console.log(`Town "${town}" not in DB, trying universal fallback`);
       return await universalPropertySearch(apiKey, normalizedAddress, town);
     }
