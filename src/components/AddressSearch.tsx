@@ -36,28 +36,29 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
     if (!address) return [];
     const parts = address.trim().split(/\s+/);
     
-    // If only a number, no suggestions yet
+    const hasNumber = /^\d+/.test(parts[0]);
+
+    // Just a house number typed (e.g. "25") — show popular street names
+    if (parts.length === 1 && hasNumber) {
+      return COMMON_STREET_NAMES.slice(0, 8).map((s) => `${parts[0]} ${s}`);
+    }
+
     if (parts.length < 2) return [];
-    
+
     const lastWord = parts[parts.length - 1].toLowerCase();
     const prefix = parts.slice(0, -1).join(" ");
 
-    // Check if user is typing a street name (after the house number)
-    const hasNumber = /^\d+/.test(parts[0]);
-    
     if (hasNumber && parts.length === 2) {
-      // Suggest street names after house number
       const matches = COMMON_STREET_NAMES.filter((s) =>
         s.toLowerCase().startsWith(lastWord)
-      ).slice(0, 6);
+      ).slice(0, 8);
       return matches.map((m) => `${prefix} ${m}`);
     }
-    
+
     if (hasNumber && parts.length >= 3) {
-      // Suggest suffixes after street name
       const suffixMatches = STREET_SUFFIXES.filter((s) =>
         s.toLowerCase().startsWith(lastWord)
-      ).slice(0, 6);
+      ).slice(0, 8);
       if (suffixMatches.length > 0) {
         return suffixMatches.map((s) => `${prefix} ${s}`);
       }
