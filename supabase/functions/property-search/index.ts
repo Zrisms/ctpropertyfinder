@@ -401,7 +401,7 @@ Deno.serve(async (req) => {
 
     if (!config) {
       console.log(`Town "${town}" not in DB, trying universal fallback`);
-      return await withCache(normalizedAddress, lookupTown, () => universalPropertySearch(apiKey, normalizedAddress, town));
+      return await universalPropertySearch(apiKey, normalizedAddress, town);
     }
 
     // For 'custom' platform towns (no real scraper), skip directly to smart extract
