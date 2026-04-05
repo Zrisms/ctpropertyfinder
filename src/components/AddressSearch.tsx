@@ -21,6 +21,11 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
   const abortRef = useRef<AbortController | null>(null);
   const addressInputRef = useRef<HTMLInputElement>(null);
 
+  const handleClear = useCallback(() => {
+    setAddress(""); setTown(""); setAddressSuggestions([]); setShowAddressSuggestions(false); setActiveAddressIndex(-1);
+    requestAnimationFrame(() => addressInputRef.current?.focus());
+  }, []);
+
   const filteredTowns = useMemo(() => {
     if (!town) return CT_TOWNS.slice(0, 6);
     const q = town.toLowerCase();
