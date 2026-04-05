@@ -357,7 +357,7 @@ async function smartExtractProperty(apiKey: string, address: string, town: strin
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      query: `"${houseNum} ${streetBase}" "${town}" CT property owner assessment`,
+      query: `"${houseNum} ${streetBase}" "${town}" CT property owner assessment site:.gov OR site:.us OR site:vgsi.com OR site:propertyrecordcards.com`,
       limit: 3,
     }),
   });
