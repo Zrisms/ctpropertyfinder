@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Building2, ExternalLink } from "lucide-react";
+import { Building2, ExternalLink, Shield } from "lucide-react";
 import { AddressSearch } from "@/components/AddressSearch";
 import { PropertyResults, type PropertyData } from "@/components/PropertyResults";
 import { useToast } from "@/hooks/use-toast";
@@ -115,39 +115,53 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen" style={{ backgroundImage: 'url(/images/bg-tile.png)', backgroundRepeat: 'repeat', backgroundSize: '150px' }}>
-      <header className="bg-navy text-primary-foreground py-16 px-4">
-        <div className="max-w-3xl mx-auto text-center space-y-4">
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <Building2 className="h-10 w-10 text-red-500" />
+    <div className="min-h-screen bg-background">
+      {/* Subtle grid pattern overlay */}
+      <div className="fixed inset-0 pointer-events-none opacity-[0.03]"
+        style={{
+          backgroundImage: `linear-gradient(hsl(220 60% 55% / 0.3) 1px, transparent 1px), linear-gradient(90deg, hsl(220 60% 55% / 0.3) 1px, transparent 1px)`,
+          backgroundSize: '60px 60px',
+        }}
+      />
+
+      {/* Header */}
+      <header className="relative overflow-hidden border-b border-border/50">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-background to-accent/5" />
+        <div className="relative max-w-4xl mx-auto px-6 py-20 text-center">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-medium tracking-wide uppercase mb-8 animate-fade-in">
+            <Shield className="h-3.5 w-3.5" />
+            Connecticut Property Intelligence
           </div>
-          <h1 className="font-display text-4xl md:text-5xl tracking-tight">
-            CT Property Lookup
+          <h1 className="font-display text-5xl md:text-6xl lg:text-7xl tracking-tight leading-[1.1] mb-6 animate-fade-in" style={{ animationDelay: '0.1s', opacity: 0 }}>
+            <span className="text-foreground">Property</span>
+            <br />
+            <span className="gradient-text">Lookup</span>
           </h1>
-          <p className="text-lg text-primary-foreground/70 max-w-xl mx-auto">
-            Search any Connecticut property — get field cards, owner info, and LLC details instantly.
+          <p className="text-lg text-muted-foreground max-w-lg mx-auto leading-relaxed animate-fade-in" style={{ animationDelay: '0.2s', opacity: 0 }}>
+            Instant access to field cards, owner records, valuations, and LLC details for any Connecticut property.
           </p>
         </div>
       </header>
 
-      <main className="px-4 -mt-6">
-        <div className="max-w-2xl mx-auto">
-          <div className="bg-card rounded-xl shadow-lg border border-border p-6">
+      {/* Search Section */}
+      <main className="relative px-4 -mt-8 z-10">
+        <div className="max-w-2xl mx-auto animate-fade-in-up" style={{ animationDelay: '0.3s', opacity: 0 }}>
+          <div className="glass-card rounded-2xl p-8 glow-primary">
             <AddressSearch onSearch={handleSearch} isLoading={isLoading} />
           </div>
         </div>
 
         {searchUrl && !propertyData && (
-          <div className="max-w-2xl mx-auto mt-6">
-            <div className="bg-card rounded-xl border border-border p-6 text-center space-y-3">
+          <div className="max-w-2xl mx-auto mt-8 animate-fade-in">
+            <div className="glass-card rounded-2xl p-8 text-center space-y-4">
               <p className="text-sm text-muted-foreground">
-                Could not automatically extract data. Try searching the assessor's database directly:
+                Could not automatically extract data. Try the assessor's database directly:
               </p>
               <a
                 href={searchUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/20"
               >
                 <ExternalLink className="h-4 w-4" />
                 Open Assessor Database
@@ -157,7 +171,7 @@ const Index = () => {
         )}
 
         {propertyData && (
-          <div className="mt-8 pb-12">
+          <div className="mt-10 pb-16 animate-fade-in-up">
             <PropertyResults
               data={propertyData}
               onDownloadPdf={handleDownloadPdf}
@@ -169,11 +183,23 @@ const Index = () => {
         )}
 
         {!propertyData && !isLoading && !searchUrl && (
-          <div className="text-center py-16 text-muted-foreground">
-            <p className="text-sm">Enter an address and town to get started</p>
+          <div className="text-center py-20 animate-fade-in" style={{ animationDelay: '0.5s', opacity: 0 }}>
+            <div className="inline-flex items-center gap-3 text-muted-foreground/50">
+              <div className="h-px w-12 bg-border" />
+              <p className="text-sm tracking-wide">Enter an address to begin</p>
+              <div className="h-px w-12 bg-border" />
+            </div>
           </div>
         )}
       </main>
+
+      {/* Footer */}
+      <footer className="border-t border-border/30 mt-auto">
+        <div className="max-w-4xl mx-auto px-6 py-8 flex items-center justify-between text-xs text-muted-foreground/50">
+          <span>CT Property Lookup</span>
+          <span>Public records data</span>
+        </div>
+      </footer>
     </div>
   );
 };
