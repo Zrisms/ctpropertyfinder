@@ -1049,7 +1049,7 @@ function extractQDSCardData(markdown: string, address: string, town: string) {
   const fmt$ = (v: string) => v ? `$${v}` : '';
 
   return {
-    address, town, owner, coOwner, ownerAddress, isLLC,
+    address, town, owner, coOwner: cleanPipe(coOwner), ownerAddress: cleanPipe(ownerAddress), isLLC,
     parcelId, mblu: mapMatch?.[1] ? `${mapMatch[1]}/${lotMatch?.[1] || ''}` : '',
     accountNumber: '', buildingCount: String(assessments.filter(a => a.category.toLowerCase().includes('building')).length || ''),
     bookPage, certificate: '', instrument: '',
