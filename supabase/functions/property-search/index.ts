@@ -1620,6 +1620,27 @@ async function firecrawlScrape(apiKey: string, url: string): Promise<string | nu
   }
 }
 
+// Full page scrape (includes headers, sidebars, all content — better for property detail pages)
+async function firecrawlScrapeFullPage(apiKey: string, url: string): Promise<string | null> {
+  console.log(`Firecrawl full-page scraping: ${url}`);
+  try {
+    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: false, waitFor: 3000 }),
+    });
+    if (!resp.ok) {
+      console.error(`Firecrawl full-page ${resp.status}`);
+      return null;
+    }
+    const data = await resp.json();
+    return data.data?.markdown || data.markdown || null;
+  } catch (e) {
+    console.error("Firecrawl full-page fetch error:", e);
+    return null;
+  }
+}
+
 // ========== VGS DATA EXTRACTOR ==========
 function extractVGSData(markdown: string, address: string, town: string) {
   const text = markdown;
