@@ -312,7 +312,7 @@ const TOWN_DB: Record<string, TownConfig> = {
   "east hartford": { platform: "ias", url: "https://easthartford.ias-clt.com/", label: "East Hartford Assessor" },
   hartford: { platform: "ias", url: "https://hartford.ias-clt.com/", label: "Hartford Assessor" },
 
-  // === Towns with custom/dedicated assessment sites ===
+  // === Towns with custom/dedicated assessment sites (scraped dynamically) ===
   bloomfield: { platform: "custom", url: "https://bloomfield.mapxpress.net/", label: "Bloomfield GIS & Property Info" },
   darien: { platform: "custom", url: "https://assessment.darienct.gov/Search/commonsearch.aspx?mode=address", label: "Darien Assessor" },
   groton: { platform: "custom", url: "https://www.groton-ct.gov/departments/gis/index.php", label: "Groton GIS Portal" },
@@ -410,14 +410,17 @@ Deno.serve(async (req) => {
     }
 
     if (!config) {
-      console.log(`Town "${town}" not in DB — no scraper available`);
-      return json({ success: false, error: `No assessor database configured for ${town}, CT.` });
+      console.log(`Town "${town}" not in DB — trying dynamic scrape`);
+      // Even without config, try a dynamic scrape approach
+      const dynamicResult = await scrapeDynamic(apiKey, normalizedAddress, lookupTown, town);
+      return dynamicResult;
     }
 
-    // For 'custom' platform towns (no real scraper), return not found with URL
+    // For 'custom' platform towns, use dynamic interactive scraping
     if (config.platform === "custom") {
-      console.log(`Custom platform for ${town}, no direct scraper`);
-      return json({ success: false, error: `No direct scraper for ${town}, CT.`, searchUrl: config.url });
+      console.log(`Custom platform for ${town}, using dynamic scraper on ${config.url}`);
+      const dynamicResult = await scrapeCustomSite(apiKey, config.url!, normalizedAddress, town);
+      return dynamicResult;
     }
 
     // Try platform-specific scraper using canonical lookup town
@@ -1582,6 +1585,208 @@ async function scrapeGenericWithFallback(
     success: false,
     error: `Could not find property in ${town}. Try the assessor database directly.`,
     searchUrl: baseUrl,
+  });
+}
+
+// ========== DYNAMIC / CUSTOM SITE SCRAPING ==========
+async function scrapeCustomSite(apiKey: string, siteUrl: string, address: string, town: string): Promise<Response> {
+  const addrParts = address.match(/^(\d+)\s+(.+)$/i);
+  const houseNum = addrParts?.[1] || "";
+  const streetPart = addrParts?.[2] || address;
+  const streetBase = streetPart.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, "").trim();
+
+  console.log(`Dynamic scrape: ${siteUrl} for "${address}" in ${town}`);
+
+  // Single Firecrawl call with actions to search + extract
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 22000);
+    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        url: siteUrl,
+        formats: ["markdown", "links"],
+        onlyMainContent: false,
+        waitFor: 2000,
+        actions: [
+          { type: "wait", milliseconds: 800 },
+          { type: "click", selector: [
+            'input[name*="address" i]', 'input[name*="street" i]', 'input[name*="search" i]',
+            'input[name*="addr" i]', 'input[placeholder*="address" i]', 'input[placeholder*="search" i]',
+            'input[id*="address" i]', 'input[id*="street" i]', 'input[id*="search" i]',
+            'input[type="text"]', 'input[type="search"]',
+          ].join(", ") },
+          { type: "write", text: `${houseNum} ${streetBase}` },
+          { type: "wait", milliseconds: 400 },
+          { type: "click", selector: [
+            'input[type="submit"]', 'button[type="submit"]',
+            'button:has-text("Search")', 'button:has-text("Go")', 'button:has-text("Find")',
+            'input[value="Search"]', 'input[value="Go"]', 'input[value="Find"]',
+            'a:has-text("Search")', '.search-btn', '#btnSearch',
+          ].join(", ") },
+          { type: "wait", milliseconds: 2000 },
+        ],
+      }),
+    });
+    clearTimeout(timeout);
+
+    if (resp.ok) {
+      const data = await resp.json();
+      const markdown = data.data?.markdown || data.markdown || "";
+      const links: string[] = data.data?.links || data.links || [];
+      const finalUrl = data.data?.metadata?.url || data.data?.metadata?.sourceURL || siteUrl;
+
+      console.log(`Custom scrape: ${markdown.length} chars, ${links.length} links`);
+
+      if (markdown.length > 300) {
+        // Filter to real property detail links (not images, css, js)
+        const detailLinks = links.filter((l: string) =>
+          /parcel|detail|property|account|card|print|record|assess|Parcel|Print/i.test(l) &&
+          !/#/.test(l) && !/\.(png|jpg|gif|css|js|ico)$/i.test(l)
+        );
+
+        // Follow up to 2 detail links
+        for (const link of detailLinks.slice(0, 2)) {
+          console.log(`Custom: Following: ${link}`);
+          try {
+            const ctrl2 = new AbortController();
+            const t2 = setTimeout(() => ctrl2.abort(), 12000);
+            const detailResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+              signal: ctrl2.signal,
+              body: JSON.stringify({ url: link, formats: ["markdown"], onlyMainContent: false, waitFor: 2000 }),
+            });
+            clearTimeout(t2);
+            if (detailResp.ok) {
+              const dd = await detailResp.json();
+              const detailMd = dd.data?.markdown || dd.markdown || "";
+              if (detailMd.length > 300) {
+                const extracted = extractGenericPropertyData(detailMd, address, town);
+                if (extracted) {
+                  extracted.propertyCardUrl = link;
+                  return json({ success: true, property: extracted });
+                }
+              }
+            }
+          } catch { /* timeout on detail link */ }
+        }
+
+        // Try extracting from the search results page itself
+        const extracted = extractGenericPropertyData(markdown, address, town);
+        if (extracted) {
+          extracted.propertyCardUrl = finalUrl;
+          return json({ success: true, property: extracted });
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Custom site error:", (e as Error).message || e);
+  }
+
+  return json({
+    success: false,
+    error: `Could not find property data for ${address} in ${town}. Try the assessor database directly.`,
+    searchUrl: siteUrl,
+  });
+}
+
+// Inner helper for following assessor links found on custom sites
+async function scrapeCustomSiteInner(
+  apiKey: string, url: string, houseNum: string, streetBase: string, address: string, town: string
+): Promise<Response | null> {
+  try {
+    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url,
+        formats: ["markdown", "html", "links"],
+        onlyMainContent: false,
+        waitFor: 3000,
+        actions: [
+          { type: "wait", milliseconds: 1500 },
+          { type: "click", selector: 'input[type="text"], input[type="search"], input[name*="address" i], input[name*="street" i], input[name*="search" i]' },
+          { type: "write", text: `${houseNum} ${streetBase}` },
+          { type: "wait", milliseconds: 500 },
+          { type: "click", selector: 'input[type="submit"], button[type="submit"], button:has-text("Search"), input[value="Search"]' },
+          { type: "wait", milliseconds: 3000 },
+        ],
+      }),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      const markdown = data.data?.markdown || data.markdown || "";
+      const links = data.data?.links || data.links || [];
+
+      if (markdown.length > 300) {
+        // Follow detail links
+        const detailLinks = links.filter((l: string) =>
+          /parcel|detail|property|account|card|print|record/i.test(l) && !/#/.test(l)
+        );
+        for (const link of detailLinks.slice(0, 2)) {
+          const detailMd = await firecrawlScrapeFullPage(apiKey, link);
+          if (detailMd && detailMd.length > 300) {
+            const extracted = extractGenericPropertyData(detailMd, address, town);
+            if (extracted) {
+              extracted.propertyCardUrl = link;
+              return json({ success: true, property: extracted });
+            }
+          }
+        }
+
+        const extracted = extractGenericPropertyData(markdown, address, town);
+        if (extracted) {
+          extracted.propertyCardUrl = data.data?.metadata?.url || url;
+          return json({ success: true, property: extracted });
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Custom inner scrape error:", e);
+  }
+  return null;
+}
+
+// Dynamic scrape for towns not in DB at all
+async function scrapeDynamic(apiKey: string, address: string, town: string, originalTown: string): Promise<Response> {
+  console.log(`Dynamic scrape for unknown town: ${town}`);
+  // Try common CT assessor URL patterns
+  const townSlug = town.replace(/\s+/g, "").toLowerCase();
+  const townDash = town.replace(/\s+/g, "-").toLowerCase();
+
+  const candidateUrls = [
+    `https://gis.vgsi.com/${townSlug}ct/Search.aspx`,
+    `https://www.propertyrecordcards.com/SearchMaster.aspx?towncode=`,
+    `https://${townSlug}.mapxpress.net/`,
+    `https://www.${townSlug}ct.gov/`,
+    `https://www.${townDash}-ct.gov/`,
+  ];
+
+  // Try VGS first (most common)
+  try {
+    const vgsResp = await fetch(candidateUrls[0], { method: "HEAD", redirect: "follow" });
+    if (vgsResp.ok) {
+      console.log(`Found VGS site for ${town}`);
+      return await scrapeVGS(apiKey, `${townSlug}ct`, address, originalTown);
+    }
+  } catch { /* not VGS */ }
+
+  // Try MapXpress
+  try {
+    const mapResp = await fetch(candidateUrls[2], { method: "HEAD", redirect: "follow" });
+    if (mapResp.ok && mapResp.status !== 404) {
+      console.log(`Found MapXpress site for ${town}`);
+      return await scrapeCustomSite(apiKey, candidateUrls[2], address, originalTown);
+    }
+  } catch { /* not MapXpress */ }
+
+  return json({
+    success: false,
+    error: `No assessor database found for ${originalTown}, CT. This town may not have an online assessor database.`,
   });
 }
 
