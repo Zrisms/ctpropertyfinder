@@ -453,8 +453,6 @@ Deno.serve(async (req) => {
         if (lookupTown !== town.toLowerCase().trim() && body.property) {
           body.property.town = town;
         }
-        // Cache the result asynchronously
-        cacheProperty(normalizedAddress, lookupTown, body.property);
         return json(body);
       }
       console.log(`Platform ${config.platform} failed for ${town}, trying universal fallback...`);
