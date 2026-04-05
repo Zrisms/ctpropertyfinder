@@ -807,7 +807,8 @@ async function scrapeGrotonGIS(address: string, town: string): Promise<Response>
   const searchTerm = normalizeGrotonAddress(address);
   console.log(`Groton GIS: querying ArcGIS for "${searchTerm}"`);
 
-  const queryUrl = `${GROTON_ARCGIS_BASE}/query?where=PROPERTY_LOCATION+LIKE+'%25${encodeURIComponent(searchTerm)}%25'&outFields=*&f=json&resultRecordCount=10`;
+  // Use exact start match to avoid "15" matching "715"
+  const queryUrl = `${GROTON_ARCGIS_BASE}/query?where=PROPERTY_LOCATION+LIKE+'${encodeURIComponent(searchTerm)}%25'&outFields=*&f=json&resultRecordCount=10`;
   const arcRes = await fetch(queryUrl);
   if (!arcRes.ok) {
     return json({ success: false, error: 'Failed to query Groton GIS service' });
