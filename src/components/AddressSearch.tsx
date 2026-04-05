@@ -9,37 +9,70 @@ import { normalizeAddress } from "@/lib/address-utils";
 interface AddressSearchProps { onSearch: (address: string, town: string) => void; isLoading: boolean; }
 interface AddressSuggestion { street: string; town: string; display: string; }
 
+// Direction abbreviation map for town names
+const DIR_MAP: Record<string, string> = {
+  n: 'North', s: 'South', e: 'East', w: 'West',
+  no: 'North', so: 'South',
+};
+
 /** Parse a full pasted address like "67 Blakeslee Rd, Wallingford, CT 06492" */
 function parseFullAddress(input: string): { street: string; town: string } | null {
   // Remove zip codes and state abbreviation
-  const cleaned = input.replace(/,?\s*CT\s*\d{0,5}/i, '').replace(/\d{5}(-\d{4})?$/, '').trim();
-  // Split by comma
+  let cleaned = input.replace(/,?\s*CT\s*\d{0,5}/i, '').replace(/\d{5}(-\d{4})?$/, '').trim();
+  // Remove trailing commas/spaces
+  cleaned = cleaned.replace(/[,\s]+$/, '');
+
+  // Expand direction abbreviations for town matching: "S Windsor" → "South Windsor"
+  const expandDirs = (s: string) => {
+    return s.replace(/\b(n|s|e|w|no|so)\.?\s+/gi, (_, d) => {
+      return (DIR_MAP[d.toLowerCase().replace('.', '')] || d) + ' ';
+    });
+  };
+
+  // Try comma-separated first
   const parts = cleaned.split(',').map(p => p.trim()).filter(Boolean);
   if (parts.length >= 2) {
     const street = parts[0];
-    // Town is the last meaningful part (skip state if present)
     let townPart = parts[parts.length - 1];
     if (/^(ct|connecticut)$/i.test(townPart) && parts.length >= 3) {
       townPart = parts[parts.length - 2];
     }
-    // Match town to CT_TOWNS
-    const townLower = townPart.toLowerCase().trim();
-    const matched = CT_TOWNS.find(t => t.toLowerCase() === townLower);
-    if (matched) return { street, town: matched };
-    // Fuzzy match
-    const fuzzy = CT_TOWNS.find(t => {
-      const tl = t.toLowerCase();
-      if (tl.startsWith(townLower) || townLower.startsWith(tl)) return true;
-      let dist = 0;
-      const minLen = Math.min(townLower.length, tl.length);
-      for (let i = 0; i < minLen; i++) { if (townLower[i] !== tl[i]) dist++; }
-      dist += Math.abs(townLower.length - tl.length);
-      return dist <= 2;
-    });
-    if (fuzzy) return { street, town: fuzzy };
+    const town = matchTown(expandDirs(townPart));
+    if (town) return { street, town };
     return { street, town: townPart.trim() };
   }
+
+  // No commas — try to find a known CT town in the string
+  const expandedCleaned = expandDirs(cleaned);
+  // Sort towns longest-first so "South Windsor" matches before "Windsor"
+  const sortedTowns = [...CT_TOWNS].sort((a, b) => b.length - a.length);
+  for (const t of sortedTowns) {
+    const idx = expandedCleaned.toLowerCase().indexOf(t.toLowerCase());
+    if (idx > 0) {
+      const street = expandedCleaned.substring(0, idx).replace(/[,\s]+$/, '').trim();
+      if (street.length > 0) return { street, town: t };
+    }
+  }
+
   return null;
+}
+
+function matchTown(townInput: string): string | null {
+  const townLower = townInput.toLowerCase().trim();
+  // Exact match
+  const exact = CT_TOWNS.find(t => t.toLowerCase() === townLower);
+  if (exact) return exact;
+  // Fuzzy match
+  const fuzzy = CT_TOWNS.find(t => {
+    const tl = t.toLowerCase();
+    if (tl.startsWith(townLower) || townLower.startsWith(tl)) return true;
+    let dist = 0;
+    const minLen = Math.min(townLower.length, tl.length);
+    for (let i = 0; i < minLen; i++) { if (townLower[i] !== tl[i]) dist++; }
+    dist += Math.abs(townLower.length - tl.length);
+    return dist <= 2;
+  });
+  return fuzzy || null;
 }
 
 export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
