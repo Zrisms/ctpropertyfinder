@@ -1105,25 +1105,20 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
       body: JSON.stringify({
         url: baseUrl,
         formats: ['markdown', 'html', 'links'],
-        waitFor: 3000,
+        waitFor: 2000,
         actions: [
-          { type: 'wait', milliseconds: 2000 },
-          // Fill house number
+          { type: 'wait', milliseconds: 1000 },
           { type: 'click', selector: '#MainContent_tbPropertySearchStreetNumber' },
           { type: 'write', text: houseNum },
-          // Open the Chosen dropdown
           { type: 'click', selector: '#MainContent_cbPropertySearchStreetName_chzn .chzn-single' },
-          { type: 'wait', milliseconds: 500 },
-          // Type in the Chosen search to filter
+          { type: 'wait', milliseconds: 300 },
           { type: 'click', selector: '#MainContent_cbPropertySearchStreetName_chzn .chzn-search input' },
           { type: 'write', text: matchedStreet.substring(0, 8) },
-          { type: 'wait', milliseconds: 1000 },
-          // Click the first matching result
+          { type: 'wait', milliseconds: 700 },
           { type: 'click', selector: '#MainContent_cbPropertySearchStreetName_chzn .chzn-results .active-result' },
-          { type: 'wait', milliseconds: 500 },
-          // Click the search button
+          { type: 'wait', milliseconds: 300 },
           { type: 'click', selector: '#MainContent_btnPropertySearch' },
-          { type: 'wait', milliseconds: 5000 },
+          { type: 'wait', milliseconds: 3000 },
         ],
       }),
     });
