@@ -68,7 +68,7 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
         <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-muted-foreground/50" />
         {isFetching && <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-primary/60 animate-spin" />}
         <Input type="text" placeholder="Street address" value={address}
-          onChange={e => { setAddress(e.target.value); setShowAddressSuggestions(true); setActiveAddressIndex(-1); }}
+          onChange={e => { setAddress(e.target.value); setTown(""); setShowAddressSuggestions(true); setActiveAddressIndex(-1); }}
           onFocus={() => setShowAddressSuggestions(true)}
           onBlur={() => setTimeout(() => setShowAddressSuggestions(false), 200)}
           onKeyDown={handleAddressKeyDown} className={inputCls} />
