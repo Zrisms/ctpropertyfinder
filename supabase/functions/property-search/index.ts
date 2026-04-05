@@ -1142,38 +1142,6 @@ async function scrapeEqualityCama(apiKey: string, baseUrl: string, address: stri
 async function scrapeGenericWithFallback(apiKey: string, baseUrl: string, address: string, town: string, label: string) {
   try {
     console.log(`Scraping generic for ${town} (${label}): ${baseUrl}`);
-
-    // First try Google search to find the specific property page
-    const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: `"${address}" "${town}" CT property assessor`, limit: 5 }),
-    });
-
-    if (searchResp.ok) {
-      const data = await searchResp.json();
-      const results = data.data || [];
-      for (const result of results) {
-        const url = result.url || '';
-        // Skip generic listing sites
-        if (BLOCKED_SITES.test(url)) continue;
-        if (url.includes(town.toLowerCase().replace(/\s+/g, '')) || url.includes('assessor') || url.includes('property')) {
-          const md = await firecrawlScrape(apiKey, url);
-          if (md && md.length > 300) {
-            const extracted = extractGenericPropertyData(md, address, town);
-            if (extracted) {
-              extracted.propertyCardUrl = url;
-              if (extracted.isLLC) {
-                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
-              }
-              return json({ success: true, property: extracted });
-            }
-          }
-        }
-      }
-    }
-
-    // Fallback: Try scraping the base URL directly
     const md = await firecrawlScrape(apiKey, baseUrl);
     if (md) {
       const extracted = extractGenericPropertyData(md, address, town);
