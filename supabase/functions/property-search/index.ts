@@ -757,10 +757,12 @@ function parseGrotonPropertyCard(html: string) {
   }
 
   const buildingFields: Record<string, string | null> = {};
-  for (const label of ['Style:', 'Exterior:', 'Attic:', 'Stories:', 'Basement:', 'Year Built:', 'Tot Living Area:', 'Fuel:', 'Heating:']) {
-    const re = new RegExp(`${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*</td>\\s*<td[^>]*>([^<]+)`, 'i');
+  for (const label of ['Style:', 'Exterior:', 'Attic:', 'Stories:', 'Basement:', 'Year Built:', 'Tot Living Area:', 'Fuel:', 'Heating:', 'System:', 'Bedrooms:', 'Bathrooms:', 'Half Baths:']) {
+    // Labels may be wrapped in <b> tags: <b>Style:</b></td><td ...>value</td>
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`<b>\\s*${escaped}\\s*<\\/b>\\s*<\\/td>\\s*<td[^>]*>([^<]*)`, 'i');
     const m = html.match(re);
-    buildingFields[label.replace(':', '')] = m ? m[1].trim() : null;
+    buildingFields[label.replace(':', '')] = m ? m[1].trim() || null : null;
   }
 
   const valuation: Record<string, string | null> = {};
