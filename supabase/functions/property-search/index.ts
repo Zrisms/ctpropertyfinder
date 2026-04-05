@@ -407,7 +407,7 @@ Deno.serve(async (req) => {
     // For 'custom' platform towns (no real scraper), skip directly to smart extract
     if (config.platform === 'custom') {
       console.log(`Custom platform for ${town}, going straight to smart extract`);
-      return await withCache(normalizedAddress, lookupTown, () => smartExtractProperty(apiKey, normalizedAddress, lookupTown, config.url, town));
+      return await smartExtractProperty(apiKey, normalizedAddress, lookupTown, config.url, town);
     }
 
     // Try platform-specific scraper first using canonical lookup town
