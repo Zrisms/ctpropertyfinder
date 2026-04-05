@@ -889,24 +889,29 @@ async function scrapeMapXpress(apiKey: string, baseUrl: string, address: string,
     // The form POSTs to PAGES/search.asp
     // Strategy: fill house number only, leave street as "All Streets", filter results by street name
 
-    const portalUrl = `${baseUrl.replace(/\/$/, "")}/portal.asp`;
+    // Try starting from the main page (disclaimer page) which redirects to portal with search form
+    const mainUrl = `${baseUrl.replace(/\/$/, "")}/`;
 
     const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        url: portalUrl,
+        url: mainUrl,
         formats: ["html"],
         onlyMainContent: false,
-        waitFor: 2000,
+        waitFor: 3000,
+        timeout: 20000,
         actions: [
-          { type: "wait", milliseconds: 800 },
-          // Fill house number field
+          { type: "wait", milliseconds: 1500 },
+          // Click accept/enter disclaimer link
+          { type: "click", selector: "a" },
+          { type: "wait", milliseconds: 2000 },
+          // Fill house number
           { type: "click", selector: "input[name='houseno']" },
           { type: "write", text: houseNum },
-          { type: "wait", milliseconds: 300 },
-          // Click the Go button (image input)
-          { type: "click", selector: "input[type='image'], input[name*='go']" },
+          { type: "wait", milliseconds: 500 },
+          // Click Go/submit button
+          { type: "click", selector: "input[type='image']" },
           { type: "wait", milliseconds: 3000 },
         ],
       }),
