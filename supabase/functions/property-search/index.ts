@@ -313,6 +313,54 @@ const TOWN_DB: Record<string, TownConfig> = {
   "woodstock":      { platform: 'custom', url: 'https://www.woodstockct.gov/', label: 'Woodstock Assessor' },
 };
 
+const TOWN_ALIASES: Record<string, string> = {
+  'south glastonbury': 'glastonbury',
+  'east glastonbury': 'glastonbury',
+  'south norwalk': 'norwalk',
+  'cos cob': 'greenwich',
+  'old greenwich': 'greenwich',
+  'riverside': 'greenwich',
+  'glenville': 'greenwich',
+  'central village': 'plainfield',
+  'moosup': 'plainfield',
+  'wauregan': 'plainfield',
+  'niantic': 'east lyme',
+  'pawcatuck': 'stonington',
+  'oakdale': 'montville',
+  'uncasville': 'montville',
+  'quaker hill': 'waterford',
+  'taftville': 'norwich',
+  'greenville': 'norwich',
+  'occum': 'norwich',
+  'amston': 'hebron',
+  'hadlyme': 'east haddam',
+  'higganum': 'haddam',
+  'north grosvenordale': 'thompson',
+  'grosvenordale': 'thompson',
+  'thompsonville': 'enfield',
+  'hazardville': 'enfield',
+};
+
+function resolveTownLookup(town: string): { lookupTown: string; config?: TownConfig } {
+  const townLower = town.toLowerCase().trim().replace(/\s+/g, ' ');
+  const exact = TOWN_DB[townLower];
+  if (exact) return { lookupTown: townLower, config: exact };
+
+  const aliasedTown = TOWN_ALIASES[townLower];
+  if (aliasedTown && TOWN_DB[aliasedTown]) {
+    return { lookupTown: aliasedTown, config: TOWN_DB[aliasedTown] };
+  }
+
+  const directionalMatch = townLower.match(/^(north|south|east|west)\s+(.+)$/);
+  if (directionalMatch) {
+    const baseTown = directionalMatch[2].trim();
+    const directionalBase = TOWN_DB[baseTown];
+    if (directionalBase) return { lookupTown: baseTown, config: directionalBase };
+  }
+
+  return { lookupTown: townLower, config: TOWN_DB[townLower] };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -326,18 +374,18 @@ Deno.serve(async (req) => {
     }
 
     const normalizedAddress = normalizeAddress(address);
-    const townLower = town.toLowerCase().trim();
+    const { lookupTown, config } = resolveTownLookup(town);
     console.log(`Searching: ${normalizedAddress}, ${town}, CT`);
+    if (lookupTown !== town.toLowerCase().trim()) {
+      console.log(`Resolved lookup town: ${town} -> ${lookupTown}`);
+    }
 
     const apiKey = Deno.env.get('FIRECRAWL_API_KEY');
     if (!apiKey) {
       return json({ success: false, error: "Scraping service not configured" }, 500);
     }
 
-    const config = TOWN_DB[townLower];
-
     if (!config) {
-      // Even unrecognized towns get the universal fallback
       console.log(`Town "${town}" not in DB, trying universal fallback`);
       return await universalPropertySearch(apiKey, normalizedAddress, town);
     }
@@ -345,36 +393,36 @@ Deno.serve(async (req) => {
     // For 'custom' platform towns (no real scraper), skip directly to smart extract
     if (config.platform === 'custom') {
       console.log(`Custom platform for ${town}, going straight to smart extract`);
-      return await smartExtractProperty(apiKey, normalizedAddress, town, config.url);
+      return await smartExtractProperty(apiKey, normalizedAddress, lookupTown, config.url, town);
     }
 
-    // Try platform-specific scraper first
+    // Try platform-specific scraper first using canonical lookup town
     let result: Response;
     try {
       switch (config.platform) {
         case 'vgs':
-          result = await scrapeVGS(apiKey, config.slug!, normalizedAddress, town);
+          result = await scrapeVGS(apiKey, config.slug!, normalizedAddress, lookupTown);
           break;
         case 'mapxpress':
-          result = await scrapeMapXpress(apiKey, config.url!, normalizedAddress, town);
+          result = await scrapeMapXpress(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
         case 'qds':
-          result = await scrapeQDS(apiKey, config.url!, normalizedAddress, town);
+          result = await scrapeQDS(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
         case 'act':
-          result = await scrapeACTDataScout(apiKey, config.url!, normalizedAddress, town);
+          result = await scrapeACTDataScout(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
         case 'ias':
-          result = await scrapeIASCLT(apiKey, config.url!, normalizedAddress, town);
+          result = await scrapeIASCLT(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
         case 'prc':
-          result = await scrapePRC(apiKey, config.townCode!, normalizedAddress, town);
+          result = await scrapePRC(apiKey, config.townCode!, normalizedAddress, lookupTown);
           break;
         case 'equality':
-          result = await scrapeEqualityCama(apiKey, config.url!, normalizedAddress, town);
+          result = await scrapeEqualityCama(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
         case 'avon_gis':
-          result = await scrapeAvonGIS(apiKey, normalizedAddress, town);
+          result = await scrapeAvonGIS(apiKey, normalizedAddress, lookupTown);
           break;
         default:
           result = json({ success: false });
@@ -385,17 +433,21 @@ Deno.serve(async (req) => {
       result = json({ success: false });
     }
 
-    // Check if platform scraper succeeded — if not, try universal fallback
-    const cloned = result.clone();
     try {
-      const body = await cloned.json();
-      if (body.success) return result;
+      const body = await result.clone().json();
+      if (body.success) {
+        if (lookupTown !== town.toLowerCase().trim() && body.property) {
+          body.property.town = town;
+          return json(body);
+        }
+        return result;
+      }
       console.log(`Platform ${config.platform} failed for ${town}, trying universal fallback...`);
     } catch {
       console.log(`Could not parse platform response, trying universal fallback...`);
     }
 
-    return await universalPropertySearch(apiKey, normalizedAddress, town, config.url);
+    return await universalPropertySearch(apiKey, normalizedAddress, lookupTown, config.url, town);
   } catch (error) {
     console.error("Error:", error);
     return json({ success: false, error: error instanceof Error ? error.message : "Search failed" }, 500);
@@ -535,18 +587,19 @@ async function scrapeAvonRecordCard(apiKey: string, url: string): Promise<any> {
 }
 
 // ========== SMART EXTRACT (for towns without dedicated scrapers) ==========
-async function smartExtractProperty(apiKey: string, address: string, town: string, fallbackUrl?: string) {
+async function smartExtractProperty(apiKey: string, address: string, lookupTown: string, fallbackUrl?: string, displayTown?: string) {
+  const town = displayTown || lookupTown;
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
   const houseNum = addrParts?.[1] || '';
   const streetFull = addrParts?.[2] || address;
   const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK)\.?$/i, '').trim();
 
-  console.log(`Smart extract: ${address}, ${town}`);
+  console.log(`Smart extract: ${address}, ${lookupTown}`);
   const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      query: `"${houseNum} ${streetBase}" "${town}" CT property owner assessment`,
+      query: `"${houseNum} ${streetBase}" "${lookupTown}" CT property owner assessment`,
       limit: 3,
     }),
   });
@@ -565,7 +618,7 @@ async function smartExtractProperty(apiKey: string, address: string, town: strin
         body: JSON.stringify({
           url, formats: ['extract'],
           extract: {
-            prompt: `Extract ALL property data for ${address}, ${town}, CT. For insurance. If unavailable return "".`,
+            prompt: `Extract ALL property data for ${address}, ${lookupTown}, CT. For insurance. If unavailable return "".`,
             schema: { type: 'object', properties: {
               owner:{type:'string'},coOwner:{type:'string'},ownerAddress:{type:'string'},
               assessedValue:{type:'string'},totalAppraisal:{type:'string'},landValue:{type:'string'},
@@ -619,8 +672,9 @@ async function smartExtractProperty(apiKey: string, address: string, town: strin
 
 // ========== UNIVERSAL FALLBACK SEARCH ==========
 // Tries multiple web search strategies to find any CT property data
-async function universalPropertySearch(apiKey: string, address: string, town: string, fallbackUrl?: string) {
-  console.log(`Universal fallback search: ${address}, ${town}, CT`);
+async function universalPropertySearch(apiKey: string, address: string, lookupTown: string, fallbackUrl?: string, displayTown?: string) {
+  const town = displayTown || lookupTown;
+  console.log(`Universal fallback search: ${address}, ${lookupTown}, CT`);
 
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
   const houseNum = addrParts?.[1] || '';
@@ -630,23 +684,21 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
   // Strategy 1: Search official assessor sources (parallel queries with variants)
   const variants = getAddressVariants(address);
   const searchQueries = new Set<string>();
-  searchQueries.add(`"${houseNum} ${streetBase}" "${town}" CT property vgsi.com OR propertyrecordcards.com`);
-  searchQueries.add(`"${houseNum} ${streetBase}" "${town}" CT assessor property owner assessment`);
-  // Add variant-based queries
-  for (const v of variants.slice(0, 3)) {
+  searchQueries.add(`"${houseNum} ${streetBase}" "${lookupTown}" CT property vgsi.com OR propertyrecordcards.com`);
+  searchQueries.add(`"${houseNum} ${streetBase}" "${lookupTown}" CT assessor property owner assessment`);
+  for (const v of variants.slice(0, 2)) {
     const vParts = v.match(/^(\d+)\s+(.+)$/i);
-    if (vParts) searchQueries.add(`"${vParts[1]} ${vParts[2]}" "${town}" CT property`);
+    if (vParts) searchQueries.add(`"${vParts[1]} ${vParts[2]}" "${lookupTown}" CT property`);
   }
-  const uniqueSearchQueries = [...searchQueries].slice(0, 4);
+  const uniqueSearchQueries = [...searchQueries].slice(0, 3);
 
-  // Fire both searches in parallel
   const allSearchResults = await Promise.all(uniqueSearchQueries.map(async (query) => {
     try {
       console.log(`Universal search: ${query}`);
       const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, limit: 5 }),
+        body: JSON.stringify({ query, limit: 4 }),
       });
       if (!searchResp.ok) return [];
       const searchData = await searchResp.json();
@@ -680,7 +732,7 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
       }
 
       if (/assessor|propcard|property.*record|gis\.|cama|revaluation/i.test(url) ||
-          url.toLowerCase().includes(town.toLowerCase().replace(/\s+/g, ''))) {
+          url.toLowerCase().includes(lookupTown.replace(/\s+/g, ''))) {
         console.log(`Universal: trying page: ${url}`);
         const md = await firecrawlScrape(apiKey, url);
         if (md && md.length > 300) {
@@ -700,15 +752,14 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
     }
   }
 
-  // Strategy 2: LLM-powered extraction from any property data source
   try {
-    console.log(`Strategy 2: smart extract for ${address}, ${town}`);
+    console.log(`Strategy 2: smart extract for ${address}, ${lookupTown}`);
     const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        query: `"${houseNum} ${streetBase}" "${town}" CT property owner year built square feet assessment`,
-        limit: 5,
+        query: `"${houseNum} ${streetBase}" "${lookupTown}" CT property owner year built square feet assessment`,
+        limit: 4,
       }),
     });
 
