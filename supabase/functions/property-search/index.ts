@@ -889,19 +889,24 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
       const resultHtml = await postResp.text();
       console.log(`PRC POST response length: ${resultHtml.length}`);
 
-      // Look for uniqueid in the results page
-      const uniqueIdMatch = resultHtml.match(/PropertyResults\.aspx\?towncode=\d+&(?:amp;)?uniqueid=(\d+)/i)
-        || resultHtml.match(/PrintPage\.aspx\?towncode=\d+&(?:amp;)?uniqueid=(\d+)/i)
-        || resultHtml.match(/uniqueid=(\d+)/i);
+      // Debug: check if we got results or still on search page
+      const hasResults = resultHtml.includes('uniqueid') || resultHtml.includes('PropertyResults');
+      const hasSearchForm = resultHtml.includes('btnPropertySearch');
+      console.log(`PRC POST: hasResults=${hasResults}, hasSearchForm=${hasSearchForm}`);
 
-      if (uniqueIdMatch) {
-        const detailUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${uniqueIdMatch[1]}`;
-        console.log(`Found PRC property: ${detailUrl}`);
+      // Look for uniqueid in the results page
+      const allIds = [...resultHtml.matchAll(/uniqueid=(\d+)/gi)].map(m => m[1]);
+      const uniqueIds = [...new Set(allIds)];
+      console.log(`PRC POST: found ${uniqueIds.length} unique IDs`);
+
+      for (const uid of uniqueIds.slice(0, 3)) {
+        const detailUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${uid}`;
+        console.log(`Checking PRC detail: ${detailUrl}`);
         const detailMd = await firecrawlScrape(apiKey, detailUrl);
         if (detailMd) {
           const extracted = extractPRCData(detailMd, address, town);
-          if (extracted) {
-            extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uniqueIdMatch[1]}`;
+          if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
+            extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uid}`;
             if (extracted.isLLC) {
               try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
             }
@@ -909,24 +914,58 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
           }
         }
       }
+    }
 
-      // Try multiple uniqueids if there are multiple results
-      const allIds = [...resultHtml.matchAll(/uniqueid=(\d+)/gi)].map(m => m[1]);
-      const uniqueIds = [...new Set(allIds)];
-      if (uniqueIds.length > 1) {
-        console.log(`Found ${uniqueIds.length} PRC results, checking each...`);
-        for (const uid of uniqueIds.slice(0, 3)) {
-          const detailUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${uid}`;
-          const detailMd = await firecrawlScrape(apiKey, detailUrl);
-          if (detailMd) {
-            const extracted = extractPRCData(detailMd, address, town);
-            if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
-              extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uid}`;
-              if (extracted.isLLC) {
-                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+    // Fallback: Try Firecrawl actions with JavaScript to set dropdown value directly
+    console.log(`PRC POST failed, trying Firecrawl actions with JS...`);
+    const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: baseUrl,
+        formats: ['html', 'links'],
+        waitFor: 2000,
+        actions: [
+          { type: 'wait', milliseconds: 1000 },
+          { type: 'execute_javascript', code: `
+            document.getElementById('MainContent_tbPropertySearchStreetNumber').value = '${houseNum}';
+            var sel = document.getElementById('MainContent_cbPropertySearchStreetName');
+            for (var i = 0; i < sel.options.length; i++) {
+              if (sel.options[i].value === '${matchedStreet.replace(/'/g, "\\'")}') {
+                sel.selectedIndex = i;
+                sel.dispatchEvent(new Event('change'));
+                break;
               }
-              return json({ success: true, property: extracted });
             }
+          `},
+          { type: 'wait', milliseconds: 500 },
+          { type: 'click', selector: '#MainContent_btnPropertySearch' },
+          { type: 'wait', milliseconds: 3000 },
+        ],
+      }),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      const html = data.data?.html || data.html || '';
+      const links = data.data?.links || data.links || [];
+      const combined = html + JSON.stringify(links);
+
+      const allIds2 = [...combined.matchAll(/uniqueid=(\d+)/gi)].map(m => m[1]);
+      const uniqueIds2 = [...new Set(allIds2)];
+      console.log(`PRC actions: found ${uniqueIds2.length} unique IDs`);
+
+      for (const uid of uniqueIds2.slice(0, 3)) {
+        const detailUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${uid}`;
+        const detailMd = await firecrawlScrape(apiKey, detailUrl);
+        if (detailMd) {
+          const extracted = extractPRCData(detailMd, address, town);
+          if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
+            extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uid}`;
+            if (extracted.isLLC) {
+              try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+            }
+            return json({ success: true, property: extracted });
           }
         }
       }
