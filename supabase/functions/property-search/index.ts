@@ -410,14 +410,17 @@ Deno.serve(async (req) => {
     }
 
     if (!config) {
-      console.log(`Town "${town}" not in DB — no scraper available`);
-      return json({ success: false, error: `No assessor database configured for ${town}, CT.` });
+      console.log(`Town "${town}" not in DB — trying dynamic scrape`);
+      // Even without config, try a dynamic scrape approach
+      const dynamicResult = await scrapeDynamic(apiKey, normalizedAddress, lookupTown, town);
+      return dynamicResult;
     }
 
-    // For 'custom' platform towns (no real scraper), return not found with URL
+    // For 'custom' platform towns, use dynamic interactive scraping
     if (config.platform === "custom") {
-      console.log(`Custom platform for ${town}, no direct scraper`);
-      return json({ success: false, error: `No direct scraper for ${town}, CT.`, searchUrl: config.url });
+      console.log(`Custom platform for ${town}, using dynamic scraper on ${config.url}`);
+      const dynamicResult = await scrapeCustomSite(apiKey, config.url!, normalizedAddress, town);
+      return dynamicResult;
     }
 
     // Try platform-specific scraper using canonical lookup town
