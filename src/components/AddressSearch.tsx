@@ -38,15 +38,19 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (address.length < 3) { setAddressSuggestions([]); return; }
     debounceRef.current = window.setTimeout(async () => {
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
       setIsFetching(true);
       try {
         const q = `${address}, Connecticut`;
         const { data, error } = await supabase.functions.invoke("address-autocomplete", { body: { query: q } });
+        if (controller.signal.aborted) return;
         if (!error && data?.suggestions) setAddressSuggestions(data.suggestions);
       } catch {}
-      finally { setIsFetching(false); }
-    }, 300);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+      finally { if (!controller.signal.aborted) setIsFetching(false); }
+    }, 150);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); abortRef.current?.abort(); };
   }, [address]);
 
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); if (address.trim() && town.trim()) onSearch(address.trim(), town.trim()); };
