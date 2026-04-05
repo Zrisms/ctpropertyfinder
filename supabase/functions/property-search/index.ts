@@ -1589,7 +1589,6 @@ async function scrapeGenericWithFallback(
 }
 
 // ========== DYNAMIC / CUSTOM SITE SCRAPING ==========
-// Scrapes any custom assessor site by loading the page, finding search inputs, and extracting data
 async function scrapeCustomSite(apiKey: string, siteUrl: string, address: string, town: string): Promise<Response> {
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
   const houseNum = addrParts?.[1] || "";
@@ -1598,22 +1597,21 @@ async function scrapeCustomSite(apiKey: string, siteUrl: string, address: string
 
   console.log(`Dynamic scrape: ${siteUrl} for "${address}" in ${town}`);
 
-  // STRATEGY 1: Try Firecrawl actions to search on the page (with timeout)
+  // Single Firecrawl call with actions to search + extract
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000); // 20s max
+    const timeout = setTimeout(() => controller.abort(), 22000);
     const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify({
         url: siteUrl,
-        formats: ["markdown", "html", "links"],
+        formats: ["markdown", "links"],
         onlyMainContent: false,
         waitFor: 2000,
         actions: [
-          { type: "wait", milliseconds: 1000 },
-          // Try to find and fill any search/address input
+          { type: "wait", milliseconds: 800 },
           { type: "click", selector: [
             'input[name*="address" i]', 'input[name*="street" i]', 'input[name*="search" i]',
             'input[name*="addr" i]', 'input[placeholder*="address" i]', 'input[placeholder*="search" i]',
@@ -1621,8 +1619,7 @@ async function scrapeCustomSite(apiKey: string, siteUrl: string, address: string
             'input[type="text"]', 'input[type="search"]',
           ].join(", ") },
           { type: "write", text: `${houseNum} ${streetBase}` },
-          { type: "wait", milliseconds: 500 },
-          // Try to click search/submit
+          { type: "wait", milliseconds: 400 },
           { type: "click", selector: [
             'input[type="submit"]', 'button[type="submit"]',
             'button:has-text("Search")', 'button:has-text("Go")', 'button:has-text("Find")',
@@ -1638,32 +1635,46 @@ async function scrapeCustomSite(apiKey: string, siteUrl: string, address: string
     if (resp.ok) {
       const data = await resp.json();
       const markdown = data.data?.markdown || data.markdown || "";
-      const html = data.data?.html || data.html || "";
-      const links = data.data?.links || data.links || [];
+      const links: string[] = data.data?.links || data.links || [];
       const finalUrl = data.data?.metadata?.url || data.data?.metadata?.sourceURL || siteUrl;
 
-      console.log(`Custom site scrape got ${markdown.length} chars, ${links.length} links`);
+      console.log(`Custom scrape: ${markdown.length} chars, ${links.length} links`);
 
       if (markdown.length > 300) {
-        // Look for detail/property links in results
+        // Filter to real property detail links (not images, css, js)
         const detailLinks = links.filter((l: string) =>
-          /parcel|detail|property|account|card|print|record|assess/i.test(l) && !/#/.test(l)
+          /parcel|detail|property|account|card|print|record|assess|Parcel|Print/i.test(l) &&
+          !/#/.test(l) && !/\.(png|jpg|gif|css|js|ico)$/i.test(l)
         );
 
-        // Follow detail links
-        for (const link of detailLinks.slice(0, 3)) {
-          console.log(`Custom: Following detail link: ${link}`);
-          const detailMd = await firecrawlScrapeFullPage(apiKey, link);
-          if (detailMd && detailMd.length > 300) {
-            const extracted = extractGenericPropertyData(detailMd, address, town);
-            if (extracted) {
-              extracted.propertyCardUrl = link;
-              return json({ success: true, property: extracted });
+        // Follow up to 2 detail links
+        for (const link of detailLinks.slice(0, 2)) {
+          console.log(`Custom: Following: ${link}`);
+          try {
+            const ctrl2 = new AbortController();
+            const t2 = setTimeout(() => ctrl2.abort(), 12000);
+            const detailResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+              signal: ctrl2.signal,
+              body: JSON.stringify({ url: link, formats: ["markdown"], onlyMainContent: false, waitFor: 2000 }),
+            });
+            clearTimeout(t2);
+            if (detailResp.ok) {
+              const dd = await detailResp.json();
+              const detailMd = dd.data?.markdown || dd.markdown || "";
+              if (detailMd.length > 300) {
+                const extracted = extractGenericPropertyData(detailMd, address, town);
+                if (extracted) {
+                  extracted.propertyCardUrl = link;
+                  return json({ success: true, property: extracted });
+                }
+              }
             }
-          }
+          } catch { /* timeout on detail link */ }
         }
 
-        // Try extracting from the current page
+        // Try extracting from the search results page itself
         const extracted = extractGenericPropertyData(markdown, address, town);
         if (extracted) {
           extracted.propertyCardUrl = finalUrl;
@@ -1672,35 +1683,7 @@ async function scrapeCustomSite(apiKey: string, siteUrl: string, address: string
       }
     }
   } catch (e) {
-    console.error("Custom site actions error:", e);
-  }
-
-  // STRATEGY 2: Just scrape the page content for any visible property data
-  try {
-    const md = await firecrawlScrapeFullPage(apiKey, siteUrl);
-    if (md && md.length > 200) {
-      // Look for links to assessor search pages or GIS viewers
-      const linkMatches = [...md.matchAll(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g)];
-      const assessorLinks = linkMatches
-        .filter(m => /assess|search|gis|map|parcel|property|record|card/i.test(m[1] + m[2]))
-        .map(m => m[2]);
-
-      for (const link of assessorLinks.slice(0, 3)) {
-        console.log(`Custom: Following assessor link: ${link}`);
-        // Try interactive search on the linked page
-        const subResult = await scrapeCustomSiteInner(apiKey, link, houseNum, streetBase, address, town);
-        if (subResult) return subResult;
-      }
-
-      // Try generic extraction from current page
-      const extracted = extractGenericPropertyData(md, address, town);
-      if (extracted) {
-        extracted.propertyCardUrl = siteUrl;
-        return json({ success: true, property: extracted });
-      }
-    }
-  } catch (e) {
-    console.error("Custom site fallback error:", e);
+    console.error("Custom site error:", (e as Error).message || e);
   }
 
   return json({
