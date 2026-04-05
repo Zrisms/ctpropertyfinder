@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { CT_TOWNS } from "@/lib/ct-towns";
 import { supabase } from "@/integrations/supabase/client";
 import { normalizeAddress } from "@/lib/address-utils";
-import { CT_TOWNS } from "@/lib/ct-towns";
 
 interface AddressSearchProps { onSearch: (address: string, town: string) => void; isLoading: boolean; }
 interface AddressSuggestion { street: string; town: string; display: string; }
