@@ -127,6 +127,7 @@ const Index = () => {
         <div className={`mx-auto animate-fade-in ${propertyData ? 'max-w-4xl' : 'max-w-xl'}`} style={{ animationDelay: '0.3s', opacity: 0 }}>
           <div className={`glass-elevated rainbow-border rounded-3xl glow-blue ${propertyData ? 'p-4' : 'p-8'}`}>
             <AddressSearch onSearch={handleSearch} isLoading={isLoading} />
+            <SearchProgress isLoading={isLoading} />
           </div>
         </div>
 
