@@ -1,14 +1,27 @@
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 // Address abbreviation normalization
 const ABBREVIATIONS: Record<string, string> = {
-  street: 'st', road: 'rd', drive: 'dr', avenue: 'ave', lane: 'ln',
-  court: 'ct', circle: 'cir', boulevard: 'blvd', place: 'pl',
-  terrace: 'ter', way: 'way', trail: 'trl', highway: 'hwy',
-  parkway: 'pkwy', turnpike: 'tpke', extension: 'ext', park: 'pk',
+  street: "st",
+  road: "rd",
+  drive: "dr",
+  avenue: "ave",
+  lane: "ln",
+  court: "ct",
+  circle: "cir",
+  boulevard: "blvd",
+  place: "pl",
+  terrace: "ter",
+  way: "way",
+  trail: "trl",
+  highway: "hwy",
+  parkway: "pkwy",
+  turnpike: "tpke",
+  extension: "ext",
+  park: "pk",
 };
 
 // Reverse map: ST → STREET, LN → LANE etc.
@@ -19,57 +32,54 @@ for (const [full, abbr] of Object.entries(ABBREVIATIONS)) {
 
 // Additional non-standard abbreviations used by some assessor databases
 const EXTRA_SUFFIX_VARIANTS: Record<string, string[]> = {
-  'PARK':      ['PK', 'PRK'],
-  'PK':        ['PARK', 'PRK'],
-  'PRK':       ['PARK', 'PK'],
-  'PARKWAY':   ['PKWY', 'PKY', 'PKWAY'],
-  'PKWY':      ['PARKWAY', 'PKY', 'PKWAY'],
-  'DRIVE':     ['DR', 'DRV', 'DRIV'],
-  'DR':        ['DRIVE', 'DRV'],
-  'STREET':    ['ST', 'STR'],
-  'ST':        ['STREET', 'STR'],
-  'ROAD':      ['RD'],
-  'RD':        ['ROAD'],
-  'AVENUE':    ['AVE', 'AV'],
-  'AVE':       ['AVENUE', 'AV'],
-  'LANE':      ['LN', 'LA'],
-  'LN':        ['LANE', 'LA'],
-  'COURT':     ['CT', 'CRT'],
-  'CT':        ['COURT', 'CRT'],
-  'CIRCLE':    ['CIR', 'CRCL', 'CIRCL'],
-  'CIR':       ['CIRCLE', 'CRCL'],
-  'BOULEVARD': ['BLVD', 'BLV'],
-  'BLVD':      ['BOULEVARD', 'BLV'],
-  'PLACE':     ['PL', 'PLC'],
-  'PL':        ['PLACE', 'PLC'],
-  'TERRACE':   ['TER', 'TERR', 'TRCE'],
-  'TER':       ['TERRACE', 'TERR', 'TRCE'],
-  'TRAIL':     ['TRL', 'TR'],
-  'TRL':       ['TRAIL', 'TR'],
-  'HIGHWAY':   ['HWY', 'HIWAY'],
-  'HWY':       ['HIGHWAY'],
-  'TURNPIKE':  ['TPKE', 'TPK'],
-  'TPKE':      ['TURNPIKE', 'TPK'],
-  'EXTENSION': ['EXT', 'EXTN'],
-  'EXT':       ['EXTENSION', 'EXTN'],
-  'WAY':       ['WY'],
-  'WY':        ['WAY'],
-  'RIDGE':     ['RDG', 'RDGE'],
-  'RDG':       ['RIDGE'],
-  'CROSSING':  ['XING', 'XNG'],
-  'XING':      ['CROSSING'],
-  'PATH':      ['PTH'],
-  'PTH':       ['PATH'],
-  'RUN':       ['RN'],
+  PARK: ["PK", "PRK"],
+  PK: ["PARK", "PRK"],
+  PRK: ["PARK", "PK"],
+  PARKWAY: ["PKWY", "PKY", "PKWAY"],
+  PKWY: ["PARKWAY", "PKY", "PKWAY"],
+  DRIVE: ["DR", "DRV", "DRIV"],
+  DR: ["DRIVE", "DRV"],
+  STREET: ["ST", "STR"],
+  ST: ["STREET", "STR"],
+  ROAD: ["RD"],
+  RD: ["ROAD"],
+  AVENUE: ["AVE", "AV"],
+  AVE: ["AVENUE", "AV"],
+  LANE: ["LN", "LA"],
+  LN: ["LANE", "LA"],
+  COURT: ["CT", "CRT"],
+  CT: ["COURT", "CRT"],
+  CIRCLE: ["CIR", "CRCL", "CIRCL"],
+  CIR: ["CIRCLE", "CRCL"],
+  BOULEVARD: ["BLVD", "BLV"],
+  BLVD: ["BOULEVARD", "BLV"],
+  PLACE: ["PL", "PLC"],
+  PL: ["PLACE", "PLC"],
+  TERRACE: ["TER", "TERR", "TRCE"],
+  TER: ["TERRACE", "TERR", "TRCE"],
+  TRAIL: ["TRL", "TR"],
+  TRL: ["TRAIL", "TR"],
+  HIGHWAY: ["HWY", "HIWAY"],
+  HWY: ["HIGHWAY"],
+  TURNPIKE: ["TPKE", "TPK"],
+  TPKE: ["TURNPIKE", "TPK"],
+  EXTENSION: ["EXT", "EXTN"],
+  EXT: ["EXTENSION", "EXTN"],
+  WAY: ["WY"],
+  WY: ["WAY"],
+  RIDGE: ["RDG", "RDGE"],
+  RDG: ["RIDGE"],
+  CROSSING: ["XING", "XNG"],
+  XING: ["CROSSING"],
+  PATH: ["PTH"],
+  PTH: ["PATH"],
+  RUN: ["RN"],
 };
-
-
-
 
 function normalizeAddress(address: string): string {
   let normalized = address.trim();
   for (const [full, abbr] of Object.entries(ABBREVIATIONS)) {
-    const re = new RegExp(`\\b${full}\\b`, 'gi');
+    const re = new RegExp(`\\b${full}\\b`, "gi");
     normalized = normalized.replace(re, abbr.toUpperCase());
   }
   return normalized;
@@ -83,17 +93,17 @@ function getAddressVariants(address: string): string[] {
 
   // Standard expansions/abbreviations
   for (const [abbr, full] of Object.entries(REVERSE_ABBR)) {
-    const re = new RegExp(`\\b${abbr}\\.?\\b`, 'g');
+    const re = new RegExp(`\\b${abbr}\\.?\\b`, "g");
     if (re.test(upper)) variants.add(upper.replace(re, full));
   }
   for (const [full, abbr] of Object.entries(ABBREVIATIONS)) {
-    const re = new RegExp(`\\b${full.toUpperCase()}\\b`, 'g');
+    const re = new RegExp(`\\b${full.toUpperCase()}\\b`, "g");
     if (re.test(upper)) variants.add(upper.replace(re, abbr.toUpperCase()));
   }
 
   // Extra suffix variants (PK ↔ PARK ↔ PRK, etc.)
   for (const [suffix, alts] of Object.entries(EXTRA_SUFFIX_VARIANTS)) {
-    const re = new RegExp(`\\b${suffix}\\b`, 'g');
+    const re = new RegExp(`\\b${suffix}\\b`, "g");
     if (re.test(upper)) {
       for (const alt of alts) {
         variants.add(upper.replace(re, alt));
@@ -107,245 +117,256 @@ function getAddressVariants(address: string): string[] {
 // Verify extracted address matches the searched address (prevent wrong-property results)
 function isAddressMatch(extractedAddr: string, searchAddr: string, houseNum: string): boolean {
   if (!extractedAddr) return true; // No address to check = assume ok
-  const e = extractedAddr.toUpperCase().replace(/[^A-Z0-9\s]/g, ' ').trim();
-  const s = searchAddr.toUpperCase().replace(/[^A-Z0-9\s]/g, ' ').trim();
+  const e = extractedAddr
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, " ")
+    .trim();
+  const s = searchAddr
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, " ")
+    .trim();
   // Must contain the house number
   if (houseNum && !e.includes(houseNum)) return false;
   // Check if the street base name overlaps
-  const searchWords = s.split(/\s+/).filter(w => w.length > 2 && !/^(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY)$/.test(w));
-  const matchCount = searchWords.filter(w => e.includes(w)).length;
+  const searchWords = s
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !/^(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY)$/.test(w));
+  const matchCount = searchWords.filter((w) => e.includes(w)).length;
   return matchCount >= Math.min(2, searchWords.length);
 }
 
-
 // ========== PLATFORM TYPES ==========
-type Platform = 'vgs' | 'mapxpress' | 'qds' | 'act' | 'ias' | 'equality' | 'prc' | 'avon_gis' | 'custom';
+type Platform = "vgs" | "mapxpress" | "qds" | "act" | "ias" | "equality" | "prc" | "avon_gis" | "custom";
 
 interface TownConfig {
   platform: Platform;
-  slug?: string;       // VGS slug or MapXpress subdomain
-  townCode?: string;   // PropertyRecordCards.com town code
-  url?: string;        // Direct URL for custom/other platforms
-  label?: string;      // Human-readable platform name
+  slug?: string; // VGS slug or MapXpress subdomain
+  townCode?: string; // PropertyRecordCards.com town code
+  url?: string; // Direct URL for custom/other platforms
+  label?: string; // Human-readable platform name
 }
 
 // ========== COMPLETE CT TOWN DATABASE ==========
 // All 169 CT towns mapped to their assessor database platform
 const TOWN_DB: Record<string, TownConfig> = {
   // === VGS Towns (Vision Government Solutions) - from official vgsi.com list ===
-  "andover":        { platform: 'vgs', slug: 'andoverct' },
-  "berlin":         { platform: 'vgs', slug: 'berlinct' },
-  "bethlehem":      { platform: 'vgs', slug: 'bethlehemct' },
-  "bolton":         { platform: 'vgs', slug: 'BoltonCT' },
-  "branford":       { platform: 'vgs', slug: 'branfordct' },
-  "bridgeport":     { platform: 'vgs', slug: 'bridgeportct' },
-  "bridgewater":    { platform: 'vgs', slug: 'bridgewaterct' },
-  "bristol":        { platform: 'vgs', slug: 'bristolct' },
-  "brookfield":     { platform: 'vgs', slug: 'brookfieldct' },
-  "brooklyn":       { platform: 'vgs', slug: 'brooklynct' },
-  "burlington":     { platform: 'vgs', slug: 'burlingtonct' },
-  "canterbury":     { platform: 'vgs', slug: 'canterburyct' },
-  "canton":         { platform: 'vgs', slug: 'cantonct' },
-  "chaplin":        { platform: 'vgs', slug: 'chaplinct' },
-  "clinton":        { platform: 'vgs', slug: 'clintonct' },
-  "cornwall":       { platform: 'vgs', slug: 'CornwallCT' },
-  "coventry":       { platform: 'vgs', slug: 'coventryct' },
-  "deep river":     { platform: 'vgs', slug: 'deepriverct' },
-  "east granby":    { platform: 'vgs', slug: 'EastGranbyCT' },
-  "east haddam":    { platform: 'vgs', slug: 'easthaddamct' },
-  "east lyme":      { platform: 'vgs', slug: 'eastlymect' },
-  "east windsor":   { platform: 'vgs', slug: 'eastwindsorct' },
-  "enfield":        { platform: 'vgs', slug: 'EnfieldCT' },
-  "essex":          { platform: 'vgs', slug: 'essexct' },
-  "fairfield":      { platform: 'vgs', slug: 'fairfieldct' },
-  "glastonbury":    { platform: 'vgs', slug: 'glastonburyct' },
-  "granby":         { platform: 'vgs', slug: 'granbyct' },
-  "griswold":       { platform: 'vgs', slug: 'griswoldct' },
-  "hamden":         { platform: 'vgs', slug: 'hamdenct' },
-  "hampton":        { platform: 'vgs', slug: 'hamptonct' },
-  "harwinton":      { platform: 'vgs', slug: 'harwintonct' },
-  "lebanon":        { platform: 'vgs', slug: 'LebanonCT' },
-  "ledyard":        { platform: 'vgs', slug: 'LedyardCT' },
-  "lisbon":         { platform: 'vgs', slug: 'LisbonCT' },
-  "lyme":           { platform: 'vgs', slug: 'LymeCT' },
-  "madison":        { platform: 'vgs', slug: 'madisonct' },
-  "manchester":     { platform: 'vgs', slug: 'manchesterct' },
-  "mansfield":      { platform: 'vgs', slug: 'mansfieldct' },
-  "meriden":        { platform: 'vgs', slug: 'meridenct' },
-  "middlebury":     { platform: 'vgs', slug: 'middleburyct' },
-  "middlefield":    { platform: 'vgs', slug: 'MiddlefieldCT' },
-  "middletown":     { platform: 'vgs', slug: 'MiddletownCT' },
-  "milford":        { platform: 'vgs', slug: 'milfordct' },
-  "monroe":         { platform: 'vgs', slug: 'monroect' },
-  "new britain":    { platform: 'vgs', slug: 'newbritainct' },
-  "new fairfield":  { platform: 'vgs', slug: 'newfairfieldct' },
-  "new hartford":   { platform: 'vgs', slug: 'newhartfordct' },
-  "new haven":      { platform: 'vgs', slug: 'newhavenct' },
-  "new london":     { platform: 'vgs', slug: 'newlondonct' },
-  "new milford":    { platform: 'vgs', slug: 'newmilfordct' },
-  "newtown":        { platform: 'vgs', slug: 'newtownct' },
-  "north branford": { platform: 'vgs', slug: 'northbranfordct' },
-  "norwich":        { platform: 'vgs', slug: 'NorwichCT' },
-  "old lyme":       { platform: 'vgs', slug: 'oldlymect' },
-  "old saybrook":   { platform: 'vgs', slug: 'oldsaybrookct' },
-  "orange":         { platform: 'vgs', slug: 'orangect' },
-  "plainfield":     { platform: 'vgs', slug: 'PlainfieldCT' },
-  "pomfret":        { platform: 'vgs', slug: 'pomfretct' },
-  "preston":        { platform: 'vgs', slug: 'prestonct' },
-  "redding":        { platform: 'vgs', slug: 'reddingct' },
-  "salem":          { platform: 'vgs', slug: 'salemct' },
-  "salisbury":      { platform: 'vgs', slug: 'salisburyct' },
-  "somers":         { platform: 'vgs', slug: 'somersct' },
-  "south windsor":  { platform: 'vgs', slug: 'southwindsorct' },
-  "southbury":      { platform: 'vgs', slug: 'southburyct' },
-  "southington":    { platform: 'vgs', slug: 'southingtonct' },
-  "sprague":        { platform: 'vgs', slug: 'spraguect' },
-  "stafford":       { platform: 'vgs', slug: 'staffordct' },
-  "stamford":       { platform: 'vgs', slug: 'stamfordct' },
-  "sterling":       { platform: 'vgs', slug: 'sterlingct' },
-  "stonington":     { platform: 'vgs', slug: 'stoningtonct' },
-  "stratford":      { platform: 'vgs', slug: 'stratfordct' },
-  "thompson":       { platform: 'vgs', slug: 'thompsonct' },
-  "tolland":        { platform: 'vgs', slug: 'tollandct' },
-  "trumbull":       { platform: 'vgs', slug: 'trumbullct' },
-  "union":          { platform: 'vgs', slug: 'UnionCT' },
-  "wallingford":    { platform: 'vgs', slug: 'wallingfordct' },
-  "waterford":      { platform: 'vgs', slug: 'waterfordct' },
-  "westbrook":      { platform: 'vgs', slug: 'westbrookct' },
-  "west hartford":  { platform: 'vgs', slug: 'westhartfordct' },
-  "west haven":     { platform: 'vgs', slug: 'westhavenct' },
-  "westport":       { platform: 'vgs', slug: 'westportct' },
-  "willington":     { platform: 'vgs', slug: 'WillingtonCT' },
-  "winchester":     { platform: 'vgs', slug: 'WinchesterCT' },
-  "windham":        { platform: 'vgs', slug: 'windhamCT' },
+  andover: { platform: "vgs", slug: "andoverct" },
+  berlin: { platform: "vgs", slug: "berlinct" },
+  bethlehem: { platform: "vgs", slug: "bethlehemct" },
+  bolton: { platform: "vgs", slug: "BoltonCT" },
+  branford: { platform: "vgs", slug: "branfordct" },
+  bridgeport: { platform: "vgs", slug: "bridgeportct" },
+  bridgewater: { platform: "vgs", slug: "bridgewaterct" },
+  bristol: { platform: "vgs", slug: "bristolct" },
+  brookfield: { platform: "vgs", slug: "brookfieldct" },
+  brooklyn: { platform: "vgs", slug: "brooklynct" },
+  burlington: { platform: "vgs", slug: "burlingtonct" },
+  canterbury: { platform: "vgs", slug: "canterburyct" },
+  canton: { platform: "vgs", slug: "cantonct" },
+  chaplin: { platform: "vgs", slug: "chaplinct" },
+  clinton: { platform: "vgs", slug: "clintonct" },
+  cornwall: { platform: "vgs", slug: "CornwallCT" },
+  coventry: { platform: "vgs", slug: "coventryct" },
+  "deep river": { platform: "vgs", slug: "deepriverct" },
+  "east granby": { platform: "vgs", slug: "EastGranbyCT" },
+  "east haddam": { platform: "vgs", slug: "easthaddamct" },
+  "east lyme": { platform: "vgs", slug: "eastlymect" },
+  "east windsor": { platform: "vgs", slug: "eastwindsorct" },
+  enfield: { platform: "vgs", slug: "EnfieldCT" },
+  essex: { platform: "vgs", slug: "essexct" },
+  fairfield: { platform: "vgs", slug: "fairfieldct" },
+  glastonbury: { platform: "vgs", slug: "glastonburyct" },
+  granby: { platform: "vgs", slug: "granbyct" },
+  griswold: { platform: "vgs", slug: "griswoldct" },
+  hamden: { platform: "vgs", slug: "hamdenct" },
+  hampton: { platform: "vgs", slug: "hamptonct" },
+  harwinton: { platform: "vgs", slug: "harwintonct" },
+  lebanon: { platform: "vgs", slug: "LebanonCT" },
+  ledyard: { platform: "vgs", slug: "LedyardCT" },
+  lisbon: { platform: "vgs", slug: "LisbonCT" },
+  lyme: { platform: "vgs", slug: "LymeCT" },
+  madison: { platform: "vgs", slug: "madisonct" },
+  manchester: { platform: "vgs", slug: "manchesterct" },
+  mansfield: { platform: "vgs", slug: "mansfieldct" },
+  meriden: { platform: "vgs", slug: "meridenct" },
+  middlebury: { platform: "vgs", slug: "middleburyct" },
+  middlefield: { platform: "vgs", slug: "MiddlefieldCT" },
+  middletown: { platform: "vgs", slug: "MiddletownCT" },
+  milford: { platform: "vgs", slug: "milfordct" },
+  monroe: { platform: "vgs", slug: "monroect" },
+  "new britain": { platform: "vgs", slug: "newbritainct" },
+  "new fairfield": { platform: "vgs", slug: "newfairfieldct" },
+  "new hartford": { platform: "vgs", slug: "newhartfordct" },
+  "new haven": { platform: "vgs", slug: "newhavenct" },
+  "new london": { platform: "vgs", slug: "newlondonct" },
+  "new milford": { platform: "vgs", slug: "newmilfordct" },
+  newtown: { platform: "vgs", slug: "newtownct" },
+  "north branford": { platform: "vgs", slug: "northbranfordct" },
+  norwich: { platform: "vgs", slug: "NorwichCT" },
+  "old lyme": { platform: "vgs", slug: "oldlymect" },
+  "old saybrook": { platform: "vgs", slug: "oldsaybrookct" },
+  orange: { platform: "vgs", slug: "orangect" },
+  plainfield: { platform: "vgs", slug: "PlainfieldCT" },
+  pomfret: { platform: "vgs", slug: "pomfretct" },
+  preston: { platform: "vgs", slug: "prestonct" },
+  redding: { platform: "vgs", slug: "reddingct" },
+  salem: { platform: "vgs", slug: "salemct" },
+  salisbury: { platform: "vgs", slug: "salisburyct" },
+  somers: { platform: "vgs", slug: "somersct" },
+  "south windsor": { platform: "vgs", slug: "southwindsorct" },
+  southbury: { platform: "vgs", slug: "southburyct" },
+  southington: { platform: "vgs", slug: "southingtonct" },
+  sprague: { platform: "vgs", slug: "spraguect" },
+  stafford: { platform: "vgs", slug: "staffordct" },
+  stamford: { platform: "vgs", slug: "stamfordct" },
+  sterling: { platform: "vgs", slug: "sterlingct" },
+  stonington: { platform: "vgs", slug: "stoningtonct" },
+  stratford: { platform: "vgs", slug: "stratfordct" },
+  thompson: { platform: "vgs", slug: "thompsonct" },
+  tolland: { platform: "vgs", slug: "tollandct" },
+  trumbull: { platform: "vgs", slug: "trumbullct" },
+  union: { platform: "vgs", slug: "UnionCT" },
+  wallingford: { platform: "vgs", slug: "wallingfordct" },
+  waterford: { platform: "vgs", slug: "waterfordct" },
+  westbrook: { platform: "vgs", slug: "westbrookct" },
+  "west hartford": { platform: "vgs", slug: "westhartfordct" },
+  "west haven": { platform: "vgs", slug: "westhavenct" },
+  westport: { platform: "vgs", slug: "westportct" },
+  willington: { platform: "vgs", slug: "WillingtonCT" },
+  winchester: { platform: "vgs", slug: "WinchesterCT" },
+  windham: { platform: "vgs", slug: "windhamCT" },
 
   // === ACT Data Scout Towns ===
-  "kent":           { platform: 'act', slug: 'Kent', url: 'https://www.actdatascout.com/RealProperty/Connecticut/Kent' },
-  "norwalk":        { platform: 'act', slug: 'Norwalk', url: 'https://www.actdatascout.com/RealProperty/Connecticut/Norwalk' },
-  "sharon":         { platform: 'act', slug: 'Sharon', url: 'https://www.actdatascout.com/RealProperty/Connecticut/Sharon' },
+  kent: { platform: "act", slug: "Kent", url: "https://www.actdatascout.com/RealProperty/Connecticut/Kent" },
+  norwalk: { platform: "act", slug: "Norwalk", url: "https://www.actdatascout.com/RealProperty/Connecticut/Norwalk" },
+  sharon: { platform: "act", slug: "Sharon", url: "https://www.actdatascout.com/RealProperty/Connecticut/Sharon" },
 
   // === PropertyRecordCards.com Towns (QDS/PRC platform) ===
-  "ansonia":        { platform: 'prc', townCode: '002' },
-  "ashford":        { platform: 'prc', townCode: '003' },
-  "bethany":        { platform: 'prc', townCode: '008' },
-  "bozrah":         { platform: 'prc', townCode: '013' },
-  "canaan":         { platform: 'prc', townCode: '021' },
-  "cheshire":       { platform: 'prc', townCode: '025' },
-  "chester":        { platform: 'prc', townCode: '026' },
-  "colebrook":      { platform: 'prc', townCode: '029' },
-  "columbia":       { platform: 'prc', townCode: '030' },
-  "danbury":        { platform: 'prc', townCode: '034' },
-  "derby":          { platform: 'prc', townCode: '037' },
-  "durham":         { platform: 'prc', townCode: '038' },
-  "east hampton":   { platform: 'prc', townCode: '042' },
-  "east haven":     { platform: 'prc', townCode: '044' },
-  "eastford":       { platform: 'prc', townCode: '039' },
-  "easton":         { platform: 'prc', townCode: '046' },
-  "ellington":      { platform: 'prc', townCode: '048' },
-  "farmington":     { platform: 'prc', townCode: '052' },
-  "franklin":       { platform: 'prc', townCode: '053' },
-  "guilford":       { platform: 'prc', townCode: '060' },
-  "haddam":         { platform: 'prc', townCode: '061' },
-  "hebron":         { platform: 'prc', townCode: '067' },
-  "killingly":      { platform: 'prc', townCode: '069' },
-  "killingworth":   { platform: 'prc', townCode: '070' },
-  "marlborough":    { platform: 'prc', townCode: '079' },
-  "montville":      { platform: 'prc', townCode: '086' },
-  "naugatuck":      { platform: 'prc', townCode: '088' },
-  "new canaan":     { platform: 'prc', townCode: '090' },
-  "newington":      { platform: 'prc', townCode: '094' },
-  "norfolk":        { platform: 'prc', townCode: '098' },
-  "north canaan":   { platform: 'prc', townCode: '100' },
-  "north haven":    { platform: 'prc', townCode: '101' },
-  "north stonington": { platform: 'prc', townCode: '102' },
-  "oxford":         { platform: 'prc', townCode: '108' },
-  "plainville":     { platform: 'prc', townCode: '110' },
-  "plymouth":       { platform: 'prc', townCode: '111' },
-  "prospect":       { platform: 'prc', townCode: '115' },
-  "ridgefield":     { platform: 'prc', townCode: '118' },
-  "rocky hill":     { platform: 'prc', townCode: '119' },
-  "roxbury":        { platform: 'prc', townCode: '120' },
-  "scotland":       { platform: 'prc', townCode: '123' },
-  "seymour":        { platform: 'prc', townCode: '124' },
-  "shelton":        { platform: 'prc', townCode: '126' },
-  "sherman":        { platform: 'prc', townCode: '127' },
-  "simsbury":       { platform: 'prc', townCode: '128' },
-  "suffield":       { platform: 'prc', townCode: '139' },
-  "torrington":     { platform: 'prc', townCode: '143' },
-  "voluntown":      { platform: 'prc', townCode: '147' },
-  "warren":         { platform: 'prc', townCode: '149' },
-  "washington":     { platform: 'prc', townCode: '150' },
-  "waterbury":      { platform: 'prc', townCode: '151' },
-  "watertown":      { platform: 'prc', townCode: '153' },
-  "weston":         { platform: 'prc', townCode: '157' },
-  "wilton":         { platform: 'prc', townCode: '161' },
-  "windsor locks":  { platform: 'prc', townCode: '165' },
-  "woodbridge":     { platform: 'prc', townCode: '167' },
-  "woodbury":       { platform: 'prc', townCode: '168' },
+  ansonia: { platform: "prc", townCode: "002" },
+  ashford: { platform: "prc", townCode: "003" },
+  bethany: { platform: "prc", townCode: "008" },
+  bozrah: { platform: "prc", townCode: "013" },
+  canaan: { platform: "prc", townCode: "021" },
+  cheshire: { platform: "prc", townCode: "025" },
+  chester: { platform: "prc", townCode: "026" },
+  colebrook: { platform: "prc", townCode: "029" },
+  columbia: { platform: "prc", townCode: "030" },
+  danbury: { platform: "prc", townCode: "034" },
+  derby: { platform: "prc", townCode: "037" },
+  durham: { platform: "prc", townCode: "038" },
+  "east hampton": { platform: "prc", townCode: "042" },
+  "east haven": { platform: "prc", townCode: "044" },
+  eastford: { platform: "prc", townCode: "039" },
+  easton: { platform: "prc", townCode: "046" },
+  ellington: { platform: "prc", townCode: "048" },
+  farmington: { platform: "prc", townCode: "052" },
+  franklin: { platform: "prc", townCode: "053" },
+  guilford: { platform: "prc", townCode: "060" },
+  haddam: { platform: "prc", townCode: "061" },
+  hebron: { platform: "prc", townCode: "067" },
+  killingly: { platform: "prc", townCode: "069" },
+  killingworth: { platform: "prc", townCode: "070" },
+  marlborough: { platform: "prc", townCode: "079" },
+  montville: { platform: "prc", townCode: "086" },
+  naugatuck: { platform: "prc", townCode: "088" },
+  "new canaan": { platform: "prc", townCode: "090" },
+  newington: { platform: "prc", townCode: "094" },
+  norfolk: { platform: "prc", townCode: "098" },
+  "north canaan": { platform: "prc", townCode: "100" },
+  "north haven": { platform: "prc", townCode: "101" },
+  "north stonington": { platform: "prc", townCode: "102" },
+  oxford: { platform: "prc", townCode: "108" },
+  plainville: { platform: "prc", townCode: "110" },
+  plymouth: { platform: "prc", townCode: "111" },
+  prospect: { platform: "prc", townCode: "115" },
+  ridgefield: { platform: "prc", townCode: "118" },
+  "rocky hill": { platform: "prc", townCode: "119" },
+  roxbury: { platform: "prc", townCode: "120" },
+  scotland: { platform: "prc", townCode: "123" },
+  seymour: { platform: "prc", townCode: "124" },
+  shelton: { platform: "prc", townCode: "126" },
+  sherman: { platform: "prc", townCode: "127" },
+  simsbury: { platform: "prc", townCode: "128" },
+  suffield: { platform: "prc", townCode: "139" },
+  torrington: { platform: "prc", townCode: "143" },
+  voluntown: { platform: "prc", townCode: "147" },
+  warren: { platform: "prc", townCode: "149" },
+  washington: { platform: "prc", townCode: "150" },
+  waterbury: { platform: "prc", townCode: "151" },
+  watertown: { platform: "prc", townCode: "153" },
+  weston: { platform: "prc", townCode: "157" },
+  wilton: { platform: "prc", townCode: "161" },
+  "windsor locks": { platform: "prc", townCode: "165" },
+  woodbridge: { platform: "prc", townCode: "167" },
+  woodbury: { platform: "prc", townCode: "168" },
 
   // === Avon GIS (Tighebond ArcGIS REST API) ===
-  "avon":           { platform: 'avon_gis', url: 'https://hostingdata4.tighebond.com/arcgis/rest/services/AvonCT/AvonDynamic_Public/MapServer/0', label: 'Town of Avon GIS' },
+  avon: {
+    platform: "avon_gis",
+    url: "https://hostingdata4.tighebond.com/arcgis/rest/services/AvonCT/AvonDynamic_Public/MapServer/0",
+    label: "Town of Avon GIS",
+  },
 
   // === IAS-CLT Towns ===
-  "bethel":         { platform: 'ias', url: 'http://bethel.ias-clt.com/', label: 'Bethel Assessor' },
-  "east hartford":  { platform: 'ias', url: 'https://easthartford.ias-clt.com/', label: 'East Hartford Assessor' },
-  "hartford":       { platform: 'ias', url: 'https://hartford.ias-clt.com/', label: 'Hartford Assessor' },
+  bethel: { platform: "ias", url: "http://bethel.ias-clt.com/", label: "Bethel Assessor" },
+  "east hartford": { platform: "ias", url: "https://easthartford.ias-clt.com/", label: "East Hartford Assessor" },
+  hartford: { platform: "ias", url: "https://hartford.ias-clt.com/", label: "Hartford Assessor" },
 
   // === MapXpress Towns (only those confirmed working) ===
-  "bloomfield":     { platform: 'mapxpress', slug: 'bloomfieldct', url: 'https://bloomfieldct.mapxpress.net/' },
-  "darien":         { platform: 'mapxpress', slug: 'darien', url: 'https://darien.mapxpress.net/' },
-  "groton":         { platform: 'mapxpress', slug: 'groton', url: 'https://groton.mapxpress.net/' },
-  "wethersfield":   { platform: 'mapxpress', slug: 'wethersfield', url: 'https://wethersfield.mapxpress.net/' },
-  "windsor":        { platform: 'mapxpress', slug: 'windsor', url: 'https://windsor.mapxpress.net/' },
+  bloomfield: { platform: "mapxpress", slug: "bloomfieldct", url: "https://bloomfield.mapxpress.net/" },
+  darien: { platform: "mapxpress", slug: "darien", url: "https://darien.mapxpress.net/" },
+  groton: { platform: "mapxpress", slug: "groton", url: "https://groton.mapxpress.net/" },
+  wethersfield: { platform: "mapxpress", slug: "wethersfield", url: "https://wethersfield.mapxpress.net/" },
+  windsor: { platform: "mapxpress", slug: "windsor", url: "https://windsor.mapxpress.net/" },
 
   // === Remaining custom towns ===
-  "barkhamsted":    { platform: 'custom', url: 'https://www.barkhamsted.us/', label: 'Barkhamsted Assessor' },
-  "beacon falls":   { platform: 'custom', url: 'https://www.beaconfalls-ct.org/', label: 'Beacon Falls Assessor' },
-  "colchester":     { platform: 'custom', url: 'https://colchesterct.gov/', label: 'Colchester Assessor' },
-  "cromwell":       { platform: 'custom', url: 'https://www.cromwellct.com/', label: 'Cromwell Assessor' },
-  "goshen":         { platform: 'custom', url: 'https://www.goshenct.gov/', label: 'Goshen Assessor' },
-  "greenwich":      { platform: 'custom', url: 'https://www.greenwichct.gov/349/Assessment', label: 'Greenwich Assessor' },
-  "hartland":       { platform: 'custom', url: 'https://www.hartlandct.org/', label: 'Hartland Assessor' },
-  "litchfield":     { platform: 'custom', url: 'https://www.townoflitchfield.org/', label: 'Litchfield Assessor' },
-  "morris":         { platform: 'custom', url: 'https://www.townofmorrisct.com/', label: 'Morris Assessor' },
-  "portland":       { platform: 'custom', url: 'https://www.portlandct.org/', label: 'Portland Assessor' },
-  "putnam":         { platform: 'custom', url: 'https://www.putnamct.us/', label: 'Putnam Assessor' },
-  "thomaston":      { platform: 'custom', url: 'https://www.thomastonct.org/', label: 'Thomaston Assessor' },
-  "vernon":         { platform: 'custom', url: 'https://www.vernon-ct.gov/', label: 'Vernon Assessor' },
-  "wolcott":        { platform: 'custom', url: 'https://www.wolcottct.org/', label: 'Wolcott Assessor' },
-  "woodstock":      { platform: 'custom', url: 'https://www.woodstockct.gov/', label: 'Woodstock Assessor' },
+  barkhamsted: { platform: "custom", url: "https://www.barkhamsted.us/", label: "Barkhamsted Assessor" },
+  "beacon falls": { platform: "custom", url: "https://www.beaconfalls-ct.org/", label: "Beacon Falls Assessor" },
+  colchester: { platform: "custom", url: "https://colchesterct.gov/", label: "Colchester Assessor" },
+  cromwell: { platform: "custom", url: "https://www.cromwellct.com/", label: "Cromwell Assessor" },
+  goshen: { platform: "custom", url: "https://www.goshenct.gov/", label: "Goshen Assessor" },
+  greenwich: { platform: "custom", url: "https://www.greenwichct.gov/349/Assessment", label: "Greenwich Assessor" },
+  hartland: { platform: "custom", url: "https://www.hartlandct.org/", label: "Hartland Assessor" },
+  litchfield: { platform: "custom", url: "https://www.townoflitchfield.org/", label: "Litchfield Assessor" },
+  morris: { platform: "custom", url: "https://www.townofmorrisct.com/", label: "Morris Assessor" },
+  portland: { platform: "custom", url: "https://www.portlandct.org/", label: "Portland Assessor" },
+  putnam: { platform: "custom", url: "https://www.putnamct.us/", label: "Putnam Assessor" },
+  thomaston: { platform: "custom", url: "https://www.thomastonct.org/", label: "Thomaston Assessor" },
+  vernon: { platform: "custom", url: "https://www.vernon-ct.gov/", label: "Vernon Assessor" },
+  wolcott: { platform: "custom", url: "https://www.wolcottct.org/", label: "Wolcott Assessor" },
+  woodstock: { platform: "custom", url: "https://www.woodstockct.gov/", label: "Woodstock Assessor" },
 };
 
 const TOWN_ALIASES: Record<string, string> = {
-  'south glastonbury': 'glastonbury',
-  'east glastonbury': 'glastonbury',
-  'south norwalk': 'norwalk',
-  'cos cob': 'greenwich',
-  'old greenwich': 'greenwich',
-  'riverside': 'greenwich',
-  'glenville': 'greenwich',
-  'central village': 'plainfield',
-  'moosup': 'plainfield',
-  'wauregan': 'plainfield',
-  'niantic': 'east lyme',
-  'pawcatuck': 'stonington',
-  'oakdale': 'montville',
-  'uncasville': 'montville',
-  'quaker hill': 'waterford',
-  'taftville': 'norwich',
-  'greenville': 'norwich',
-  'occum': 'norwich',
-  'amston': 'hebron',
-  'hadlyme': 'east haddam',
-  'higganum': 'haddam',
-  'north grosvenordale': 'thompson',
-  'grosvenordale': 'thompson',
-  'thompsonville': 'enfield',
-  'hazardville': 'enfield',
+  "south glastonbury": "glastonbury",
+  "east glastonbury": "glastonbury",
+  "south norwalk": "norwalk",
+  "cos cob": "greenwich",
+  "old greenwich": "greenwich",
+  riverside: "greenwich",
+  glenville: "greenwich",
+  "central village": "plainfield",
+  moosup: "plainfield",
+  wauregan: "plainfield",
+  niantic: "east lyme",
+  pawcatuck: "stonington",
+  oakdale: "montville",
+  uncasville: "montville",
+  "quaker hill": "waterford",
+  taftville: "norwich",
+  greenville: "norwich",
+  occum: "norwich",
+  amston: "hebron",
+  hadlyme: "east haddam",
+  higganum: "haddam",
+  "north grosvenordale": "thompson",
+  grosvenordale: "thompson",
+  thompsonville: "enfield",
+  hazardville: "enfield",
 };
 
 function resolveTownLookup(town: string): { lookupTown: string; config?: TownConfig } {
-  const townLower = town.toLowerCase().trim().replace(/\s+/g, ' ');
+  const townLower = town.toLowerCase().trim().replace(/\s+/g, " ");
   const exact = TOWN_DB[townLower];
   if (exact) return { lookupTown: townLower, config: exact };
 
@@ -383,8 +404,7 @@ Deno.serve(async (req) => {
       console.log(`Resolved lookup town: ${town} -> ${lookupTown}`);
     }
 
-
-    const apiKey = Deno.env.get('FIRECRAWL_API_KEY');
+    const apiKey = Deno.env.get("FIRECRAWL_API_KEY");
     if (!apiKey) {
       return json({ success: false, error: "Scraping service not configured" }, 500);
     }
@@ -395,7 +415,7 @@ Deno.serve(async (req) => {
     }
 
     // For 'custom' platform towns (no real scraper), return not found with URL
-    if (config.platform === 'custom') {
+    if (config.platform === "custom") {
       console.log(`Custom platform for ${town}, no direct scraper`);
       return json({ success: false, error: `No direct scraper for ${town}, CT.`, searchUrl: config.url });
     }
@@ -404,28 +424,28 @@ Deno.serve(async (req) => {
     let result: Response;
     try {
       switch (config.platform) {
-        case 'vgs':
+        case "vgs":
           result = await scrapeVGS(apiKey, config.slug!, normalizedAddress, lookupTown);
           break;
-        case 'mapxpress':
+        case "mapxpress":
           result = await scrapeMapXpress(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
-        case 'qds':
+        case "qds":
           result = await scrapeQDS(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
-        case 'act':
+        case "act":
           result = await scrapeACTDataScout(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
-        case 'ias':
+        case "ias":
           result = await scrapeIASCLT(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
-        case 'prc':
+        case "prc":
           result = await scrapePRC(apiKey, config.townCode!, normalizedAddress, lookupTown);
           break;
-        case 'equality':
+        case "equality":
           result = await scrapeEqualityCama(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
-        case 'avon_gis':
+        case "avon_gis":
           result = await scrapeAvonGIS(apiKey, normalizedAddress, lookupTown);
           break;
         default:
@@ -453,7 +473,7 @@ Deno.serve(async (req) => {
     return json({
       success: false,
       error: `Could not find property data for ${address} in ${town}. Try the assessor database directly.`,
-      searchUrl: config.url || '',
+      searchUrl: config.url || "",
     });
   } catch (error) {
     console.error("Error:", error);
@@ -463,12 +483,18 @@ Deno.serve(async (req) => {
 
 // ========== AVON GIS (Tighebond ArcGIS REST API) ==========
 async function scrapeAvonGIS(apiKey: string, address: string, town: string): Promise<Response> {
-  const AVON_GIS_URL = 'https://hostingdata4.tighebond.com/arcgis/rest/services/AvonCT/AvonDynamic_Public/MapServer/0/query';
+  const AVON_GIS_URL =
+    "https://hostingdata4.tighebond.com/arcgis/rest/services/AvonCT/AvonDynamic_Public/MapServer/0/query";
 
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
-  const houseNum = addrParts?.[1] || '';
+  const houseNum = addrParts?.[1] || "";
   const streetName = addrParts?.[2] || address;
-  const streetBase = streetName.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|PARK|TERRACE|TRAIL|HIGHWAY)\.?$/i, '').trim();
+  const streetBase = streetName
+    .replace(
+      /\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|PARK|TERRACE|TRAIL|HIGHWAY)\.?$/i,
+      "",
+    )
+    .trim();
 
   // Build all query variants
   const whereSet = new Set<string>();
@@ -483,22 +509,25 @@ async function scrapeAvonGIS(apiKey: string, address: string, town: string): Pro
 
   // Fire ALL queries in parallel
   const queryFn = async (where: string) => {
-    const params = new URLSearchParams({ where, outFields: '*', f: 'json', returnGeometry: 'false' });
+    const params = new URLSearchParams({ where, outFields: "*", f: "json", returnGeometry: "false" });
     const resp = await fetch(`${AVON_GIS_URL}?${params.toString()}`);
     if (!resp.ok) return null;
     const data = await resp.json();
-    return (data.features?.length > 0) ? data.features : null;
+    return data.features?.length > 0 ? data.features : null;
   };
 
   const results = await Promise.all([...whereSet].map(queryFn));
-  
+
   // Find first result with features
   let best: any = null;
   for (const features of results) {
     if (!features) continue;
     for (const f of features) {
-      const strloc = (f.attributes['CAMA.STRLOC'] || '').toUpperCase();
-      if (strloc.startsWith(houseNum + ' ')) { best = f; break; }
+      const strloc = (f.attributes["CAMA.STRLOC"] || "").toUpperCase();
+      if (strloc.startsWith(houseNum + " ")) {
+        best = f;
+        break;
+      }
     }
     if (best) break;
     best = features[0]; // fallback to first result
@@ -506,57 +535,112 @@ async function scrapeAvonGIS(apiKey: string, address: string, town: string): Pro
   }
 
   if (!best) {
-    return json({ success: false, error: `Could not find "${address}" in Avon GIS database.`, searchUrl: 'https://hosting.tighebond.com/AvonCT_public/index.html' });
+    return json({
+      success: false,
+      error: `Could not find "${address}" in Avon GIS database.`,
+      searchUrl: "https://hosting.tighebond.com/AvonCT_public/index.html",
+    });
   }
 
   const a = best.attributes;
-  const owner = (a['CAMA.NAME'] || '').trim();
-  const coOwner = (a['CAMA.NDNA'] || '').trim();
+  const owner = (a["CAMA.NAME"] || "").trim();
+  const coOwner = (a["CAMA.NDNA"] || "").trim();
   if (!owner || owner.length < 3) {
-    return json({ success: false, error: `Could not find "${address}" in Avon GIS database.`, searchUrl: 'https://hosting.tighebond.com/AvonCT_public/index.html' });
+    return json({
+      success: false,
+      error: `Could not find "${address}" in Avon GIS database.`,
+      searchUrl: "https://hosting.tighebond.com/AvonCT_public/index.html",
+    });
   }
 
-  console.log(`Avon GIS found: ${owner}, ${a['CAMA.STRLOC']}`);
-  const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner + ' ' + coOwner);
-  const recordCardUrl = a['CAMA.RecordCard'] || '';
+  console.log(`Avon GIS found: ${owner}, ${a["CAMA.STRLOC"]}`);
+  const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner + " " + coOwner);
+  const recordCardUrl = a["CAMA.RecordCard"] || "";
 
   const prop: any = {
-    address: a['CAMA.STRLOC'] || address, town: 'Avon', owner, coOwner,
-    ownerAddress: [a['CAMA.STREET'], a['CAMA.CITY'], a['CAMA.ST'], (a['CAMA.ZIP'] || '').trim()].filter(Boolean).join(', '),
+    address: a["CAMA.STRLOC"] || address,
+    town: "Avon",
+    owner,
+    coOwner,
+    ownerAddress: [a["CAMA.STREET"], a["CAMA.CITY"], a["CAMA.ST"], (a["CAMA.ZIP"] || "").trim()]
+      .filter(Boolean)
+      .join(", "),
     isLLC,
-    parcelId: a['CAMA.GISPin'] || a['Cadastral_MDB_Parcels.PARNO'] || '',
-    mblu:'', accountNumber: String(a['CAMA.ACCT'] || ''), buildingCount:'',
-    bookPage: `Vol ${a['CAMA.VOL'] || ''} / Pg ${a['CAMA.PAGE'] || ''}`,
-    certificate:'', instrument:'',
-    assessedValue: a['CAMA.TOTVAL'] || '', totalAppraisal: a['CAMA.APRTOT'] || '',
-    totalMarketValue:'', improvementsValue: a['CAMA.BLDVAL'] || '', landValue: a['CAMA.LNDVAL'] || '',
-    assessImprovements:'', assessLand:'', assessTotal: a['CAMA.TOTVAL'] || '',
-    salePrice: a['CAMA.SALEPR'] ? `$${Number(a['CAMA.SALEPR']).toLocaleString()}` : '',
-    saleDate: a['CAMA.SDATE'] || '', lotSize: a['CAMA.ACRES'] || '', frontage:'', depth:'',
-    useCode:'', useDescription: a['Cadastral_MDB_Parcels.PROPERTYTYPE'] || '',
-    zoning: a['CAMA.ZONE'] || '', neighborhood:'',
-    totalMarketLand:'', landAppraisedValue:'',
-    yearBuilt: a['CAMA.YRBUILT'] || '', buildingStyle: a['CAMA.STYLE'] || '', model:'',
-    stories: a['CAMA.STORIES'] || '', livingArea: a['CAMA.SFLA'] || '',
-    replacementCost:'', buildingPercentGood:'', occupancy:'',
-    totalRooms: a['CAMA.RMTOT'] || '', bedrooms: a['CAMA.RMBED'] || '',
-    totalBaths: a['CAMA.FIXBATH'] || '', halfBaths: a['CAMA.FIXHALF'] || '',
-    totalXtraFixtures:'', bathStyle:'', kitchenStyle:'',
-    interiorCondition:'', finBsmntArea:'', finBsmntQual:'', grade: a['CAMA.GRADE'] || '',
-    exteriorWall: a['CAMA.EXTWALL'] || '', roofStructure: a['CAMA.ROOFTYP'] || '',
-    roofCover: a['CAMA.ROOFMAT'] || '', interiorWall:'', flooring:'',
-    heating: a['CAMA.HEAT'] || '', heatingFuel: a['CAMA.FUEL'] || '',
-    cooling: a['CAMA.COOL'] || '', buildingPhoto:'',
-    garage:'', pool:'', fireplace: a['CAMA.FIREPLC'] || '', foundation:'',
-    taxAmount:'',
-    water: a['CAMA.WATER'] || '', sewer: a['CAMA.SEWER'] || '', gas: a['CAMA.GAS'] || '',
-    ownershipHistory:[], subAreas:[], valuationHistory:[],
-    propertyCardUrl: recordCardUrl || 'https://hosting.tighebond.com/AvonCT_public/index.html',
+    parcelId: a["CAMA.GISPin"] || a["Cadastral_MDB_Parcels.PARNO"] || "",
+    mblu: "",
+    accountNumber: String(a["CAMA.ACCT"] || ""),
+    buildingCount: "",
+    bookPage: `Vol ${a["CAMA.VOL"] || ""} / Pg ${a["CAMA.PAGE"] || ""}`,
+    certificate: "",
+    instrument: "",
+    assessedValue: a["CAMA.TOTVAL"] || "",
+    totalAppraisal: a["CAMA.APRTOT"] || "",
+    totalMarketValue: "",
+    improvementsValue: a["CAMA.BLDVAL"] || "",
+    landValue: a["CAMA.LNDVAL"] || "",
+    assessImprovements: "",
+    assessLand: "",
+    assessTotal: a["CAMA.TOTVAL"] || "",
+    salePrice: a["CAMA.SALEPR"] ? `$${Number(a["CAMA.SALEPR"]).toLocaleString()}` : "",
+    saleDate: a["CAMA.SDATE"] || "",
+    lotSize: a["CAMA.ACRES"] || "",
+    frontage: "",
+    depth: "",
+    useCode: "",
+    useDescription: a["Cadastral_MDB_Parcels.PROPERTYTYPE"] || "",
+    zoning: a["CAMA.ZONE"] || "",
+    neighborhood: "",
+    totalMarketLand: "",
+    landAppraisedValue: "",
+    yearBuilt: a["CAMA.YRBUILT"] || "",
+    buildingStyle: a["CAMA.STYLE"] || "",
+    model: "",
+    stories: a["CAMA.STORIES"] || "",
+    livingArea: a["CAMA.SFLA"] || "",
+    replacementCost: "",
+    buildingPercentGood: "",
+    occupancy: "",
+    totalRooms: a["CAMA.RMTOT"] || "",
+    bedrooms: a["CAMA.RMBED"] || "",
+    totalBaths: a["CAMA.FIXBATH"] || "",
+    halfBaths: a["CAMA.FIXHALF"] || "",
+    totalXtraFixtures: "",
+    bathStyle: "",
+    kitchenStyle: "",
+    interiorCondition: "",
+    finBsmntArea: "",
+    finBsmntQual: "",
+    grade: a["CAMA.GRADE"] || "",
+    exteriorWall: a["CAMA.EXTWALL"] || "",
+    roofStructure: a["CAMA.ROOFTYP"] || "",
+    roofCover: a["CAMA.ROOFMAT"] || "",
+    interiorWall: "",
+    flooring: "",
+    heating: a["CAMA.HEAT"] || "",
+    heatingFuel: a["CAMA.FUEL"] || "",
+    cooling: a["CAMA.COOL"] || "",
+    buildingPhoto: "",
+    garage: "",
+    pool: "",
+    fireplace: a["CAMA.FIREPLC"] || "",
+    foundation: "",
+    taxAmount: "",
+    water: a["CAMA.WATER"] || "",
+    sewer: a["CAMA.SEWER"] || "",
+    gas: a["CAMA.GAS"] || "",
+    ownershipHistory: [],
+    subAreas: [],
+    valuationHistory: [],
+    propertyCardUrl: recordCardUrl || "https://hosting.tighebond.com/AvonCT_public/index.html",
     llcDetails: undefined as any,
   };
 
   if (isLLC) {
-    try { prop.llcDetails = await searchCTBusiness(apiKey, owner); } catch (e) { console.error("LLC:", e); }
+    try {
+      prop.llcDetails = await searchCTBusiness(apiKey, owner);
+    } catch (e) {
+      console.error("LLC:", e);
+    }
   }
 
   return json({ success: true, property: prop });
@@ -565,34 +649,58 @@ async function scrapeAvonGIS(apiKey: string, address: string, town: string): Pro
 // Try to scrape the Avon assessor record card for building details
 async function scrapeAvonRecordCard(apiKey: string, url: string): Promise<any> {
   try {
-    const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        url, formats: ['extract'],
+        url,
+        formats: ["extract"],
         extract: {
-          prompt: 'Extract all property assessment data from this Avon CT property record card.',
-          schema: { type: 'object', properties: {
-            assessedValue:{type:'string'}, totalAppraisal:{type:'string'}, totalMarketValue:{type:'string'},
-            improvementsValue:{type:'string'}, landValue:{type:'string'}, yearBuilt:{type:'string'},
-            livingArea:{type:'string'}, lotSize:{type:'string'}, bedrooms:{type:'string'},
-            totalBaths:{type:'string'}, halfBaths:{type:'string'}, totalRooms:{type:'string'},
-            stories:{type:'string'}, buildingStyle:{type:'string'}, exteriorWall:{type:'string'},
-            roofStructure:{type:'string'}, roofCover:{type:'string'}, foundation:{type:'string'},
-            heating:{type:'string'}, heatingFuel:{type:'string'}, cooling:{type:'string'},
-            flooring:{type:'string'}, garage:{type:'string'}, pool:{type:'string'},
-            fireplace:{type:'string'}, basement:{type:'string'}, grade:{type:'string'},
-            propertyType:{type:'string'}, taxAmount:{type:'string'},
-          }},
+          prompt: "Extract all property assessment data from this Avon CT property record card.",
+          schema: {
+            type: "object",
+            properties: {
+              assessedValue: { type: "string" },
+              totalAppraisal: { type: "string" },
+              totalMarketValue: { type: "string" },
+              improvementsValue: { type: "string" },
+              landValue: { type: "string" },
+              yearBuilt: { type: "string" },
+              livingArea: { type: "string" },
+              lotSize: { type: "string" },
+              bedrooms: { type: "string" },
+              totalBaths: { type: "string" },
+              halfBaths: { type: "string" },
+              totalRooms: { type: "string" },
+              stories: { type: "string" },
+              buildingStyle: { type: "string" },
+              exteriorWall: { type: "string" },
+              roofStructure: { type: "string" },
+              roofCover: { type: "string" },
+              foundation: { type: "string" },
+              heating: { type: "string" },
+              heatingFuel: { type: "string" },
+              cooling: { type: "string" },
+              flooring: { type: "string" },
+              garage: { type: "string" },
+              pool: { type: "string" },
+              fireplace: { type: "string" },
+              basement: { type: "string" },
+              grade: { type: "string" },
+              propertyType: { type: "string" },
+              taxAmount: { type: "string" },
+            },
+          },
         },
       }),
     });
     if (!resp.ok) return {};
     const ex = (await resp.json())?.data?.extract;
     return ex || {};
-  } catch { return {}; }
+  } catch {
+    return {};
+  }
 }
-
 
 // ========== VGS SCRAPING ==========
 async function scrapeVGS(apiKey: string, slug: string, address: string, town: string) {
@@ -601,9 +709,14 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
 
   // Parse address to get number and street base (without suffix like DR/RD/ST)
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
-  const houseNum = addrParts?.[1] || '';
+  const houseNum = addrParts?.[1] || "";
   const streetFull = addrParts?.[2] || address;
-  const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, '').trim();
+  const streetBase = streetFull
+    .replace(
+      /\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i,
+      "",
+    )
+    .trim();
 
   // Generate all address variants (PARK → PK, PRK, etc.)
   const allVariants = getAddressVariants(address);
@@ -622,36 +735,48 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
   for (const searchText of searchTextArr) {
     try {
       console.log(`Trying VGS with actions (search: "${searchText}")`);
-      const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           url: searchUrl,
-          formats: ['markdown', 'links', 'html'],
+          formats: ["markdown", "links", "html"],
           waitFor: 1500,
           actions: [
-            { type: 'wait', milliseconds: 500 },
-            { type: 'click', selector: 'input[id*="TextBox_Search"], input[id*="txtSearch"], input[type="text"]' },
-            { type: 'write', text: searchText },
-            { type: 'wait', milliseconds: 2500 },
-            { type: 'click', selector: '.ui-autocomplete li:first-child a, .ui-menu-item:first-child a, ul.ui-autocomplete li:first-child' },
-            { type: 'wait', milliseconds: 3000 },
+            { type: "wait", milliseconds: 500 },
+            { type: "click", selector: 'input[id*="TextBox_Search"], input[id*="txtSearch"], input[type="text"]' },
+            { type: "write", text: searchText },
+            { type: "wait", milliseconds: 2500 },
+            {
+              type: "click",
+              selector:
+                ".ui-autocomplete li:first-child a, .ui-menu-item:first-child a, ul.ui-autocomplete li:first-child",
+            },
+            { type: "wait", milliseconds: 3000 },
           ],
         }),
       });
 
       if (resp.ok) {
         const data = await resp.json();
-        const markdown = data.data?.markdown || data.markdown || '';
-        const html = data.data?.html || data.html || '';
-        const finalUrl = data.data?.metadata?.url || data.data?.metadata?.sourceURL || '';
+        const markdown = data.data?.markdown || data.markdown || "";
+        const html = data.data?.html || data.html || "";
+        const finalUrl = data.data?.metadata?.url || data.data?.metadata?.sourceURL || "";
 
-        if (finalUrl.includes('Parcel.aspx') || markdown.includes('Parcel ID') || markdown.includes('Total Market Value')) {
+        if (
+          finalUrl.includes("Parcel.aspx") ||
+          markdown.includes("Parcel ID") ||
+          markdown.includes("Total Market Value")
+        ) {
           const extracted = extractVGSData(markdown, address, town);
-          if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
+          if (extracted && extracted.owner && !extracted.owner.includes("Enter an")) {
             extracted.propertyCardUrl = finalUrl;
             if (extracted.isLLC) {
-              try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+              try {
+                extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
+              } catch (e) {
+                console.error("LLC:", e);
+              }
             }
             return json({ success: true, property: extracted });
           }
@@ -662,10 +787,16 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
           return await scrapePropertyDetail(apiKey, `${baseUrl}/Parcel.aspx?Pid=${pidMatch[1]}`, address, town);
         }
       }
-    } catch (e) { console.error("Actions error:", e); }
+    } catch (e) {
+      console.error("Actions error:", e);
+    }
   }
 
-  return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl });
+  return json({
+    success: false,
+    error: `Could not find property in ${town}. Try the assessor database directly.`,
+    searchUrl,
+  });
 }
 
 // ========== MAPXPRESS SCRAPING ==========
@@ -674,40 +805,53 @@ async function scrapeMapXpress(apiKey: string, baseUrl: string, address: string,
     console.log(`Scraping MapXpress for ${town}: ${baseUrl}`);
 
     // Use Firecrawl actions to search on the MapXpress site directly
-    const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         url: baseUrl,
-        formats: ['markdown', 'html'],
+        formats: ["markdown", "html"],
         waitFor: 1500,
         actions: [
-          { type: 'wait', milliseconds: 1000 },
-          { type: 'click', selector: 'input[name*="Address"], input[name*="address"], #txtAddress, input[placeholder*="Address"]' },
-          { type: 'write', text: address },
-          { type: 'click', selector: 'input[type="submit"], button[type="submit"], #btnSearch' },
-          { type: 'wait', milliseconds: 3000 },
+          { type: "wait", milliseconds: 1000 },
+          {
+            type: "click",
+            selector: 'input[name*="Address"], input[name*="address"], #txtAddress, input[placeholder*="Address"]',
+          },
+          { type: "write", text: address },
+          { type: "click", selector: 'input[type="submit"], button[type="submit"], #btnSearch' },
+          { type: "wait", milliseconds: 3000 },
         ],
       }),
     });
 
     if (resp.ok) {
       const data = await resp.json();
-      const markdown = data.data?.markdown || data.markdown || '';
+      const markdown = data.data?.markdown || data.markdown || "";
       if (markdown.length > 200) {
         const extracted = extractMapXpressData(markdown, address, town);
         if (extracted) {
           extracted.propertyCardUrl = data.data?.metadata?.url || baseUrl;
           if (extracted.isLLC) {
-            try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+            try {
+              extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
+            } catch (e) {
+              console.error("LLC:", e);
+            }
           }
           return json({ success: true, property: extracted });
         }
       }
     }
-  } catch (e) { console.error("MapXpress error:", e); }
+  } catch (e) {
+    console.error("MapXpress error:", e);
+  }
 
-  return json({ success: false, error: `Could not find property in ${town}. Try searching the MapXpress database directly.`, searchUrl: baseUrl });
+  return json({
+    success: false,
+    error: `Could not find property in ${town}. Try searching the MapXpress database directly.`,
+    searchUrl: baseUrl,
+  });
 }
 
 // ========== QDS SCRAPING (Avon etc.) ==========
@@ -728,35 +872,45 @@ async function scrapeQDS(apiKey: string, baseUrl: string, address: string, town:
     }
 
     const houseNum = addrMatch[1];
-    const streetName = addrMatch[2].toUpperCase().replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE)\.?$/i, '').trim();
+    const streetName = addrMatch[2]
+      .toUpperCase()
+      .replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE)\.?$/i, "")
+      .trim();
     const fullStreetName = addrMatch[2].toUpperCase();
     const firstLetter = streetName.charAt(0).toLowerCase();
 
     console.log(`Looking for house #${houseNum} on ${fullStreetName} (first letter: ${firstLetter})`);
 
     // Step 1: Fetch the street listing page to find our street
-    const streetPageUrl = `${baseUrl.replace(/\/$/, '')}/propcards/${firstLetter.toUpperCase()}street.html`;
+    const streetPageUrl = `${baseUrl.replace(/\/$/, "")}/propcards/${firstLetter.toUpperCase()}street.html`;
     const streetPageMd = await firecrawlScrape(apiKey, streetPageUrl);
 
     if (!streetPageMd) {
       // Try alternate format
-      const altUrl = `${baseUrl.replace(/\/$/, '')}/propcards/streets.html#${firstLetter}`;
-      return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
+      const altUrl = `${baseUrl.replace(/\/$/, "")}/propcards/streets.html#${firstLetter}`;
+      return json({
+        success: false,
+        error: `Could not find property in ${town}. Try the assessor database directly.`,
+        searchUrl: baseUrl,
+      });
     }
 
     // Step 2: Find the matching property link in the street page
     // Links look like: [00100 FISHER DRIVE](http://assessor.avonct.gov/propcards/2/admin/a228010001.html)
-    const paddedNum = houseNum.padStart(5, '0');
-    const lines = streetPageMd.split('\n');
+    const paddedNum = houseNum.padStart(5, "0");
+    const lines = streetPageMd.split("\n");
 
-    let propertyUrl = '';
+    let propertyUrl = "";
     for (const line of lines) {
       // Match on padded house number + street name
       const linkMatch = line.match(/\[(\d+)\s+([^\]]+)\]\((https?:\/\/[^\)]+)\)/i);
       if (linkMatch) {
-        const linkNum = linkMatch[1].replace(/^0+/, '');
+        const linkNum = linkMatch[1].replace(/^0+/, "");
         const linkStreet = linkMatch[2].trim().toUpperCase();
-        if (linkNum === houseNum && (linkStreet.includes(streetName) || fullStreetName.includes(linkStreet.replace(/\s+\d+$/, '').trim()))) {
+        if (
+          linkNum === houseNum &&
+          (linkStreet.includes(streetName) || fullStreetName.includes(linkStreet.replace(/\s+\d+$/, "").trim()))
+        ) {
           propertyUrl = linkMatch[3];
           console.log(`Found QDS property: ${propertyUrl}`);
           break;
@@ -766,7 +920,11 @@ async function scrapeQDS(apiKey: string, baseUrl: string, address: string, town:
 
     if (!propertyUrl) {
       console.log(`Property not found in street listing, trying search fallback`);
-      return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
+      return json({
+        success: false,
+        error: `Could not find property in ${town}. Try the assessor database directly.`,
+        searchUrl: baseUrl,
+      });
     }
 
     // Step 3: Fetch the property card page
@@ -787,12 +945,20 @@ async function scrapeQDS(apiKey: string, baseUrl: string, address: string, town:
       }
 
       if (extracted.isLLC) {
-        try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+        try {
+          extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
+        } catch (e) {
+          console.error("LLC:", e);
+        }
       }
       return json({ success: true, property: extracted });
     }
 
-    return json({ success: false, error: `Could not extract property data from ${town} assessor.`, searchUrl: propertyUrl });
+    return json({
+      success: false,
+      error: `Could not extract property data from ${town} assessor.`,
+      searchUrl: propertyUrl,
+    });
   } catch (e) {
     console.error("QDS error:", e);
     return json({ success: false, error: `Error searching ${town} assessor database.`, searchUrl: baseUrl });
@@ -818,7 +984,7 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
     // Step 1: Fetch the search page HTML to get the street name options
     console.log(`Fetching PRC page to find street names...`);
     const pageResp = await fetch(baseUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
     });
     if (!pageResp.ok) {
       console.error(`PRC page fetch failed: ${pageResp.status}`);
@@ -831,58 +997,87 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
     const streets: string[] = [];
     let sm;
     while ((sm = streetRegex.exec(pageHtml)) !== null) {
-      if (sm[1] && sm[1].length > 1 && !['Apartment','Automotive','Church','Condos','Elderly','Entertainment','Farms/Barns','Industrial','Lodging','Marina','Office','Public Use','Residential','Restaurant','Retail','School','Special Use','Vacant Land'].includes(sm[1])) {
+      if (
+        sm[1] &&
+        sm[1].length > 1 &&
+        ![
+          "Apartment",
+          "Automotive",
+          "Church",
+          "Condos",
+          "Elderly",
+          "Entertainment",
+          "Farms/Barns",
+          "Industrial",
+          "Lodging",
+          "Marina",
+          "Office",
+          "Public Use",
+          "Residential",
+          "Restaurant",
+          "Retail",
+          "School",
+          "Special Use",
+          "Vacant Land",
+        ].includes(sm[1])
+      ) {
         streets.push(sm[1]);
       }
     }
     console.log(`Found ${streets.length} streets for ${town}`);
 
     // Match user's street against the dropdown options
-    let matchedStreet = '';
+    let matchedStreet = "";
     // Try exact match first
-    matchedStreet = streets.find(s => s === streetPart) || '';
+    matchedStreet = streets.find((s) => s === streetPart) || "";
     // Try without suffix abbreviation
     if (!matchedStreet) {
-      const streetBase = streetPart.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK)\.?$/i, '').trim();
-      matchedStreet = streets.find(s => s.startsWith(streetBase)) || '';
+      const streetBase = streetPart
+        .replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK)\.?$/i, "")
+        .trim();
+      matchedStreet = streets.find((s) => s.startsWith(streetBase)) || "";
     }
     // Try contains match
     if (!matchedStreet) {
       const streetWords = streetPart.split(/\s+/);
       const mainWord = streetWords[0];
-      matchedStreet = streets.find(s => s.includes(mainWord)) || '';
+      matchedStreet = streets.find((s) => s.includes(mainWord)) || "";
     }
 
     if (!matchedStreet) {
       console.log(`Street "${streetPart}" not found in ${town} PRC database`);
-      return json({ success: false, error: `Street "${streetPart}" not found in ${town}. Try the Property Record Cards database directly.`, searchUrl: baseUrl });
+      return json({
+        success: false,
+        error: `Street "${streetPart}" not found in ${town}. Try the Property Record Cards database directly.`,
+        searchUrl: baseUrl,
+      });
     }
     console.log(`Matched street: "${matchedStreet}"`);
 
     // Step 2: Extract ASP.NET form fields for direct POST submission
-    const viewState = (pageHtml.match(/id="__VIEWSTATE"\s+value="([^"]*)"/) || [])[1] || '';
-    const viewStateGen = (pageHtml.match(/id="__VIEWSTATEGENERATOR"\s+value="([^"]*)"/) || [])[1] || '';
-    const eventValidation = (pageHtml.match(/id="__EVENTVALIDATION"\s+value="([^"]*)"/) || [])[1] || '';
+    const viewState = (pageHtml.match(/id="__VIEWSTATE"\s+value="([^"]*)"/) || [])[1] || "";
+    const viewStateGen = (pageHtml.match(/id="__VIEWSTATEGENERATOR"\s+value="([^"]*)"/) || [])[1] || "";
+    const eventValidation = (pageHtml.match(/id="__EVENTVALIDATION"\s+value="([^"]*)"/) || [])[1] || "";
 
     // Build form data for POST submission
     const formData = new URLSearchParams();
-    formData.set('__VIEWSTATE', viewState);
-    formData.set('__VIEWSTATEGENERATOR', viewStateGen);
-    formData.set('__EVENTVALIDATION', eventValidation);
-    formData.set('ctl00$MainContent$tbPropertySearchStreetNumber', houseNum);
-    formData.set('ctl00$MainContent$cbPropertySearchStreetName', matchedStreet);
-    formData.set('ctl00$MainContent$btnPropertySearch', 'Search');
+    formData.set("__VIEWSTATE", viewState);
+    formData.set("__VIEWSTATEGENERATOR", viewStateGen);
+    formData.set("__EVENTVALIDATION", eventValidation);
+    formData.set("ctl00$MainContent$tbPropertySearchStreetNumber", houseNum);
+    formData.set("ctl00$MainContent$cbPropertySearchStreetName", matchedStreet);
+    formData.set("ctl00$MainContent$btnPropertySearch", "Search");
 
     console.log(`Submitting PRC form: num=${houseNum}, street=${matchedStreet}`);
     const postResp = await fetch(baseUrl, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Referer': baseUrl,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Content-Type": "application/x-www-form-urlencoded",
+        Referer: baseUrl,
       },
       body: formData.toString(),
-      redirect: 'follow',
+      redirect: "follow",
     });
 
     if (postResp.ok) {
@@ -890,7 +1085,7 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
       console.log(`PRC POST response length: ${resultHtml.length}`);
 
       // Look for uniqueid in the results — PRC uses alphanumeric IDs like R04533
-      const allIds = [...resultHtml.matchAll(/uniqueid=([A-Za-z0-9]+)/gi)].map(m => m[1]);
+      const allIds = [...resultHtml.matchAll(/uniqueid=([A-Za-z0-9]+)/gi)].map((m) => m[1]);
       const uniqueIds = [...new Set(allIds)];
       console.log(`PRC POST: found ${uniqueIds.length} unique IDs`);
 
@@ -903,7 +1098,11 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
           if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
             extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uid}`;
             if (extracted.isLLC) {
-              try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+              try {
+                extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
+              } catch (e) {
+                console.error("LLC:", e);
+              }
             }
             return json({ success: true, property: extracted });
           }
@@ -913,16 +1112,18 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
 
     // Fallback: Try Firecrawl actions with JavaScript to set dropdown value directly
     console.log(`PRC POST failed, trying Firecrawl actions with JS...`);
-    const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         url: baseUrl,
-        formats: ['html', 'links'],
+        formats: ["html", "links"],
         waitFor: 2000,
         actions: [
-          { type: 'wait', milliseconds: 1000 },
-          { type: 'execute_javascript', code: `
+          { type: "wait", milliseconds: 1000 },
+          {
+            type: "execute_javascript",
+            code: `
             document.getElementById('MainContent_tbPropertySearchStreetNumber').value = '${houseNum}';
             var sel = document.getElementById('MainContent_cbPropertySearchStreetName');
             for (var i = 0; i < sel.options.length; i++) {
@@ -932,21 +1133,22 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
                 break;
               }
             }
-          `},
-          { type: 'wait', milliseconds: 500 },
-          { type: 'click', selector: '#MainContent_btnPropertySearch' },
-          { type: 'wait', milliseconds: 3000 },
+          `,
+          },
+          { type: "wait", milliseconds: 500 },
+          { type: "click", selector: "#MainContent_btnPropertySearch" },
+          { type: "wait", milliseconds: 3000 },
         ],
       }),
     });
 
     if (resp.ok) {
       const data = await resp.json();
-      const html = data.data?.html || data.html || '';
+      const html = data.data?.html || data.html || "";
       const links = data.data?.links || data.links || [];
       const combined = html + JSON.stringify(links);
 
-      const allIds2 = [...combined.matchAll(/uniqueid=([A-Za-z0-9]+)/gi)].map(m => m[1]);
+      const allIds2 = [...combined.matchAll(/uniqueid=([A-Za-z0-9]+)/gi)].map((m) => m[1]);
       const uniqueIds2 = [...new Set(allIds2)];
       console.log(`PRC actions: found ${uniqueIds2.length} unique IDs`);
 
@@ -958,62 +1160,90 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
           if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
             extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uid}`;
             if (extracted.isLLC) {
-              try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+              try {
+                extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
+              } catch (e) {
+                console.error("LLC:", e);
+              }
             }
             return json({ success: true, property: extracted });
           }
         }
       }
     }
+  } catch (e) {
+    console.error("PRC error:", e);
+  }
 
-  } catch (e) { console.error("PRC error:", e); }
-
-  return json({ success: false, error: `Could not find property in ${town}. Try the Property Record Cards database directly.`, searchUrl: baseUrl });
+  return json({
+    success: false,
+    error: `Could not find property in ${town}. Try the Property Record Cards database directly.`,
+    searchUrl: baseUrl,
+  });
 }
 
 function extractPRCData(markdown: string, address: string, town: string) {
   const text = markdown;
 
   const tableGrab = (label: string): string => {
-    const re = new RegExp(`\\|\\s*${label}:?\\s*\\|\\s*([^|]*?)\\s*\\|`, 'i');
+    const re = new RegExp(`\\|\\s*${label}:?\\s*\\|\\s*([^|]*?)\\s*\\|`, "i");
     const m = text.match(re);
-    return m?.[1]?.trim() || '';
+    return m?.[1]?.trim() || "";
   };
 
-  let propertyAddress = tableGrab('Location') || address;
-  const propertyUse = tableGrab('Property Use');
-  const primaryUse = tableGrab('Primary Use');
-  const uniqueId = tableGrab('Unique ID');
-  const mapBlockLot = tableGrab('Map Block Lot');
-  const acres = tableGrab('Acres');
-  const zone = tableGrab('Zone');
-  const volPage = tableGrab('Volume / Page') || tableGrab('Volume\\/Page');
+  let propertyAddress = tableGrab("Location") || address;
+  const propertyUse = tableGrab("Property Use");
+  const primaryUse = tableGrab("Primary Use");
+  const uniqueId = tableGrab("Unique ID");
+  const mapBlockLot = tableGrab("Map Block Lot");
+  const acres = tableGrab("Acres");
+  const zone = tableGrab("Zone");
+  const volPage = tableGrab("Volume / Page") || tableGrab("Volume\\/Page");
 
   // Value Information
-  let landAppraised = '', landAssessed = '', bldgAppraised = '', bldgAssessed = '', totalAppraised = '', totalAssessed = '';
+  let landAppraised = "",
+    landAssessed = "",
+    bldgAppraised = "",
+    bldgAssessed = "",
+    totalAppraised = "",
+    totalAssessed = "";
   const landRow = text.match(/\|\s*Land\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*\|/i);
-  if (landRow) { landAppraised = landRow[1]; landAssessed = landRow[2]; }
+  if (landRow) {
+    landAppraised = landRow[1];
+    landAssessed = landRow[2];
+  }
   const bldgRow = text.match(/\|\s*Buildings?\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*\|/i);
-  if (bldgRow) { bldgAppraised = bldgRow[1]; bldgAssessed = bldgRow[2]; }
+  if (bldgRow) {
+    bldgAppraised = bldgRow[1];
+    bldgAssessed = bldgRow[2];
+  }
   const totalRow = text.match(/\|\s*Total\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*\|/i);
-  if (totalRow) { totalAppraised = totalRow[1]; totalAssessed = totalRow[2]; }
+  if (totalRow) {
+    totalAppraised = totalRow[1];
+    totalAssessed = totalRow[2];
+  }
 
   // Owner from "Owner's Data" cell - format: "| NAME<br>ADDRESS<br>CITY, ST ZIP |"
-  let owner = '', coOwner = '', ownerAddress = '';
+  let owner = "",
+    coOwner = "",
+    ownerAddress = "";
   const ownerMatch = text.match(/Owner'?s?\s*Data\s*\|[\s\n]*\|[\s-]*\|[\s\n]*\|\s*([^|]+)\|/i);
   if (ownerMatch) {
-    const raw = ownerMatch[1].replace(/<br\s*\/?>/gi, '\n').trim();
-    const parts = raw.split('\n').map(s => s.trim()).filter(Boolean);
-    owner = parts[0] || '';
+    const raw = ownerMatch[1].replace(/<br\s*\/?>/gi, "\n").trim();
+    const parts = raw
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    owner = parts[0] || "";
     // Check if second line looks like a co-owner (contains & or name-like pattern)
     if (parts.length > 2) {
-      ownerAddress = parts.slice(1).join(', ');
+      ownerAddress = parts.slice(1).join(", ");
     } else if (parts.length === 2) {
       ownerAddress = parts[1];
     }
   }
   // Fallback: try simpler pattern
-  if (!owner || owner === '---') {
+  if (!owner || owner === "---") {
     const simpleFallback = text.match(/\|\s*([A-Z][A-Z\s&,.']+?)<br/i);
     if (simpleFallback) {
       owner = simpleFallback[1].trim();
@@ -1021,61 +1251,103 @@ function extractPRCData(markdown: string, address: string, town: string) {
   }
 
   // Building info
-  const yearBuilt = tableGrab('Year Built');
-  const livingArea = tableGrab('Living Area') || tableGrab('Total Living Area');
-  const buildingStyle = tableGrab('Style') || tableGrab('Building Style');
-  const stories = tableGrab('Stories');
-  const totalRooms = tableGrab('Total Rooms') || tableGrab('Rooms');
-  const bedrooms = tableGrab('Bedrooms') || tableGrab('Total Bedrooms');
-  const totalBaths = tableGrab('Full Baths') || tableGrab('Total Baths');
-  const halfBaths = tableGrab('Half Baths');
-  const exteriorWall = tableGrab('Exterior Wall') || tableGrab('Ext Wall');
-  const roofCover = tableGrab('Roof Cover') || tableGrab('Roof');
-  const heating = tableGrab('Heat Type') || tableGrab('Heating');
-  const heatingFuel = tableGrab('Heat Fuel') || tableGrab('Fuel');
-  const cooling = tableGrab('AC Type') || tableGrab('Air Conditioning');
-  const grade = tableGrab('Grade');
-  const condition = tableGrab('Condition') || tableGrab('Overall Condition');
+  const yearBuilt = tableGrab("Year Built");
+  const livingArea = tableGrab("Living Area") || tableGrab("Total Living Area");
+  const buildingStyle = tableGrab("Style") || tableGrab("Building Style");
+  const stories = tableGrab("Stories");
+  const totalRooms = tableGrab("Total Rooms") || tableGrab("Rooms");
+  const bedrooms = tableGrab("Bedrooms") || tableGrab("Total Bedrooms");
+  const totalBaths = tableGrab("Full Baths") || tableGrab("Total Baths");
+  const halfBaths = tableGrab("Half Baths");
+  const exteriorWall = tableGrab("Exterior Wall") || tableGrab("Ext Wall");
+  const roofCover = tableGrab("Roof Cover") || tableGrab("Roof");
+  const heating = tableGrab("Heat Type") || tableGrab("Heating");
+  const heatingFuel = tableGrab("Heat Fuel") || tableGrab("Fuel");
+  const cooling = tableGrab("AC Type") || tableGrab("Air Conditioning");
+  const grade = tableGrab("Grade");
+  const condition = tableGrab("Condition") || tableGrab("Overall Condition");
 
   // Sales
-  const salePrice = tableGrab('Sale Price');
-  const saleDate = tableGrab('Sale Date');
+  const salePrice = tableGrab("Sale Price");
+  const saleDate = tableGrab("Sale Date");
 
-  owner = owner.replace(/[*#\[\]|]/g, '').replace(/\s+/g, ' ').trim();
+  owner = owner
+    .replace(/[*#\[\]|]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!owner || owner.length < 2) return null;
 
   const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b|\bLP\b|\bL\.P\b/i.test(owner);
-  const fmt$ = (v: string) => v ? `$${v}` : '';
+  const fmt$ = (v: string) => (v ? `$${v}` : "");
 
   return {
-    address: propertyAddress, town, owner, coOwner, ownerAddress, isLLC,
-    parcelId: uniqueId, mblu: mapBlockLot, accountNumber: '', buildingCount: '',
-    bookPage: volPage, certificate: '', instrument: '',
-    assessedValue: fmt$(totalAssessed), totalAppraisal: fmt$(totalAppraised),
-    totalMarketValue: fmt$(totalAppraised), improvementsValue: fmt$(bldgAppraised),
-    landValue: fmt$(landAppraised), assessImprovements: fmt$(bldgAssessed),
-    assessLand: fmt$(landAssessed), assessTotal: fmt$(totalAssessed),
-    salePrice, saleDate,
-    lotSize: acres ? `${acres} acres` : '', frontage: '', depth: '',
-    useCode: '', useDescription: propertyUse || primaryUse, zoning: zone, neighborhood: '',
-    totalMarketLand: '', landAppraisedValue: fmt$(landAppraised),
-    yearBuilt, buildingStyle, model: '', stories,
-    livingArea: livingArea ? `${livingArea} sq ft` : '',
-    replacementCost: '', buildingPercentGood: '',
-    occupancy: '', totalRooms, bedrooms, totalBaths, halfBaths,
-    totalXtraFixtures: '', bathStyle: '', kitchenStyle: '',
-    interiorCondition: condition, finBsmntArea: '', finBsmntQual: '', grade,
-    exteriorWall, roofStructure: '', roofCover,
-    interiorWall: '', flooring: '',
-    heating, heatingFuel, cooling,
-    buildingPhoto: '',
+    address: propertyAddress,
+    town,
+    owner,
+    coOwner,
+    ownerAddress,
+    isLLC,
+    parcelId: uniqueId,
+    mblu: mapBlockLot,
+    accountNumber: "",
+    buildingCount: "",
+    bookPage: volPage,
+    certificate: "",
+    instrument: "",
+    assessedValue: fmt$(totalAssessed),
+    totalAppraisal: fmt$(totalAppraised),
+    totalMarketValue: fmt$(totalAppraised),
+    improvementsValue: fmt$(bldgAppraised),
+    landValue: fmt$(landAppraised),
+    assessImprovements: fmt$(bldgAssessed),
+    assessLand: fmt$(landAssessed),
+    assessTotal: fmt$(totalAssessed),
+    salePrice,
+    saleDate,
+    lotSize: acres ? `${acres} acres` : "",
+    frontage: "",
+    depth: "",
+    useCode: "",
+    useDescription: propertyUse || primaryUse,
+    zoning: zone,
+    neighborhood: "",
+    totalMarketLand: "",
+    landAppraisedValue: fmt$(landAppraised),
+    yearBuilt,
+    buildingStyle,
+    model: "",
+    stories,
+    livingArea: livingArea ? `${livingArea} sq ft` : "",
+    replacementCost: "",
+    buildingPercentGood: "",
+    occupancy: "",
+    totalRooms,
+    bedrooms,
+    totalBaths,
+    halfBaths,
+    totalXtraFixtures: "",
+    bathStyle: "",
+    kitchenStyle: "",
+    interiorCondition: condition,
+    finBsmntArea: "",
+    finBsmntQual: "",
+    grade,
+    exteriorWall,
+    roofStructure: "",
+    roofCover,
+    interiorWall: "",
+    flooring: "",
+    heating,
+    heatingFuel,
+    cooling,
+    buildingPhoto: "",
     ownershipHistory: [] as { owner: string; salePrice: string; bookPage: string; saleDate: string }[],
     subAreas: [] as { code: string; description: string; grossArea: string; livingArea: string }[],
     valuationHistory: [] as { year: string; improvements: string; land: string; total: string }[],
-    propertyCardUrl: '', llcDetails: undefined as any,
+    propertyCardUrl: "",
+    llcDetails: undefined as any,
   };
 }
-
 
 async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: string, town: string) {
   try {
@@ -1087,13 +1359,23 @@ async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: stri
       if (extracted) {
         extracted.propertyCardUrl = baseUrl;
         if (extracted.isLLC) {
-          try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+          try {
+            extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
+          } catch (e) {
+            console.error("LLC:", e);
+          }
         }
         return json({ success: true, property: extracted });
       }
     }
-  } catch (e) { console.error("ACT error:", e); }
-  return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
+  } catch (e) {
+    console.error("ACT error:", e);
+  }
+  return json({
+    success: false,
+    error: `Could not find property in ${town}. Try the assessor database directly.`,
+    searchUrl: baseUrl,
+  });
 }
 
 // ========== IAS-CLT SCRAPING ==========
@@ -1106,13 +1388,23 @@ async function scrapeIASCLT(apiKey: string, baseUrl: string, address: string, to
       if (extracted) {
         extracted.propertyCardUrl = baseUrl;
         if (extracted.isLLC) {
-          try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+          try {
+            extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
+          } catch (e) {
+            console.error("LLC:", e);
+          }
         }
         return json({ success: true, property: extracted });
       }
     }
-  } catch (e) { console.error("IAS error:", e); }
-  return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
+  } catch (e) {
+    console.error("IAS error:", e);
+  }
+  return json({
+    success: false,
+    error: `Could not find property in ${town}. Try the assessor database directly.`,
+    searchUrl: baseUrl,
+  });
 }
 
 // ========== EQUALITY CAMA SCRAPING ==========
@@ -1125,17 +1417,33 @@ async function scrapeEqualityCama(apiKey: string, baseUrl: string, address: stri
       if (extracted) {
         extracted.propertyCardUrl = baseUrl;
         if (extracted.isLLC) {
-          try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+          try {
+            extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
+          } catch (e) {
+            console.error("LLC:", e);
+          }
         }
         return json({ success: true, property: extracted });
       }
     }
-  } catch (e) { console.error("eQuality error:", e); }
-  return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
+  } catch (e) {
+    console.error("eQuality error:", e);
+  }
+  return json({
+    success: false,
+    error: `Could not find property in ${town}. Try the assessor database directly.`,
+    searchUrl: baseUrl,
+  });
 }
 
 // ========== GENERIC / CUSTOM SCRAPING ==========
-async function scrapeGenericWithFallback(apiKey: string, baseUrl: string, address: string, town: string, label: string) {
+async function scrapeGenericWithFallback(
+  apiKey: string,
+  baseUrl: string,
+  address: string,
+  town: string,
+  label: string,
+) {
   try {
     console.log(`Scraping generic for ${town} (${label}): ${baseUrl}`);
     const md = await firecrawlScrape(apiKey, baseUrl);
@@ -1144,14 +1452,24 @@ async function scrapeGenericWithFallback(apiKey: string, baseUrl: string, addres
       if (extracted) {
         extracted.propertyCardUrl = baseUrl;
         if (extracted.isLLC) {
-          try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+          try {
+            extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
+          } catch (e) {
+            console.error("LLC:", e);
+          }
         }
         return json({ success: true, property: extracted });
       }
     }
-  } catch (e) { console.error("Generic error:", e); }
+  } catch (e) {
+    console.error("Generic error:", e);
+  }
 
-  return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
+  return json({
+    success: false,
+    error: `Could not find property in ${town}. Try the assessor database directly.`,
+    searchUrl: baseUrl,
+  });
 }
 
 // ========== SHARED HELPERS ==========
@@ -1160,10 +1478,14 @@ async function scrapePropertyDetail(apiKey: string, url: string, address: string
   const detailMd = await firecrawlScrape(apiKey, url);
   if (detailMd) {
     const extracted = extractVGSData(detailMd, address, town);
-    if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
+    if (extracted && extracted.owner && !extracted.owner.includes("Enter an")) {
       extracted.propertyCardUrl = url;
       if (extracted.isLLC) {
-        try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC error:", e); }
+        try {
+          extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
+        } catch (e) {
+          console.error("LLC error:", e);
+        }
       }
       return json({ success: true, property: extracted });
     }
@@ -1174,15 +1496,21 @@ async function scrapePropertyDetail(apiKey: string, url: string, address: string
 async function firecrawlScrape(apiKey: string, url: string): Promise<string | null> {
   console.log(`Firecrawl scraping: ${url}`);
   try {
-    const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: true, waitFor: 2000 }),
+    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: true, waitFor: 2000 }),
     });
-    if (!resp.ok) { console.error(`Firecrawl ${resp.status}`); return null; }
+    if (!resp.ok) {
+      console.error(`Firecrawl ${resp.status}`);
+      return null;
+    }
     const data = await resp.json();
     return data.data?.markdown || data.markdown || null;
-  } catch (e) { console.error("Firecrawl fetch error:", e); return null; }
+  } catch (e) {
+    console.error("Firecrawl fetch error:", e);
+    return null;
+  }
 }
 
 // ========== VGS DATA EXTRACTOR ==========
@@ -1190,122 +1518,151 @@ function extractVGSData(markdown: string, address: string, town: string) {
   const text = markdown;
 
   const tableGrab = (label: string): string => {
-    const re = new RegExp(`\\|\\s*${label}:?\\s*\\|\\s*([^|]*?)\\s*\\|`, 'i');
+    const re = new RegExp(`\\|\\s*${label}:?\\s*\\|\\s*([^|]*?)\\s*\\|`, "i");
     const m = text.match(re);
-    return m?.[1]?.trim().replace(/<br\/?>/gi, ', ') || '';
+    return m?.[1]?.trim().replace(/<br\/?>/gi, ", ") || "";
   };
 
   const dollarGrab = (label: string): string => {
-    const re = new RegExp(`${label}\\s*\\$([\\d,]+)`, 'i');
+    const re = new RegExp(`${label}\\s*\\$([\\d,]+)`, "i");
     const m = text.match(re);
-    return m?.[1]?.trim() || '';
+    return m?.[1]?.trim() || "";
   };
 
-  let owner = '';
+  let owner = "";
   let propertyAddress = address;
 
-  owner = tableGrab('Owner');
+  owner = tableGrab("Owner");
   if (!owner) {
     const inlineOwner = text.match(/Owner([A-Z][A-Z\s\+\.\,\-\'&]+?)(?:Total|Sale|Co-Owner|Appraisal)/m);
     if (inlineOwner) owner = inlineOwner[1].trim();
   }
 
-  const coOwner = tableGrab('Co-Owner');
+  const coOwner = tableGrab("Co-Owner");
   const locMatch = text.match(/Location(\d+[A-Z0-9\s]+?)(?:\n|Mblu)/i);
   if (locMatch) propertyAddress = locMatch[1].trim();
 
   const mbluMatch = text.match(/Mblu([\d\/\s]+?)(?:Acct|Owner|\n)/i);
-  const mblu = mbluMatch?.[1]?.trim().replace(/\s+/g, '') || '';
+  const mblu = mbluMatch?.[1]?.trim().replace(/\s+/g, "") || "";
 
   const acctMatch = text.match(/Acct#?([\d\s]+)/i);
-  const accountNumber = acctMatch?.[1]?.trim() || '';
+  const accountNumber = acctMatch?.[1]?.trim() || "";
 
   const pidMatch = text.match(/PID(\d+)/i);
-  const parcelId = pidMatch?.[1] || '';
+  const parcelId = pidMatch?.[1] || "";
 
   const bldgCountMatch = text.match(/Building\s*Count\s*(\d+)/i);
-  const buildingCount = bldgCountMatch?.[1] || '';
+  const buildingCount = bldgCountMatch?.[1] || "";
 
-  const ownerAddress = tableGrab('Address');
+  const ownerAddress = tableGrab("Address");
 
-  const totalMarketValue = dollarGrab('Total\\s*Market\\s*Value');
-  const totalAppraisal = dollarGrab('Appraisal');
+  const totalMarketValue = dollarGrab("Total\\s*Market\\s*Value");
+  const totalAppraisal = dollarGrab("Appraisal");
 
-  let improvementsValue = '', landValueCV = '', totalValueCV = '';
-  const cvMatch = text.match(/Current Value[\s\S]*?\|\s*\d{4}\s*\|\s*\$([\d,]+)\s*\|\s*\$([\d,]+)\s*\|\s*\$([\d,]+)\s*\|/i);
-  if (cvMatch) { improvementsValue = cvMatch[1]; landValueCV = cvMatch[2]; totalValueCV = cvMatch[3]; }
+  let improvementsValue = "",
+    landValueCV = "",
+    totalValueCV = "";
+  const cvMatch = text.match(
+    /Current Value[\s\S]*?\|\s*\d{4}\s*\|\s*\$([\d,]+)\s*\|\s*\$([\d,]+)\s*\|\s*\$([\d,]+)\s*\|/i,
+  );
+  if (cvMatch) {
+    improvementsValue = cvMatch[1];
+    landValueCV = cvMatch[2];
+    totalValueCV = cvMatch[3];
+  }
 
-  let assessImprovements = '', assessLand = '', assessTotal = '';
-  const assessSection = text.match(/Assessment[\s\S]*?\|\s*\d{4}\s*\|\s*\$([\d,]+)\s*\|\s*\$([\d,]+)\s*\|\s*\$([\d,]+)\s*\|/i);
-  if (assessSection) { assessImprovements = assessSection[1]; assessLand = assessSection[2]; assessTotal = assessSection[3]; }
+  let assessImprovements = "",
+    assessLand = "",
+    assessTotal = "";
+  const assessSection = text.match(
+    /Assessment[\s\S]*?\|\s*\d{4}\s*\|\s*\$([\d,]+)\s*\|\s*\$([\d,]+)\s*\|\s*\$([\d,]+)\s*\|/i,
+  );
+  if (assessSection) {
+    assessImprovements = assessSection[1];
+    assessLand = assessSection[2];
+    assessTotal = assessSection[3];
+  }
 
-  const salePrice = tableGrab('Sale Price');
-  const saleDate = tableGrab('Sale Date');
-  const certificate = tableGrab('Certificate');
-  const bookPage = tableGrab('Book & Page') || tableGrab('Book \\& Page');
-  const instrument = tableGrab('Instrument');
+  const salePrice = tableGrab("Sale Price");
+  const saleDate = tableGrab("Sale Date");
+  const certificate = tableGrab("Certificate");
+  const bookPage = tableGrab("Book & Page") || tableGrab("Book \\& Page");
+  const instrument = tableGrab("Instrument");
 
   const ownershipHistory: { owner: string; salePrice: string; bookPage: string; saleDate: string }[] = [];
-  const historySection = text.match(/Ownership History[\s\S]*?\| Owner \| Sale Price[\s\S]*?\n([\s\S]*?)(?:\n\n|Ownership History|Building Information)/i);
+  const historySection = text.match(
+    /Ownership History[\s\S]*?\| Owner \| Sale Price[\s\S]*?\n([\s\S]*?)(?:\n\n|Ownership History|Building Information)/i,
+  );
   if (historySection) {
-    const rows = historySection[1].split('\n').filter(r => r.includes('|') && !r.includes('---'));
+    const rows = historySection[1].split("\n").filter((r) => r.includes("|") && !r.includes("---"));
     for (const row of rows) {
-      const cols = row.split('|').map(c => c.trim()).filter(Boolean);
+      const cols = row
+        .split("|")
+        .map((c) => c.trim())
+        .filter(Boolean);
       if (cols.length >= 5) {
-        ownershipHistory.push({ owner: cols[0], salePrice: cols[1], bookPage: cols[2] || cols[3] || '', saleDate: cols[cols.length - 1] });
+        ownershipHistory.push({
+          owner: cols[0],
+          salePrice: cols[1],
+          bookPage: cols[2] || cols[3] || "",
+          saleDate: cols[cols.length - 1],
+        });
       }
     }
   }
 
-  const lotSize = tableGrab('Size \\(Acres\\)');
-  const frontage = tableGrab('Frontage');
-  const depth = tableGrab('Depth');
-  const useCode = tableGrab('Use Code');
+  const lotSize = tableGrab("Size \\(Acres\\)");
+  const frontage = tableGrab("Frontage");
+  const depth = tableGrab("Depth");
+  const useCode = tableGrab("Use Code");
   const useDescMatch = text.match(/Use Code\s*\|\s*\d+[\s\S]*?\|\s*Description\s*\|\s*([^|]*?)\s*\|/i);
-  const useDescription = useDescMatch?.[1]?.trim() || '';
-  const zoning = tableGrab('Zone');
-  const neighborhood = tableGrab('Neighborhood') || tableGrab('NBHD Code');
-  const totalMarketLand = tableGrab('Total Market Land');
-  const landAppraisedValue = tableGrab('Appraised Value');
+  const useDescription = useDescMatch?.[1]?.trim() || "";
+  const zoning = tableGrab("Zone");
+  const neighborhood = tableGrab("Neighborhood") || tableGrab("NBHD Code");
+  const totalMarketLand = tableGrab("Total Market Land");
+  const landAppraisedValue = tableGrab("Appraised Value");
 
-  const yearBuilt = tableGrab('Year Built');
-  const livingArea = tableGrab('Living Area');
-  const replacementCost = tableGrab('Replacement Cost');
-  const buildingPercentGood = tableGrab('Building Percent Good');
-  const buildingStyle = tableGrab('Style');
-  const model = tableGrab('Model');
-  const grade = tableGrab('Grade');
-  const stories = tableGrab('Stories');
-  const occupancy = tableGrab('Occupancy');
-  const exteriorWall1 = tableGrab('Exterior Wall 1');
-  const exteriorWall2 = tableGrab('Exterior Wall 2');
-  const roofStructure = tableGrab('Roof Structure');
-  const roofCover = tableGrab('Roof Cover');
-  const interiorWall1 = tableGrab('Interior Wall 1');
-  const interiorWall2 = tableGrab('Interior Wall 2');
-  const interiorFlr1 = tableGrab('Interior Flr 1');
-  const interiorFlr2 = tableGrab('Interior Flr 2');
-  const heatFuel = tableGrab('Heat Fuel');
-  const heatType = tableGrab('Heat Type');
-  const acType = tableGrab('AC Type');
-  const totalBedrooms = tableGrab('Total Bedrooms').replace(/\s*Bedrooms?/i, '');
-  const totalBathrooms = tableGrab('Total Bthrms');
-  const totalHalfBaths = tableGrab('Total Half Baths');
-  const totalXtraFixtures = tableGrab('Total Xtra Fixtrs');
-  const totalRooms = tableGrab('Total Rooms').replace(/\s*Rooms?/i, '');
-  const bathStyle = tableGrab('Bath Style');
-  const kitchenStyle = tableGrab('Kitchen Style');
-  const interiorCondition = tableGrab('Interior Condition');
-  const finBsmntArea = tableGrab('Fin Bsmnt Area');
-  const finBsmntQual = tableGrab('Fin Bsmnt Qual');
-  const nbhdCode = tableGrab('NBHD Code');
+  const yearBuilt = tableGrab("Year Built");
+  const livingArea = tableGrab("Living Area");
+  const replacementCost = tableGrab("Replacement Cost");
+  const buildingPercentGood = tableGrab("Building Percent Good");
+  const buildingStyle = tableGrab("Style");
+  const model = tableGrab("Model");
+  const grade = tableGrab("Grade");
+  const stories = tableGrab("Stories");
+  const occupancy = tableGrab("Occupancy");
+  const exteriorWall1 = tableGrab("Exterior Wall 1");
+  const exteriorWall2 = tableGrab("Exterior Wall 2");
+  const roofStructure = tableGrab("Roof Structure");
+  const roofCover = tableGrab("Roof Cover");
+  const interiorWall1 = tableGrab("Interior Wall 1");
+  const interiorWall2 = tableGrab("Interior Wall 2");
+  const interiorFlr1 = tableGrab("Interior Flr 1");
+  const interiorFlr2 = tableGrab("Interior Flr 2");
+  const heatFuel = tableGrab("Heat Fuel");
+  const heatType = tableGrab("Heat Type");
+  const acType = tableGrab("AC Type");
+  const totalBedrooms = tableGrab("Total Bedrooms").replace(/\s*Bedrooms?/i, "");
+  const totalBathrooms = tableGrab("Total Bthrms");
+  const totalHalfBaths = tableGrab("Total Half Baths");
+  const totalXtraFixtures = tableGrab("Total Xtra Fixtrs");
+  const totalRooms = tableGrab("Total Rooms").replace(/\s*Rooms?/i, "");
+  const bathStyle = tableGrab("Bath Style");
+  const kitchenStyle = tableGrab("Kitchen Style");
+  const interiorCondition = tableGrab("Interior Condition");
+  const finBsmntArea = tableGrab("Fin Bsmnt Area");
+  const finBsmntQual = tableGrab("Fin Bsmnt Qual");
+  const nbhdCode = tableGrab("NBHD Code");
 
   const subAreas: { code: string; description: string; grossArea: string; livingArea: string }[] = [];
   const subAreaSection = text.match(/\| Code \| Description \| Gross[\s\S]*?\n([\s\S]*?)(?:\n\n|Building Sub-Areas)/i);
   if (subAreaSection) {
-    const rows = subAreaSection[1].split('\n').filter(r => r.includes('|') && !r.includes('---'));
+    const rows = subAreaSection[1].split("\n").filter((r) => r.includes("|") && !r.includes("---"));
     for (const row of rows) {
-      const cols = row.split('|').map(c => c.trim()).filter(Boolean);
+      const cols = row
+        .split("|")
+        .map((c) => c.trim())
+        .filter(Boolean);
       if (cols.length >= 4 && cols[0].match(/^[A-Z]/)) {
         subAreas.push({ code: cols[0], description: cols[1], grossArea: cols[2], livingArea: cols[3] });
       }
@@ -1313,29 +1670,48 @@ function extractVGSData(markdown: string, address: string, town: string) {
   }
 
   const photoMatch = text.match(/Building Photo\s*!\[.*?\]\((https?:\/\/[^\)]+)\)/i);
-  const buildingPhoto = photoMatch?.[1] || '';
+  const buildingPhoto = photoMatch?.[1] || "";
 
   const valuationHistory: { year: string; improvements: string; land: string; total: string }[] = [];
-  const valSection = text.match(/Valuation History[\s\S]*?Current Value[\s\S]*?\n([\s\S]*?)(?:\n\nAppraisal|\n\n\(c\))/i);
+  const valSection = text.match(
+    /Valuation History[\s\S]*?Current Value[\s\S]*?\n([\s\S]*?)(?:\n\nAppraisal|\n\n\(c\))/i,
+  );
   if (valSection) {
-    const rows = valSection[1].split('\n').filter(r => r.includes('|') && !r.includes('---') && r.match(/\d{4}/));
+    const rows = valSection[1].split("\n").filter((r) => r.includes("|") && !r.includes("---") && r.match(/\d{4}/));
     for (const row of rows) {
-      const cols = row.split('|').map(c => c.trim()).filter(Boolean);
+      const cols = row
+        .split("|")
+        .map((c) => c.trim())
+        .filter(Boolean);
       if (cols.length >= 4) {
         valuationHistory.push({ year: cols[0], improvements: cols[1], land: cols[2], total: cols[3] });
       }
     }
   }
 
-  owner = owner.replace(/[*#\[\]]/g, '').replace(/<br\/?>/gi, ' ').trim();
+  owner = owner
+    .replace(/[*#\[\]]/g, "")
+    .replace(/<br\/?>/gi, " ")
+    .trim();
   if (!owner || owner.length < 2) return null;
 
   const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner);
-  const fmt$ = (v: string) => v ? `$${v}` : '';
+  const fmt$ = (v: string) => (v ? `$${v}` : "");
 
   return {
-    address: propertyAddress, town, owner, coOwner, ownerAddress, isLLC,
-    parcelId, mblu, accountNumber, buildingCount, bookPage, certificate, instrument,
+    address: propertyAddress,
+    town,
+    owner,
+    coOwner,
+    ownerAddress,
+    isLLC,
+    parcelId,
+    mblu,
+    accountNumber,
+    buildingCount,
+    bookPage,
+    certificate,
+    instrument,
     assessedValue: fmt$(assessTotal) || fmt$(totalMarketValue),
     totalAppraisal: fmt$(totalValueCV) || fmt$(totalAppraisal),
     totalMarketValue: fmt$(totalMarketValue),
@@ -1344,27 +1720,50 @@ function extractVGSData(markdown: string, address: string, town: string) {
     assessImprovements: fmt$(assessImprovements),
     assessLand: fmt$(assessLand),
     assessTotal: fmt$(assessTotal),
-    salePrice, saleDate,
-    lotSize: lotSize ? `${lotSize} acres` : '',
-    frontage: frontage ? `${frontage} ft` : '',
-    depth: depth ? `${depth} ft` : '',
-    useCode, useDescription, zoning,
+    salePrice,
+    saleDate,
+    lotSize: lotSize ? `${lotSize} acres` : "",
+    frontage: frontage ? `${frontage} ft` : "",
+    depth: depth ? `${depth} ft` : "",
+    useCode,
+    useDescription,
+    zoning,
     neighborhood: nbhdCode || neighborhood,
-    totalMarketLand, landAppraisedValue,
-    yearBuilt, buildingStyle, model, stories,
-    livingArea: livingArea ? `${livingArea} sq ft` : '',
-    replacementCost: replacementCost ? `$${replacementCost.replace(/[$]/g, '')}` : '',
-    buildingPercentGood: buildingPercentGood ? `${buildingPercentGood}%` : '',
-    occupancy, totalRooms, bedrooms: totalBedrooms, totalBaths: totalBathrooms,
-    halfBaths: totalHalfBaths, totalXtraFixtures, bathStyle, kitchenStyle,
-    interiorCondition, finBsmntArea, finBsmntQual, grade,
-    exteriorWall: [exteriorWall1, exteriorWall2].filter(Boolean).join(', '),
-    roofStructure, roofCover,
-    interiorWall: [interiorWall1, interiorWall2].filter(Boolean).join(', '),
-    flooring: [interiorFlr1, interiorFlr2].filter(Boolean).join(', '),
-    heating: heatType, heatingFuel: heatFuel, cooling: acType,
-    buildingPhoto, ownershipHistory, subAreas, valuationHistory,
-    propertyCardUrl: '', llcDetails: undefined as any,
+    totalMarketLand,
+    landAppraisedValue,
+    yearBuilt,
+    buildingStyle,
+    model,
+    stories,
+    livingArea: livingArea ? `${livingArea} sq ft` : "",
+    replacementCost: replacementCost ? `$${replacementCost.replace(/[$]/g, "")}` : "",
+    buildingPercentGood: buildingPercentGood ? `${buildingPercentGood}%` : "",
+    occupancy,
+    totalRooms,
+    bedrooms: totalBedrooms,
+    totalBaths: totalBathrooms,
+    halfBaths: totalHalfBaths,
+    totalXtraFixtures,
+    bathStyle,
+    kitchenStyle,
+    interiorCondition,
+    finBsmntArea,
+    finBsmntQual,
+    grade,
+    exteriorWall: [exteriorWall1, exteriorWall2].filter(Boolean).join(", "),
+    roofStructure,
+    roofCover,
+    interiorWall: [interiorWall1, interiorWall2].filter(Boolean).join(", "),
+    flooring: [interiorFlr1, interiorFlr2].filter(Boolean).join(", "),
+    heating: heatType,
+    heatingFuel: heatFuel,
+    cooling: acType,
+    buildingPhoto,
+    ownershipHistory,
+    subAreas,
+    valuationHistory,
+    propertyCardUrl: "",
+    llcDetails: undefined as any,
   };
 }
 
@@ -1380,17 +1779,19 @@ function extractQDSCardData(markdown: string, address: string, town: string) {
 
   // Extract owner from "Owner name: NAME" format
   const ownerMatch = text.match(/Owner\s*name:\s*(.+)/i);
-  let owner = ownerMatch?.[1]?.trim() || '';
+  let owner = ownerMatch?.[1]?.trim() || "";
 
   // Second name (co-owner)
   const secondMatch = text.match(/Second\s*name:\s*(.+)/i);
-  const coOwner = secondMatch?.[1]?.trim() || '';
+  const coOwner = secondMatch?.[1]?.trim() || "";
 
   // Mailing address
   const addrMatch = text.match(/Address:\s*(.+)/i);
   const cityMatch = text.match(/City\/state:\s*(.+?)(?:Zip:|$)/i);
   const zipMatch = text.match(/Zip:\s*(\S+)/i);
-  const ownerAddress = [addrMatch?.[1]?.trim(), cityMatch?.[1]?.trim(), zipMatch?.[1]?.trim()].filter(Boolean).join(', ');
+  const ownerAddress = [addrMatch?.[1]?.trim(), cityMatch?.[1]?.trim(), zipMatch?.[1]?.trim()]
+    .filter(Boolean)
+    .join(", ");
 
   // Location info
   const mapMatch = text.match(/Map:\s*(\S+)/i);
@@ -1399,37 +1800,37 @@ function extractQDSCardData(markdown: string, address: string, town: string) {
   const zoneMatch = text.match(/Zone:\s*(\S+)/i);
   const volMatch = text.match(/Vol:\s*(\S+)/i);
   const pageMatch = text.match(/Page:\s*(\S+)/i);
-  const bookPage = volMatch?.[1] && pageMatch?.[1] ? `${volMatch[1]}/${pageMatch[1]}` : '';
+  const bookPage = volMatch?.[1] && pageMatch?.[1] ? `${volMatch[1]}/${pageMatch[1]}` : "";
 
   // Assessments
   const assessments: { category: string; qty: string; amount: string }[] = [];
   const assessRegex = /\|([\w\s]+?)\s+([\d.]+)\s+([\d,]+)\|/g;
   let am;
   while ((am = assessRegex.exec(text)) !== null) {
-    if (!am[1].includes('Exempt') && !am[1].includes('Total') && !am[1].includes('Net')) {
+    if (!am[1].includes("Exempt") && !am[1].includes("Total") && !am[1].includes("Net")) {
       assessments.push({ category: am[1].trim(), qty: am[2], amount: am[3] });
     }
   }
 
   // Total assessment
   const totalAssessMatch = text.match(/Total\s*assessments\s+([\d,]+)/i);
-  const totalAssessment = totalAssessMatch?.[1] || '';
+  const totalAssessment = totalAssessMatch?.[1] || "";
 
   // Net assessment
   const netAssessMatch = text.match(/Net\s*assessment\s+([\d,]+)/i);
-  const netAssessment = netAssessMatch?.[1] || '';
+  const netAssessment = netAssessMatch?.[1] || "";
 
   // Sale info
   const saleDateMatch = text.match(/Sale\s*date:\s*([\w\-]+)/i);
   const salePriceMatch = text.match(/Sale\s*price:\s*([\d,]+)/i);
-  const saleDate = saleDateMatch?.[1] || '';
-  const salePrice = salePriceMatch?.[1] ? `$${salePriceMatch[1]}` : '';
+  const saleDate = saleDateMatch?.[1] || "";
+  const salePrice = salePriceMatch?.[1] ? `$${salePriceMatch[1]}` : "";
 
   // Values
   const mktValueMatch = text.match(/Mkt\s*value\s*:\s*([\d,]+)/i);
   const costValueMatch = text.match(/Cost\s*value:\s*([\d,]+)/i);
-  const mktValue = mktValueMatch?.[1] || '';
-  const costValue = costValueMatch?.[1] || '';
+  const mktValue = mktValueMatch?.[1] || "";
+  const costValue = costValueMatch?.[1] || "";
 
   // Utilities
   const waterMatch = text.match(/Water\s+([\w\s]+?)(?:\||\n)/i);
@@ -1438,64 +1839,109 @@ function extractQDSCardData(markdown: string, address: string, town: string) {
 
   // Property ID from title
   const pidMatch = text.match(/Prop\s*ID\s*(\d+)/i);
-  const parcelId = pidMatch?.[1] || lotMatch?.[1] || '';
+  const parcelId = pidMatch?.[1] || lotMatch?.[1] || "";
 
   // PDF field card link
   const pdfMatch = text.match(/\[Street Card\]\((https?:\/\/[^\)]+\.pdf)\)/i);
 
   // Land vs building values from assessments
-  let landValue = '', improvementsValue = '';
+  let landValue = "",
+    improvementsValue = "";
   for (const a of assessments) {
-    if (a.category.toLowerCase().includes('land')) landValue = a.amount;
-    if (a.category.toLowerCase().includes('building')) improvementsValue = a.amount;
+    if (a.category.toLowerCase().includes("land")) landValue = a.amount;
+    if (a.category.toLowerCase().includes("building")) improvementsValue = a.amount;
   }
 
-  owner = owner.replace(/[*#\[\]|]/g, '').replace(/<br\/?>/gi, ' ').replace(/\s+/g, ' ').trim();
+  owner = owner
+    .replace(/[*#\[\]|]/g, "")
+    .replace(/<br\/?>/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   // Clean trailing pipes from all extracted fields
-  const cleanPipe = (v: string) => v.replace(/\s*\|\s*$/g, '').trim();
+  const cleanPipe = (v: string) => v.replace(/\s*\|\s*$/g, "").trim();
   if (!owner || owner.length < 2) return null;
 
   const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b|\bLP\b|\bL\.P\b/i.test(owner);
-  const fmt$ = (v: string) => v ? `$${v}` : '';
+  const fmt$ = (v: string) => (v ? `$${v}` : "");
 
   return {
-    address, town, owner, coOwner: cleanPipe(coOwner), ownerAddress: cleanPipe(ownerAddress), isLLC,
-    parcelId, mblu: mapMatch?.[1] ? `${mapMatch[1]}/${lotMatch?.[1] || ''}` : '',
-    accountNumber: '', buildingCount: String(assessments.filter(a => a.category.toLowerCase().includes('building')).length || ''),
-    bookPage, certificate: '', instrument: '',
+    address,
+    town,
+    owner,
+    coOwner: cleanPipe(coOwner),
+    ownerAddress: cleanPipe(ownerAddress),
+    isLLC,
+    parcelId,
+    mblu: mapMatch?.[1] ? `${mapMatch[1]}/${lotMatch?.[1] || ""}` : "",
+    accountNumber: "",
+    buildingCount: String(assessments.filter((a) => a.category.toLowerCase().includes("building")).length || ""),
+    bookPage,
+    certificate: "",
+    instrument: "",
     assessedValue: fmt$(netAssessment || totalAssessment),
     totalAppraisal: fmt$(costValue || mktValue),
     totalMarketValue: fmt$(mktValue),
     improvementsValue: fmt$(improvementsValue),
     landValue: fmt$(landValue),
-    assessImprovements: '', assessLand: '',
+    assessImprovements: "",
+    assessLand: "",
     assessTotal: fmt$(netAssessment || totalAssessment),
-    salePrice, saleDate,
-    lotSize: assessments.find(a => a.category.toLowerCase().includes('land'))?.qty
-      ? `${assessments.find(a => a.category.toLowerCase().includes('land'))!.qty} acres` : '',
-    frontage: '', depth: '',
-    useCode: '', useDescription: assessments.map(a => a.category).join(', '),
-    zoning: zoneMatch?.[1] || '', neighborhood: neighMatch?.[1] || '',
-    totalMarketLand: '', landAppraisedValue: '',
-    yearBuilt: '', buildingStyle: '', model: '', stories: '',
-    livingArea: '', replacementCost: '', buildingPercentGood: '',
-    occupancy: '', totalRooms: '', bedrooms: '', totalBaths: '',
-    halfBaths: '', totalXtraFixtures: '', bathStyle: '', kitchenStyle: '',
-    interiorCondition: '', finBsmntArea: '', finBsmntQual: '', grade: '',
-    exteriorWall: '', roofStructure: '', roofCover: '',
-    interiorWall: '', flooring: '',
-    heating: '', heatingFuel: gasMatch?.[1]?.trim() || '',
-    cooling: '',
-    buildingPhoto: '',
+    salePrice,
+    saleDate,
+    lotSize: assessments.find((a) => a.category.toLowerCase().includes("land"))?.qty
+      ? `${assessments.find((a) => a.category.toLowerCase().includes("land"))!.qty} acres`
+      : "",
+    frontage: "",
+    depth: "",
+    useCode: "",
+    useDescription: assessments.map((a) => a.category).join(", "),
+    zoning: zoneMatch?.[1] || "",
+    neighborhood: neighMatch?.[1] || "",
+    totalMarketLand: "",
+    landAppraisedValue: "",
+    yearBuilt: "",
+    buildingStyle: "",
+    model: "",
+    stories: "",
+    livingArea: "",
+    replacementCost: "",
+    buildingPercentGood: "",
+    occupancy: "",
+    totalRooms: "",
+    bedrooms: "",
+    totalBaths: "",
+    halfBaths: "",
+    totalXtraFixtures: "",
+    bathStyle: "",
+    kitchenStyle: "",
+    interiorCondition: "",
+    finBsmntArea: "",
+    finBsmntQual: "",
+    grade: "",
+    exteriorWall: "",
+    roofStructure: "",
+    roofCover: "",
+    interiorWall: "",
+    flooring: "",
+    heating: "",
+    heatingFuel: gasMatch?.[1]?.trim() || "",
+    cooling: "",
+    buildingPhoto: "",
     ownershipHistory: [] as { owner: string; salePrice: string; bookPage: string; saleDate: string }[],
-    subAreas: assessments.map(a => ({ code: a.category, description: a.category, grossArea: '', livingArea: a.amount })),
+    subAreas: assessments.map((a) => ({
+      code: a.category,
+      description: a.category,
+      grossArea: "",
+      livingArea: a.amount,
+    })),
     valuationHistory: [] as { year: string; improvements: string; land: string; total: string }[],
     utilities: {
-      water: waterMatch?.[1]?.trim() || '',
-      sewer: sewerMatch?.[1]?.trim() || '',
-      gas: gasMatch?.[1]?.trim() || '',
+      water: waterMatch?.[1]?.trim() || "",
+      sewer: sewerMatch?.[1]?.trim() || "",
+      gas: gasMatch?.[1]?.trim() || "",
     },
-    propertyCardUrl: '', fieldCardPdfUrl: pdfMatch?.[1] || '',
+    propertyCardUrl: "",
+    fieldCardPdfUrl: pdfMatch?.[1] || "",
     llcDetails: undefined as any,
   };
 }
@@ -1513,109 +1959,151 @@ function extractGenericPropertyData(markdown: string, address: string, town: str
   const grab = (labels: string[]): string => {
     for (const label of labels) {
       // Try table format "| Label | Value |"
-      const tableRe = new RegExp(`\\|\\s*${label}:?\\s*\\|\\s*([^|]*?)\\s*\\|`, 'i');
+      const tableRe = new RegExp(`\\|\\s*${label}:?\\s*\\|\\s*([^|]*?)\\s*\\|`, "i");
       const tm = text.match(tableRe);
       if (tm?.[1]?.trim()) return tm[1].trim();
 
       // Try "Label: Value" format
-      const colonRe = new RegExp(`${label}:?\\s+([^\\n]+)`, 'i');
+      const colonRe = new RegExp(`${label}:?\\s+([^\\n]+)`, "i");
       const cm = text.match(colonRe);
       if (cm?.[1]?.trim()) return cm[1].trim();
 
       // Try "**Label** Value" format
-      const boldRe = new RegExp(`\\*\\*${label}\\*\\*\\s*:?\\s*([^\\n]+)`, 'i');
+      const boldRe = new RegExp(`\\*\\*${label}\\*\\*\\s*:?\\s*([^\\n]+)`, "i");
       const bm = text.match(boldRe);
       if (bm?.[1]?.trim()) return bm[1].trim();
     }
-    return '';
+    return "";
   };
 
   const dollarGrab = (labels: string[]): string => {
     for (const label of labels) {
-      const re = new RegExp(`${label}[:\\s]*\\$?([\\d,]+)`, 'i');
+      const re = new RegExp(`${label}[:\\s]*\\$?([\\d,]+)`, "i");
       const m = text.match(re);
       if (m?.[1]) return m[1].trim();
     }
-    return '';
+    return "";
   };
 
-  let owner = grab(['Owner', 'Owner Name', 'Property Owner', 'Owner/Taxpayer']);
-  const coOwner = grab(['Co-Owner', 'Co Owner', 'Additional Owner']);
+  let owner = grab(["Owner", "Owner Name", "Property Owner", "Owner/Taxpayer"]);
+  const coOwner = grab(["Co-Owner", "Co Owner", "Additional Owner"]);
 
-  let propertyAddress = grab(['Location', 'Property Location', 'Property Address', 'Street Address', 'Address']);
+  let propertyAddress = grab(["Location", "Property Location", "Property Address", "Street Address", "Address"]);
   if (!propertyAddress) propertyAddress = address;
 
-  const parcelId = grab(['Parcel ID', 'Parcel', 'PID', 'Map/Block/Lot', 'MBL', 'MBLU', 'Account']);
-  const accountNumber = grab(['Account', 'Acct', 'Account Number', 'Account #']);
-  const ownerAddress = grab(['Mailing Address', 'Mail Address', 'Owner Address']);
+  const parcelId = grab(["Parcel ID", "Parcel", "PID", "Map/Block/Lot", "MBL", "MBLU", "Account"]);
+  const accountNumber = grab(["Account", "Acct", "Account Number", "Account #"]);
+  const ownerAddress = grab(["Mailing Address", "Mail Address", "Owner Address"]);
 
-  const assessedValue = dollarGrab(['Assessed Value', 'Total Assessment', 'Assessment', 'Net Assessment']);
-  const totalAppraisal = dollarGrab(['Appraised Value', 'Total Appraisal', 'Appraisal', 'Market Value', 'Total Value']);
-  const landValue = dollarGrab(['Land Value', 'Land Assessment', 'Land']);
-  const improvementsValue = dollarGrab(['Improvements', 'Building Value', 'Building Assessment', 'Improvement Value']);
+  const assessedValue = dollarGrab(["Assessed Value", "Total Assessment", "Assessment", "Net Assessment"]);
+  const totalAppraisal = dollarGrab(["Appraised Value", "Total Appraisal", "Appraisal", "Market Value", "Total Value"]);
+  const landValue = dollarGrab(["Land Value", "Land Assessment", "Land"]);
+  const improvementsValue = dollarGrab(["Improvements", "Building Value", "Building Assessment", "Improvement Value"]);
 
-  const salePrice = grab(['Sale Price', 'Last Sale Price', 'Sales Price']);
-  const saleDate = grab(['Sale Date', 'Last Sale Date', 'Date of Sale']);
-  const bookPage = grab(['Book & Page', 'Book/Page', 'Volume/Page']);
+  const salePrice = grab(["Sale Price", "Last Sale Price", "Sales Price"]);
+  const saleDate = grab(["Sale Date", "Last Sale Date", "Date of Sale"]);
+  const bookPage = grab(["Book & Page", "Book/Page", "Volume/Page"]);
 
-  const lotSize = grab(['Lot Size', 'Acreage', 'Acres', 'Land Area', 'Size \\(Acres\\)']);
-  const zoning = grab(['Zoning', 'Zone', 'Zoning District']);
-  const useCode = grab(['Use Code', 'Property Use', 'Use', 'Land Use']);
-  const useDescription = grab(['Use Description', 'Description', 'Property Type', 'Class']);
-  const neighborhood = grab(['Neighborhood', 'NBHD', 'NBHD Code']);
+  const lotSize = grab(["Lot Size", "Acreage", "Acres", "Land Area", "Size \\(Acres\\)"]);
+  const zoning = grab(["Zoning", "Zone", "Zoning District"]);
+  const useCode = grab(["Use Code", "Property Use", "Use", "Land Use"]);
+  const useDescription = grab(["Use Description", "Description", "Property Type", "Class"]);
+  const neighborhood = grab(["Neighborhood", "NBHD", "NBHD Code"]);
 
-  const yearBuilt = grab(['Year Built', 'Year Blt', 'Built']);
-  const livingArea = grab(['Living Area', 'Total Living Area', 'Total Area', 'Square Feet', 'Sq Ft', 'GLA']);
-  const buildingStyle = grab(['Style', 'Building Style', 'Design']);
-  const stories = grab(['Stories', 'Number of Stories', 'Floors']);
-  const totalRooms = grab(['Total Rooms', 'Rooms']);
-  const bedrooms = grab(['Bedrooms', 'Total Bedrooms', 'BR']);
-  const totalBaths = grab(['Total Bthrms', 'Full Baths', 'Bathrooms', 'Total Bathrooms']);
-  const halfBaths = grab(['Half Baths', 'Total Half Baths']);
+  const yearBuilt = grab(["Year Built", "Year Blt", "Built"]);
+  const livingArea = grab(["Living Area", "Total Living Area", "Total Area", "Square Feet", "Sq Ft", "GLA"]);
+  const buildingStyle = grab(["Style", "Building Style", "Design"]);
+  const stories = grab(["Stories", "Number of Stories", "Floors"]);
+  const totalRooms = grab(["Total Rooms", "Rooms"]);
+  const bedrooms = grab(["Bedrooms", "Total Bedrooms", "BR"]);
+  const totalBaths = grab(["Total Bthrms", "Full Baths", "Bathrooms", "Total Bathrooms"]);
+  const halfBaths = grab(["Half Baths", "Total Half Baths"]);
 
-  const exteriorWall = grab(['Exterior Wall', 'Exterior', 'Ext Wall', 'Exterior Wall 1']);
-  const roofCover = grab(['Roof Cover', 'Roof', 'Roof Material']);
-  const heating = grab(['Heat Type', 'Heating', 'Heat System']);
-  const heatingFuel = grab(['Heat Fuel', 'Fuel', 'Fuel Type']);
-  const cooling = grab(['AC Type', 'Air Conditioning', 'Cooling', 'AC']);
+  const exteriorWall = grab(["Exterior Wall", "Exterior", "Ext Wall", "Exterior Wall 1"]);
+  const roofCover = grab(["Roof Cover", "Roof", "Roof Material"]);
+  const heating = grab(["Heat Type", "Heating", "Heat System"]);
+  const heatingFuel = grab(["Heat Fuel", "Fuel", "Fuel Type"]);
+  const cooling = grab(["AC Type", "Air Conditioning", "Cooling", "AC"]);
 
-  owner = owner.replace(/[*#\[\]]/g, '').replace(/<br\/?>/gi, ' ').trim();
+  owner = owner
+    .replace(/[*#\[\]]/g, "")
+    .replace(/<br\/?>/gi, " ")
+    .trim();
   // Reject if owner looks like garbage (too long = scraped paragraph, or too short)
   if (!owner || owner.length < 4 || owner.length > 100) return null;
   if (/https?:\/\/|\.com|\.org|\.net|\[.*\]\(/.test(owner)) return null;
-  if (/^(Sold|For Sale|Pending|Active|Price|View|Details|Home|House|Property|Contact|Agent|N\/A|Unknown)$/i.test(owner)) return null;
+  if (/^(Sold|For Sale|Pending|Active|Price|View|Details|Home|House|Property|Contact|Agent|N\/A|Unknown)$/i.test(owner))
+    return null;
 
   const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner);
-  const fmt$ = (v: string) => v ? `$${v}` : '';
+  const fmt$ = (v: string) => (v ? `$${v}` : "");
 
   return {
-    address: propertyAddress, town, owner, coOwner, ownerAddress, isLLC,
-    parcelId, mblu: '', accountNumber, buildingCount: '', bookPage, certificate: '', instrument: '',
+    address: propertyAddress,
+    town,
+    owner,
+    coOwner,
+    ownerAddress,
+    isLLC,
+    parcelId,
+    mblu: "",
+    accountNumber,
+    buildingCount: "",
+    bookPage,
+    certificate: "",
+    instrument: "",
     assessedValue: fmt$(assessedValue),
     totalAppraisal: fmt$(totalAppraisal),
     totalMarketValue: fmt$(totalAppraisal),
     improvementsValue: fmt$(improvementsValue),
     landValue: fmt$(landValue),
-    assessImprovements: '', assessLand: '', assessTotal: fmt$(assessedValue),
-    salePrice, saleDate,
-    lotSize: lotSize && !lotSize.includes('acre') ? `${lotSize} acres` : lotSize,
-    frontage: '', depth: '',
-    useCode, useDescription, zoning, neighborhood,
-    totalMarketLand: '', landAppraisedValue: '',
-    yearBuilt, buildingStyle, model: '', stories,
-    livingArea: livingArea && !livingArea.includes('sq') ? `${livingArea} sq ft` : livingArea,
-    replacementCost: '', buildingPercentGood: '',
-    occupancy: '', totalRooms, bedrooms, totalBaths, halfBaths,
-    totalXtraFixtures: '', bathStyle: '', kitchenStyle: '',
-    interiorCondition: '', finBsmntArea: '', finBsmntQual: '', grade: '',
-    exteriorWall, roofStructure: '', roofCover,
-    interiorWall: '', flooring: '',
-    heating, heatingFuel, cooling,
-    buildingPhoto: '',
+    assessImprovements: "",
+    assessLand: "",
+    assessTotal: fmt$(assessedValue),
+    salePrice,
+    saleDate,
+    lotSize: lotSize && !lotSize.includes("acre") ? `${lotSize} acres` : lotSize,
+    frontage: "",
+    depth: "",
+    useCode,
+    useDescription,
+    zoning,
+    neighborhood,
+    totalMarketLand: "",
+    landAppraisedValue: "",
+    yearBuilt,
+    buildingStyle,
+    model: "",
+    stories,
+    livingArea: livingArea && !livingArea.includes("sq") ? `${livingArea} sq ft` : livingArea,
+    replacementCost: "",
+    buildingPercentGood: "",
+    occupancy: "",
+    totalRooms,
+    bedrooms,
+    totalBaths,
+    halfBaths,
+    totalXtraFixtures: "",
+    bathStyle: "",
+    kitchenStyle: "",
+    interiorCondition: "",
+    finBsmntArea: "",
+    finBsmntQual: "",
+    grade: "",
+    exteriorWall,
+    roofStructure: "",
+    roofCover,
+    interiorWall: "",
+    flooring: "",
+    heating,
+    heatingFuel,
+    cooling,
+    buildingPhoto: "",
     ownershipHistory: [] as { owner: string; salePrice: string; bookPage: string; saleDate: string }[],
     subAreas: [] as { code: string; description: string; grossArea: string; livingArea: string }[],
     valuationHistory: [] as { year: string; improvements: string; land: string; total: string }[],
-    propertyCardUrl: '', llcDetails: undefined as any,
+    propertyCardUrl: "",
+    llcDetails: undefined as any,
   };
 }
 
@@ -1628,7 +2116,7 @@ function extractAggregatorData(markdown: string, address: string, town: string) 
       const m = text.match(re);
       if (m?.[1]?.trim()) return m[1].trim();
     }
-    return '';
+    return "";
   };
 
   // Try to find owner
@@ -1643,96 +2131,134 @@ function extractAggregatorData(markdown: string, address: string, town: string) 
     if (ownerMatch) owner = ownerMatch[1].trim();
   }
 
-  owner = owner.replace(/[*#\[\]]/g, '').trim();
+  owner = owner.replace(/[*#\[\]]/g, "").trim();
   if (!owner || owner.length < 4 || owner.length > 100) return null;
   if (/https?:\/\/|\.com|\.org/.test(owner)) return null;
   // Reject single common words that aren't real owner names
-  if (/^(Sold|For Sale|Pending|Active|Price|View|Details|Home|House|Property|Contact|Agent|N\/A|Unknown)$/i.test(owner)) return null;
+  if (/^(Sold|For Sale|Pending|Active|Price|View|Details|Home|House|Property|Contact|Agent|N\/A|Unknown)$/i.test(owner))
+    return null;
 
   const dollarMatch = (labels: string[]): string => {
     for (const label of labels) {
-      const re = new RegExp(`${label}[:\\s]*\\$?([\\d,]+)`, 'i');
+      const re = new RegExp(`${label}[:\\s]*\\$?([\\d,]+)`, "i");
       const m = text.match(re);
       if (m?.[1]) return m[1].trim();
     }
-    return '';
+    return "";
   };
 
   const grabText = (labels: string[]): string => {
     for (const label of labels) {
-      const re = new RegExp(`${label}[:\\s|]+([^\\n|]+)`, 'i');
+      const re = new RegExp(`${label}[:\\s|]+([^\\n|]+)`, "i");
       const m = text.match(re);
       if (m?.[1]?.trim()) return m[1].trim();
     }
-    return '';
+    return "";
   };
 
-  const assessedValue = dollarMatch(['Assessed Value', 'Tax Assessment', 'Assessment']);
-  const totalAppraisal = dollarMatch(['Market Value', 'Appraised Value', 'Estimated Value', 'Est\\. Value']);
-  const landValue = dollarMatch(['Land Value', 'Land']);
-  const improvementsValue = dollarMatch(['Improvement', 'Building Value', 'Structure Value']);
-  const yearBuilt = grabText(['Year Built', 'Built']);
-  const livingArea = grabText(['Living Area', 'Square Feet', 'Sq Ft', 'Size', 'Total Area']);
-  const lotSize = grabText(['Lot Size', 'Lot Area', 'Acreage', 'Acres']);
-  const bedrooms = grabText(['Bedrooms', 'Beds']);
-  const totalBaths = grabText(['Bathrooms', 'Baths', 'Full Bath']);
-  const salePrice = grabText(['Last Sold', 'Sale Price', 'Last Sale']);
-  const saleDate = grabText(['Sale Date', 'Sold On', 'Last Sale Date']);
-  const zoning = grabText(['Zoning', 'Zone']);
-  const buildingStyle = grabText(['Style', 'Type', 'Property Type']);
-  const parcelId = grabText(['Parcel', 'APN', 'PID', 'Tax Map']);
+  const assessedValue = dollarMatch(["Assessed Value", "Tax Assessment", "Assessment"]);
+  const totalAppraisal = dollarMatch(["Market Value", "Appraised Value", "Estimated Value", "Est\\. Value"]);
+  const landValue = dollarMatch(["Land Value", "Land"]);
+  const improvementsValue = dollarMatch(["Improvement", "Building Value", "Structure Value"]);
+  const yearBuilt = grabText(["Year Built", "Built"]);
+  const livingArea = grabText(["Living Area", "Square Feet", "Sq Ft", "Size", "Total Area"]);
+  const lotSize = grabText(["Lot Size", "Lot Area", "Acreage", "Acres"]);
+  const bedrooms = grabText(["Bedrooms", "Beds"]);
+  const totalBaths = grabText(["Bathrooms", "Baths", "Full Bath"]);
+  const salePrice = grabText(["Last Sold", "Sale Price", "Last Sale"]);
+  const saleDate = grabText(["Sale Date", "Sold On", "Last Sale Date"]);
+  const zoning = grabText(["Zoning", "Zone"]);
+  const buildingStyle = grabText(["Style", "Type", "Property Type"]);
+  const parcelId = grabText(["Parcel", "APN", "PID", "Tax Map"]);
 
   const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner);
-  const fmt$ = (v: string) => v ? `$${v}` : '';
+  const fmt$ = (v: string) => (v ? `$${v}` : "");
 
   return {
-    address: address || town, town, owner, coOwner: '', ownerAddress: '', isLLC,
-    parcelId, mblu: '', accountNumber: '', buildingCount: '', bookPage: '', certificate: '', instrument: '',
+    address: address || town,
+    town,
+    owner,
+    coOwner: "",
+    ownerAddress: "",
+    isLLC,
+    parcelId,
+    mblu: "",
+    accountNumber: "",
+    buildingCount: "",
+    bookPage: "",
+    certificate: "",
+    instrument: "",
     assessedValue: fmt$(assessedValue),
     totalAppraisal: fmt$(totalAppraisal),
     totalMarketValue: fmt$(totalAppraisal),
     improvementsValue: fmt$(improvementsValue),
     landValue: fmt$(landValue),
-    assessImprovements: '', assessLand: '', assessTotal: fmt$(assessedValue),
-    salePrice, saleDate,
-    lotSize, frontage: '', depth: '',
-    useCode: '', useDescription: buildingStyle, zoning, neighborhood: '',
-    totalMarketLand: '', landAppraisedValue: '',
-    yearBuilt, buildingStyle, model: '', stories: '',
-    livingArea, replacementCost: '', buildingPercentGood: '',
-    occupancy: '', totalRooms: '', bedrooms, totalBaths, halfBaths: '',
-    totalXtraFixtures: '', bathStyle: '', kitchenStyle: '',
-    interiorCondition: '', finBsmntArea: '', finBsmntQual: '', grade: '',
-    exteriorWall: '', roofStructure: '', roofCover: '',
-    interiorWall: '', flooring: '',
-    heating: '', heatingFuel: '', cooling: '',
-    buildingPhoto: '',
+    assessImprovements: "",
+    assessLand: "",
+    assessTotal: fmt$(assessedValue),
+    salePrice,
+    saleDate,
+    lotSize,
+    frontage: "",
+    depth: "",
+    useCode: "",
+    useDescription: buildingStyle,
+    zoning,
+    neighborhood: "",
+    totalMarketLand: "",
+    landAppraisedValue: "",
+    yearBuilt,
+    buildingStyle,
+    model: "",
+    stories: "",
+    livingArea,
+    replacementCost: "",
+    buildingPercentGood: "",
+    occupancy: "",
+    totalRooms: "",
+    bedrooms,
+    totalBaths,
+    halfBaths: "",
+    totalXtraFixtures: "",
+    bathStyle: "",
+    kitchenStyle: "",
+    interiorCondition: "",
+    finBsmntArea: "",
+    finBsmntQual: "",
+    grade: "",
+    exteriorWall: "",
+    roofStructure: "",
+    roofCover: "",
+    interiorWall: "",
+    flooring: "",
+    heating: "",
+    heatingFuel: "",
+    cooling: "",
+    buildingPhoto: "",
     ownershipHistory: [] as { owner: string; salePrice: string; bookPage: string; saleDate: string }[],
     subAreas: [] as { code: string; description: string; grossArea: string; livingArea: string }[],
     valuationHistory: [] as { year: string; improvements: string; land: string; total: string }[],
-    propertyCardUrl: '', llcDetails: undefined as any,
+    propertyCardUrl: "",
+    llcDetails: undefined as any,
   };
 }
 
 // ========== LLC LOOKUP ==========
 async function searchCTBusiness(_apiKey: string, businessName: string) {
-  const CT_BUSINESS_API = 'https://data.ct.gov/resource/n7gp-d28j.json';
-  const CT_AGENTS_API = 'https://data.ct.gov/resource/qh2m-n44y.json';
+  const CT_BUSINESS_API = "https://data.ct.gov/resource/n7gp-d28j.json";
+  const CT_AGENTS_API = "https://data.ct.gov/resource/qh2m-n44y.json";
 
-  const cleanName = businessName.replace(/[^a-zA-Z0-9\s&]/g, '').trim();
-  const shortName = cleanName.replace(/\s*(LLC|L\.?L\.?C\.?|Inc|Corp)\s*$/i, '').trim();
+  const cleanName = businessName.replace(/[^a-zA-Z0-9\s&]/g, "").trim();
+  const shortName = cleanName.replace(/\s*(LLC|L\.?L\.?C\.?|Inc|Corp)\s*$/i, "").trim();
   console.log(`LLC lookup: ${cleanName}`);
 
   try {
     // Fire both full-name and short-name queries in parallel
     const fullQuery = encodeURIComponent(`upper(name) like '%${cleanName.toUpperCase()}%'`);
-    const shortQuery = shortName !== cleanName
-      ? encodeURIComponent(`upper(name) like '%${shortName.toUpperCase()}%'`)
-      : null;
+    const shortQuery =
+      shortName !== cleanName ? encodeURIComponent(`upper(name) like '%${shortName.toUpperCase()}%'`) : null;
 
-    const fetches = [
-      fetch(`${CT_BUSINESS_API}?$where=${fullQuery}&$limit=5`),
-    ];
+    const fetches = [fetch(`${CT_BUSINESS_API}?$where=${fullQuery}&$limit=5`)];
     if (shortQuery) fetches.push(fetch(`${CT_BUSINESS_API}?$where=${shortQuery}&$limit=5`));
 
     const responses = await Promise.all(fetches);
@@ -1741,37 +2267,41 @@ async function searchCTBusiness(_apiKey: string, businessName: string) {
     for (const resp of responses) {
       if (!resp.ok) continue;
       const data = await resp.json();
-      if (Array.isArray(data) && data.length > 0) { businesses = data; break; }
+      if (Array.isArray(data) && data.length > 0) {
+        businesses = data;
+        break;
+      }
     }
 
     if (businesses.length === 0) return makeFallbackLLC(cleanName);
     return await buildLLCDetails(businesses, cleanName, CT_AGENTS_API);
   } catch (e) {
-    console.error('CT Open Data error:', e);
+    console.error("CT Open Data error:", e);
     return makeFallbackLLC(cleanName);
   }
 }
 
 async function buildLLCDetails(businesses: Record<string, unknown>[], searchName: string, agentsApi: string) {
-  const biz = businesses.find(b =>
-    (b.name as string || '').toUpperCase().includes(searchName.toUpperCase())
-  ) || businesses[0];
+  const biz =
+    businesses.find((b) => ((b.name as string) || "").toUpperCase().includes(searchName.toUpperCase())) ||
+    businesses[0];
 
   const bizName = (biz.name as string) || searchName;
   const bizKey = biz.id as string;
-  const status = (biz.status as string) || 'N/A';
-  const subStatus = (biz.sub_status as string) || '';
-  const businessType = (biz.business_type as string) || 'LLC';
-  const mailingAddress = (biz.mailing_address as string) ||
-    [biz.billingstreet, biz.billingcity, biz.billingstate, biz.billingpostalcode]
-      .filter(Boolean).join(', ') || 'N/A';
-  const dateRegistration = biz.date_registration as string || '';
-  const dateFormed = dateRegistration ? new Date(dateRegistration).toLocaleDateString('en-US') : 'N/A';
-  const accountNumber = (biz.accountnumber as string) || '';
-  const citizenship = (biz.citizenship as string) || '';
-  const formationPlace = (biz.formation_place as string) || '';
-  const email = (biz.business_email_address as string) || '';
-  const naicsCode = (biz.naics_code as string) || '';
+  const status = (biz.status as string) || "N/A";
+  const subStatus = (biz.sub_status as string) || "";
+  const businessType = (biz.business_type as string) || "LLC";
+  const mailingAddress =
+    (biz.mailing_address as string) ||
+    [biz.billingstreet, biz.billingcity, biz.billingstate, biz.billingpostalcode].filter(Boolean).join(", ") ||
+    "N/A";
+  const dateRegistration = (biz.date_registration as string) || "";
+  const dateFormed = dateRegistration ? new Date(dateRegistration).toLocaleDateString("en-US") : "N/A";
+  const accountNumber = (biz.accountnumber as string) || "";
+  const citizenship = (biz.citizenship as string) || "";
+  const formationPlace = (biz.formation_place as string) || "";
+  const email = (biz.business_email_address as string) || "";
+  const naicsCode = (biz.naics_code as string) || "";
 
   // Fetch agents in parallel (already started building response)
   const principals: { name: string; title: string; address: string; residentialAddress: string }[] = [];
@@ -1783,60 +2313,96 @@ async function buildLLCDetails(businesses: Record<string, unknown>[], searchName
         const agents = await agentResp.json();
         if (Array.isArray(agents)) {
           for (const agent of agents) {
-            const name = (agent.name__c as string) ||
-              [agent.firstname, agent.lastname].filter(Boolean).join(' ') || 'Unknown';
-            const title = (agent.type as string) || 'Agent';
-            const bizAddr = (agent.business_address as string) ||
+            const name =
+              (agent.name__c as string) || [agent.firstname, agent.lastname].filter(Boolean).join(" ") || "Unknown";
+            const title = (agent.type as string) || "Agent";
+            const bizAddr =
+              (agent.business_address as string) ||
               [agent.business_street_address_1, agent.business_city, agent.business_state, agent.business_zip_code]
-                .filter(Boolean).join(', ') || '';
-            const resAddr = [agent.residence_street_address_1, agent.residence_city, agent.residence_state, agent.residence_zip_code]
-              .filter(Boolean).join(', ') || bizAddr;
+                .filter(Boolean)
+                .join(", ") ||
+              "";
+            const resAddr =
+              [agent.residence_street_address_1, agent.residence_city, agent.residence_state, agent.residence_zip_code]
+                .filter(Boolean)
+                .join(", ") || bizAddr;
             principals.push({ name, title, address: bizAddr, residentialAddress: resAddr });
           }
         }
       }
-    } catch (e) { console.error('Agent lookup error:', e); }
+    } catch (e) {
+      console.error("Agent lookup error:", e);
+    }
   }
 
   const fullStatus = subStatus ? `${status} (${subStatus})` : status;
 
   const rawLines = [
-    `Business Name: ${bizName}`, `Account Number: ${accountNumber}`,
-    `Status: ${fullStatus}`, `Business Type: ${businessType}`,
-    `Date Registered: ${dateFormed}`, `Citizenship: ${citizenship}`,
-    `Formation Place: ${formationPlace}`, `Mailing Address: ${mailingAddress}`,
-    email ? `Business Email: ${email}` : '', naicsCode ? `NAICS Code: ${naicsCode}` : '',
-    '', '--- Principals/Agents ---',
-    ...principals.map(p => `${p.name} (${p.title})\n  Business: ${p.address}\n  Residence: ${p.residentialAddress}`),
-    '', `Source: CT Open Data Portal (data.ct.gov)`, `Retrieved: ${new Date().toLocaleDateString('en-US')}`,
-  ].filter(l => l !== undefined);
+    `Business Name: ${bizName}`,
+    `Account Number: ${accountNumber}`,
+    `Status: ${fullStatus}`,
+    `Business Type: ${businessType}`,
+    `Date Registered: ${dateFormed}`,
+    `Citizenship: ${citizenship}`,
+    `Formation Place: ${formationPlace}`,
+    `Mailing Address: ${mailingAddress}`,
+    email ? `Business Email: ${email}` : "",
+    naicsCode ? `NAICS Code: ${naicsCode}` : "",
+    "",
+    "--- Principals/Agents ---",
+    ...principals.map((p) => `${p.name} (${p.title})\n  Business: ${p.address}\n  Residence: ${p.residentialAddress}`),
+    "",
+    `Source: CT Open Data Portal (data.ct.gov)`,
+    `Retrieved: ${new Date().toLocaleDateString("en-US")}`,
+  ].filter((l) => l !== undefined);
 
   const businessProfileUrl = bizKey
     ? `https://service.ct.gov/business/s/onlinebusinesssearch?language=en_US&businessNameEng=${encodeURIComponent(bizName)}`
-    : '';
+    : "";
 
   return {
-    mailingAddress, dateFormed, businessType, status: fullStatus,
-    accountNumber, citizenship, formationPlace, email, naicsCode,
+    mailingAddress,
+    dateFormed,
+    businessType,
+    status: fullStatus,
+    accountNumber,
+    citizenship,
+    formationPlace,
+    email,
+    naicsCode,
     businessProfileUrl,
-    principals: principals.length > 0
-      ? principals.map(p => ({ name: p.name, title: p.title, address: p.address, residentialAddress: p.residentialAddress }))
-      : [{ name: 'No agents found in public records', title: '', address: '', residentialAddress: '' }],
-    rawMarkdown: rawLines.join('\n'),
+    principals:
+      principals.length > 0
+        ? principals.map((p) => ({
+            name: p.name,
+            title: p.title,
+            address: p.address,
+            residentialAddress: p.residentialAddress,
+          }))
+        : [{ name: "No agents found in public records", title: "", address: "", residentialAddress: "" }],
+    rawMarkdown: rawLines.join("\n"),
   };
 }
 
 function makeFallbackLLC(cleanName: string) {
   return {
-    mailingAddress: 'Could not retrieve automatically',
-    dateFormed: 'N/A', businessType: 'Limited Liability Company', status: 'N/A',
-    principals: [{ name: 'See CT Secretary of State records', address: `https://service.ct.gov/business/s/onlinebusinesssearch (search: ${cleanName})` }],
-    rawMarkdown: '',
+    mailingAddress: "Could not retrieve automatically",
+    dateFormed: "N/A",
+    businessType: "Limited Liability Company",
+    status: "N/A",
+    principals: [
+      {
+        name: "See CT Secretary of State records",
+        address: `https://service.ct.gov/business/s/onlinebusinesssearch (search: ${cleanName})`,
+      },
+    ],
+    rawMarkdown: "",
   };
 }
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
-    status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
