@@ -393,36 +393,36 @@ Deno.serve(async (req) => {
     // For 'custom' platform towns (no real scraper), skip directly to smart extract
     if (config.platform === 'custom') {
       console.log(`Custom platform for ${town}, going straight to smart extract`);
-      return await smartExtractProperty(apiKey, normalizedAddress, town, config.url);
+      return await smartExtractProperty(apiKey, normalizedAddress, lookupTown, config.url, town);
     }
 
-    // Try platform-specific scraper first
+    // Try platform-specific scraper first using canonical lookup town
     let result: Response;
     try {
       switch (config.platform) {
         case 'vgs':
-          result = await scrapeVGS(apiKey, config.slug!, normalizedAddress, town);
+          result = await scrapeVGS(apiKey, config.slug!, normalizedAddress, lookupTown);
           break;
         case 'mapxpress':
-          result = await scrapeMapXpress(apiKey, config.url!, normalizedAddress, town);
+          result = await scrapeMapXpress(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
         case 'qds':
-          result = await scrapeQDS(apiKey, config.url!, normalizedAddress, town);
+          result = await scrapeQDS(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
         case 'act':
-          result = await scrapeACTDataScout(apiKey, config.url!, normalizedAddress, town);
+          result = await scrapeACTDataScout(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
         case 'ias':
-          result = await scrapeIASCLT(apiKey, config.url!, normalizedAddress, town);
+          result = await scrapeIASCLT(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
         case 'prc':
-          result = await scrapePRC(apiKey, config.townCode!, normalizedAddress, town);
+          result = await scrapePRC(apiKey, config.townCode!, normalizedAddress, lookupTown);
           break;
         case 'equality':
-          result = await scrapeEqualityCama(apiKey, config.url!, normalizedAddress, town);
+          result = await scrapeEqualityCama(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
         case 'avon_gis':
-          result = await scrapeAvonGIS(apiKey, normalizedAddress, town);
+          result = await scrapeAvonGIS(apiKey, normalizedAddress, lookupTown);
           break;
         default:
           result = json({ success: false });
@@ -433,17 +433,21 @@ Deno.serve(async (req) => {
       result = json({ success: false });
     }
 
-    // Check if platform scraper succeeded — if not, try universal fallback
-    const cloned = result.clone();
     try {
-      const body = await cloned.json();
-      if (body.success) return result;
+      const body = await result.clone().json();
+      if (body.success) {
+        if (lookupTown !== town.toLowerCase().trim() && body.property) {
+          body.property.town = town;
+          return json(body);
+        }
+        return result;
+      }
       console.log(`Platform ${config.platform} failed for ${town}, trying universal fallback...`);
     } catch {
       console.log(`Could not parse platform response, trying universal fallback...`);
     }
 
-    return await universalPropertySearch(apiKey, normalizedAddress, town, config.url);
+    return await universalPropertySearch(apiKey, normalizedAddress, lookupTown, config.url, town);
   } catch (error) {
     console.error("Error:", error);
     return json({ success: false, error: error instanceof Error ? error.message : "Search failed" }, 500);
