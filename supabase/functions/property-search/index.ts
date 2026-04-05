@@ -372,7 +372,7 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
           const md = await firecrawlScrape(apiKey, url);
           if (md) {
             const extracted = extractPRCData(md, address, town) || extractGenericPropertyData(md, address, town);
-            if (extracted) {
+            if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
               extracted.propertyCardUrl = url;
               if (extracted.isLLC) {
                 try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
@@ -392,7 +392,7 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
                               extractQDSCardData(md, address, town) ||
                               extractPRCData(md, address, town) ||
                               extractGenericPropertyData(md, address, town);
-            if (extracted) {
+            if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
               extracted.propertyCardUrl = url;
               if (extracted.isLLC) {
                 try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
