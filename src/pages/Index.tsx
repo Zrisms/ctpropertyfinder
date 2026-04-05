@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ExternalLink, Sparkles } from "lucide-react";
+import foyrLogo from "@/assets/foyr-logo.png";
 import { AddressSearch } from "@/components/AddressSearch";
 import { PropertyResults, type PropertyData } from "@/components/PropertyResults";
 import { useToast } from "@/hooks/use-toast";
