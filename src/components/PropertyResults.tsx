@@ -64,7 +64,7 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
       </div>
 
       {/* Main grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 stagger-children">
         <Section title="Owner">
           <Row l="Owner" v={data.owner} />
           {data.coOwner && <Row l="Co-Owner" v={data.coOwner} />}
