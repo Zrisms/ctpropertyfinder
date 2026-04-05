@@ -359,8 +359,8 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
 
       for (const result of results) {
         const url = result.url || '';
-        // Skip real estate listing sites
-        if (/zillow|realtor|trulia|redfin|homes\.com|movoto|homesnap/i.test(url)) continue;
+        // Skip real estate listing sites and generic aggregators
+        if (/zillow|realtor|trulia|redfin|homes\.com|movoto|homesnap|countyoffice|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch/i.test(url)) continue;
 
         // VGS parcel page
         if (url.includes('vgsi.com') && url.includes('Parcel.aspx')) {
