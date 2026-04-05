@@ -627,11 +627,17 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
   const streetFull = addrParts?.[2] || address;
   const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK)\.?$/i, '').trim();
 
-  // Strategy 1: Search official assessor sources (parallel queries)
-  const searchQueries = [
-    `"${houseNum} ${streetBase}" "${town}" CT property vgsi.com OR propertyrecordcards.com`,
-    `"${houseNum} ${streetBase}" "${town}" CT assessor property owner assessment`,
-  ];
+  // Strategy 1: Search official assessor sources (parallel queries with variants)
+  const variants = getAddressVariants(address);
+  const searchQueries = new Set<string>();
+  searchQueries.add(`"${houseNum} ${streetBase}" "${town}" CT property vgsi.com OR propertyrecordcards.com`);
+  searchQueries.add(`"${houseNum} ${streetBase}" "${town}" CT assessor property owner assessment`);
+  // Add variant-based queries
+  for (const v of variants.slice(0, 3)) {
+    const vParts = v.match(/^(\d+)\s+(.+)$/i);
+    if (vParts) searchQueries.add(`"${vParts[1]} ${vParts[2]}" "${town}" CT property`);
+  }
+  const uniqueSearchQueries = [...searchQueries].slice(0, 4);
 
   // Fire both searches in parallel
   const allSearchResults = await Promise.all(searchQueries.map(async (query) => {
