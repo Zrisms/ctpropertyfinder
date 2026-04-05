@@ -316,7 +316,7 @@ const TOWN_DB: Record<string, TownConfig> = {
   bloomfield: { platform: "mapxpress", slug: "bloomfield", url: "https://bloomfield.mapxpress.net" },
   wethersfield: { platform: "mapxpress", slug: "wethersfield", url: "https://wethersfield.mapxpress.net" },
   windsor: { platform: "mapxpress", slug: "windsor", url: "https://windsor.mapxpress.net" },
-  groton: { platform: "mapxpress", slug: "groton", url: "https://groton.mapxpress.net" },
+  groton: { platform: "groton_gis", url: "https://maps.groton-ct.gov", label: "Groton GIS" },
 
   // === Towns with custom/dedicated assessment sites ===
   darien: { platform: "custom", url: "https://assessment.darienct.gov/Search/commonsearch.aspx?mode=address", label: "Darien Assessor" },
