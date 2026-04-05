@@ -72,12 +72,18 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
     <form onSubmit={handleSubmit} className="w-full space-y-3">
       <div className="relative">
         <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-muted-foreground/50" />
-        {isFetching && <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-primary/60 animate-spin" />}
-        <Input type="text" placeholder="Street address" value={address}
+        {isFetching && <Loader2 className="absolute right-10 top-1/2 -translate-y-1/2 h-4 w-4 text-primary/60 animate-spin" />}
+        {address && !isFetching && (
+          <button type="button" onClick={handleClear}
+            className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-secondary/80 text-muted-foreground/60 hover:text-foreground transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        )}
+        <Input ref={addressInputRef} type="text" placeholder="Street address" value={address}
           onChange={e => { setAddress(e.target.value); setTown(""); setShowAddressSuggestions(true); setActiveAddressIndex(-1); }}
           onFocus={() => setShowAddressSuggestions(true)}
           onBlur={() => setTimeout(() => setShowAddressSuggestions(false), 200)}
-          onKeyDown={handleAddressKeyDown} className={inputCls} />
+          onKeyDown={handleAddressKeyDown} className={`${inputCls} pr-9`} />
         {showAddressSuggestions && addressSuggestions.length > 0 && (
           <div className="absolute z-10 mt-2 w-full glass-elevated rounded-2xl overflow-hidden max-h-52 overflow-y-auto">
             {addressSuggestions.map((s, i) => (
