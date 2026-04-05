@@ -603,7 +603,7 @@ async function smartExtractProperty(apiKey: string, address: string, lookupTown:
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      query: `"${houseNum} ${streetBase}" "${lookupTown}" CT property owner assessment`,
+      query: `"${houseNum} ${streetBase}" "${lookupTown}" CT assessor property record card site:.gov OR site:vgsi.com OR site:propertyrecordcards.com`,
       limit: 3,
     }),
   });
