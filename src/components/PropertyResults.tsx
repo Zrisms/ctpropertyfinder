@@ -350,13 +350,29 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
             </div>
           </div>
           {data.llcDetails.principals.length > 0 && (
-            <div className="mt-2">
-              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Principals</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+            <div className="mt-3">
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Principals / Agents</p>
+              <div className="space-y-2">
                 {data.llcDetails.principals.map((p, i) => (
-                  <div key={i} className="bg-muted rounded px-2 py-1">
-                    <p className="text-xs font-medium text-foreground">{p.name}</p>
-                    <p className="text-[10px] text-muted-foreground break-all">{p.address}</p>
+                  <div key={i} className="bg-muted rounded-lg px-3 py-2 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-semibold text-foreground">{p.name}</p>
+                      {p.title && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium uppercase tracking-wide">{p.title}</span>
+                      )}
+                    </div>
+                    {p.address && (
+                      <div>
+                        <p className="text-[9px] text-muted-foreground uppercase tracking-wide font-medium">Business Address</p>
+                        <p className="text-[11px] text-foreground">{p.address}</p>
+                      </div>
+                    )}
+                    {p.residentialAddress && p.residentialAddress !== p.address && (
+                      <div>
+                        <p className="text-[9px] text-muted-foreground uppercase tracking-wide font-medium">Residence Address</p>
+                        <p className="text-[11px] text-foreground">{p.residentialAddress}</p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
