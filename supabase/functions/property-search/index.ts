@@ -707,6 +707,229 @@ async function scrapeAvonRecordCard(apiKey: string, url: string): Promise<any> {
   }
 }
 
+// ========== GROTON GIS (Direct ArcGIS REST + Property Card HTML) ==========
+const GROTON_ARCGIS_BASE = 'https://maps.groton-ct.gov/arcgis/rest/services/AddressingService/MapServer/0';
+const GROTON_CARD_BASES = [
+  'https://maps.groton-ct.gov/apps/PropertyCards/RESIDENTIALDetail_SL.asp',
+  'https://maps.groton-ct.gov/apps/PropertyCards/COMMERCIALDetail_SL.asp',
+  'https://maps.groton-ct.gov/apps/PropertyCards/VACANTDetail_SL.asp',
+];
+
+const GROTON_SUFFIX_MAP: Record<string, string> = {
+  ROAD: 'RD', STREET: 'ST', AVENUE: 'AVE', DRIVE: 'DR',
+  LANE: 'LA', COURT: 'CT', CIRCLE: 'CIR', PLACE: 'PL',
+  BOULEVARD: 'BLVD', TERRACE: 'TER', TRAIL: 'TRL', WAY: 'WAY',
+  PARKWAY: 'PKWY', HIGHWAY: 'HWY', EXTENSION: 'EXT',
+};
+
+function normalizeGrotonAddress(input: string): string {
+  const parts = input.toUpperCase().trim().split(/\s+/);
+  const last = parts[parts.length - 1];
+  if (GROTON_SUFFIX_MAP[last]) parts[parts.length - 1] = GROTON_SUFFIX_MAP[last];
+  return parts.join(' ');
+}
+
+function parseGrotonPropertyCard(html: string) {
+  const extractSection = (headerText: string) => {
+    const idx = html.indexOf(headerText);
+    if (idx === -1) return null;
+    const section = html.substring(idx, idx + 2000);
+    const values: string[] = [];
+    const re = /class="form-input"[^>]*>([^<]*)</g;
+    let m;
+    while ((m = re.exec(section)) !== null) {
+      const v = m[1].trim();
+      if (v) values.push(v);
+    }
+    return values;
+  };
+
+  const mainInfo = extractSection('Parcel ID') || [];
+  const districtInfo = extractSection('District') || [];
+
+  const ownerMatch = html.match(/Current Owner<\/b><\/td>[\s\S]*?<td[^>]*>([\s\S]*?)<\/td>/i);
+  const owner = ownerMatch ? ownerMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : null;
+
+  const buildingFields: Record<string, string | null> = {};
+  for (const label of ['Style:', 'Exterior:', 'Attic:', 'Stories:', 'Basement:', 'Year Built:', 'Tot Living Area:', 'Fuel:', 'Heating:']) {
+    const re = new RegExp(`${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*</td>\\s*<td[^>]*>([^<]+)`, 'i');
+    const m = html.match(re);
+    buildingFields[label.replace(':', '')] = m ? m[1].trim() : null;
+  }
+
+  const valuation: Record<string, string | null> = {};
+  for (const label of ['Land:', 'Building:', 'Total:']) {
+    const re = new RegExp(`${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*</td>\\s*<td[^>]*>([^<]+)`, 'i');
+    const m = html.match(re);
+    valuation[label.replace(':', '')] = m ? m[1].trim() : null;
+  }
+
+  const salesSection = html.indexOf('Recent Sales');
+  const sales: Array<{ bookPage: string; date: string; price: string }> = [];
+  if (salesSection > -1) {
+    const salesHtml = html.substring(salesSection, salesSection + 3000);
+    const saleRe = /class="form-input"[^>]*>([^<]*)<\/td>\s*<td[^>]*class="form-input"[^>]*>([^<]*)<\/td>\s*<td[^>]*class="form-input"[^>]*>([^<]*)/g;
+    let sm;
+    while ((sm = saleRe.exec(salesHtml)) !== null) {
+      const bp = sm[1].trim(), dt = sm[2].trim(), pr = sm[3].trim();
+      if (bp || dt || pr) sales.push({ bookPage: bp, date: dt, price: pr });
+    }
+  }
+
+  const imgMatch = html.match(/src="(images\/pictures\/[^"]+)"/i);
+  const imageUrl = imgMatch ? `https://maps.groton-ct.gov/apps/PropertyCards/${imgMatch[1]}` : null;
+
+  return {
+    parcelId: mainInfo[0] || null,
+    location: mainInfo[1] || null,
+    grandListCode: mainInfo[2] || null,
+    zoning: mainInfo[3] || null,
+    acres: mainInfo[4] || null,
+    district: districtInfo[0] || null,
+    neighborhood: districtInfo[1] || null,
+    deedBookPage: districtInfo[2] || null,
+    useCode: districtInfo[3] || null,
+    owner,
+    building: buildingFields,
+    valuation,
+    sales,
+    imageUrl,
+  };
+}
+
+async function scrapeGrotonGIS(address: string, town: string): Promise<Response> {
+  const searchTerm = normalizeGrotonAddress(address);
+  console.log(`Groton GIS: querying ArcGIS for "${searchTerm}"`);
+
+  const queryUrl = `${GROTON_ARCGIS_BASE}/query?where=PROPERTY_LOCATION+LIKE+'%25${encodeURIComponent(searchTerm)}%25'&outFields=*&f=json&resultRecordCount=10`;
+  const arcRes = await fetch(queryUrl);
+  if (!arcRes.ok) {
+    return json({ success: false, error: 'Failed to query Groton GIS service' });
+  }
+
+  const arcData = await arcRes.json();
+  const features = arcData.features || [];
+  if (features.length === 0) {
+    return json({ success: false, error: `No matching address found in Groton for "${address}"`, searchUrl: 'https://maps.groton-ct.gov' });
+  }
+
+  const match = features[0].attributes;
+  const trimId = match.TRIMID || match.FULL_PIN;
+  console.log(`Groton GIS: found TRIMID=${trimId} for "${match.PROPERTY_LOCATION}"`);
+
+  // Try multiple property card types (residential, commercial, vacant)
+  let cardHtml: string | null = null;
+  let cardUrl = '';
+  for (const base of GROTON_CARD_BASES) {
+    const url = `${base}?account_no=${trimId}`;
+    try {
+      const res = await fetch(url);
+      if (res.ok) {
+        const html = await res.text();
+        if (html.includes('Parcel ID') || html.includes('form-input')) {
+          cardHtml = html;
+          cardUrl = url;
+          break;
+        }
+      }
+    } catch { /* try next */ }
+  }
+
+  const ownerFromGis = [match.OWN1, match.OWN2].filter(Boolean).join(' ');
+  const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(ownerFromGis);
+
+  if (!cardHtml) {
+    // Return basic GIS data
+    return json({ success: true, property: {
+      address: match.PROPERTY_LOCATION || address,
+      town: "Groton",
+      owner: ownerFromGis,
+      coOwner: match.OWN2 || "",
+      ownerAddress: [match.ADDR1, match.CITYNAME, match.STATECODE, match.ZIP1].filter(Boolean).join(', '),
+      isLLC,
+      parcelId: trimId || "",
+      mblu: "", accountNumber: String(trimId || ""),
+      buildingCount: "", bookPage: "", certificate: "", instrument: "",
+      assessedValue: "", totalAppraisal: "", totalMarketValue: "", improvementsValue: "", landValue: "",
+      assessImprovements: "", assessLand: "", assessTotal: "",
+      salePrice: "", saleDate: "", lotSize: "", frontage: "", depth: "",
+      useCode: "", useDescription: "", zoning: "", neighborhood: "",
+      totalMarketLand: "", landAppraisedValue: "",
+      yearBuilt: "", buildingStyle: "", model: "", stories: "",
+      livingArea: "", replacementCost: "", buildingPercentGood: "", occupancy: "",
+      totalRooms: "", bedrooms: "", totalBaths: "", halfBaths: "",
+      totalXtraFixtures: "", bathStyle: "", kitchenStyle: "", interiorCondition: "",
+      finBsmntArea: "", finBsmntQual: "", grade: "", exteriorWall: "",
+      roofStructure: "", roofCover: "", interiorWall: "", flooring: "",
+      heating: "", heatingFuel: "", cooling: "", buildingPhoto: "",
+      garage: "", pool: "", fireplace: "", foundation: "", taxAmount: "",
+      ownershipHistory: [], subAreas: [], valuationHistory: [],
+      propertyCardUrl: 'https://maps.groton-ct.gov',
+      llcDetails: undefined as any,
+    }});
+  }
+
+  // Parse the property card HTML
+  const parsed = parseGrotonPropertyCard(cardHtml);
+  console.log(`Groton GIS: parsed card for ${parsed.location || address}`);
+
+  const cardOwner = parsed.owner || ownerFromGis;
+  const cardIsLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(cardOwner);
+
+  return json({ success: true, property: {
+    address: parsed.location || match.PROPERTY_LOCATION || address,
+    town: "Groton",
+    owner: cardOwner,
+    coOwner: match.OWN2 || "",
+    ownerAddress: [match.ADDR1, match.CITYNAME, match.STATECODE, match.ZIP1].filter(Boolean).join(', '),
+    isLLC: cardIsLLC,
+    parcelId: parsed.parcelId || trimId || "",
+    mblu: "", accountNumber: String(trimId || ""),
+    buildingCount: "", bookPage: parsed.deedBookPage || "",
+    certificate: "", instrument: "",
+    assessedValue: parsed.valuation.Total || "",
+    totalAppraisal: parsed.valuation.Total || "",
+    totalMarketValue: "",
+    improvementsValue: parsed.valuation.Building || "",
+    landValue: parsed.valuation.Land || "",
+    assessImprovements: parsed.valuation.Building || "",
+    assessLand: parsed.valuation.Land || "",
+    assessTotal: parsed.valuation.Total || "",
+    salePrice: parsed.sales[0]?.price || "",
+    saleDate: parsed.sales[0]?.date || "",
+    lotSize: parsed.acres || "",
+    frontage: "", depth: "",
+    useCode: parsed.useCode || "",
+    useDescription: parsed.grandListCode || "",
+    zoning: parsed.zoning || "",
+    neighborhood: parsed.neighborhood || "",
+    totalMarketLand: "", landAppraisedValue: "",
+    yearBuilt: parsed.building['Year Built'] || "",
+    buildingStyle: parsed.building['Style'] || "",
+    model: "", stories: parsed.building['Stories'] || "",
+    livingArea: parsed.building['Tot Living Area'] || "",
+    replacementCost: "", buildingPercentGood: "", occupancy: "",
+    totalRooms: "", bedrooms: "", totalBaths: "", halfBaths: "",
+    totalXtraFixtures: "", bathStyle: "", kitchenStyle: "", interiorCondition: "",
+    finBsmntArea: "", finBsmntQual: "", grade: "",
+    exteriorWall: parsed.building['Exterior'] || "",
+    roofStructure: "", roofCover: "",
+    interiorWall: "", flooring: "",
+    heating: parsed.building['Heating'] || "",
+    heatingFuel: parsed.building['Fuel'] || "",
+    cooling: "",
+    buildingPhoto: parsed.imageUrl || "",
+    garage: "", pool: "", fireplace: "",
+    foundation: parsed.building['Basement'] || "",
+    taxAmount: "",
+    ownershipHistory: [],
+    subAreas: [],
+    valuationHistory: [],
+    propertyCardUrl: cardUrl,
+    llcDetails: undefined as any,
+  }});
+}
+
 // ========== VGS SCRAPING ==========
 async function scrapeVGS(apiKey: string, slug: string, address: string, town: string) {
   const searchUrl = `https://gis.vgsi.com/${slug}/Search.aspx`;
