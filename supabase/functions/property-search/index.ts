@@ -336,7 +336,7 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
   const streetFull = addrParts?.[2] || address;
   const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, '').trim();
 
-  // Strategy 1: Search for VGS page (many CT towns are on VGS even if not in our DB)
+  // Strategy 1: Search official assessor sources
   const searchQueries = [
     `"${houseNum} ${streetBase}" "${town}" CT property vgsi.com`,
     `"${houseNum} ${streetBase}" "${town}" CT assessor property owner`,
@@ -359,8 +359,8 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
 
       for (const result of results) {
         const url = result.url || '';
-        // Skip real estate listing sites and generic aggregators
-        if (/zillow|realtor|trulia|redfin|homes\.com|movoto|homesnap|countyoffice|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch/i.test(url)) continue;
+        // Skip pure listing sites
+        if (/zillow|trulia|redfin|homes\.com|movoto|homesnap|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch/i.test(url)) continue;
 
         // VGS parcel page
         if (url.includes('vgsi.com') && url.includes('Parcel.aspx')) {
@@ -405,6 +405,40 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
         }
       }
     } catch (e) { console.error("Universal search error:", e); }
+  }
+
+  // Strategy 2: Try public aggregator sites as last resort
+  const aggregatorQueries = [
+    `"${address}" "${town}" CT property owner site:realtor.com`,
+    `"${houseNum} ${streetBase}" "${town}" CT property site:countyoffice.org`,
+  ];
+
+  for (const query of aggregatorQueries) {
+    try {
+      console.log(`Aggregator search: ${query}`);
+      const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, limit: 3, scrapeOptions: { formats: ['markdown'] } }),
+      });
+      if (!searchResp.ok) continue;
+      const searchData = await searchResp.json();
+      const results = searchData.data || [];
+
+      for (const result of results) {
+        const md = result.markdown || result.content || '';
+        if (md.length < 200) continue;
+        console.log(`Aggregator: trying ${result.url}`);
+        const extracted = extractAggregatorData(md, address, town);
+        if (extracted) {
+          extracted.propertyCardUrl = result.url;
+          if (extracted.isLLC) {
+            try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+          }
+          return json({ success: true, property: extracted });
+        }
+      }
+    } catch (e) { console.error("Aggregator search error:", e); }
   }
 
   // Final fallback URL
