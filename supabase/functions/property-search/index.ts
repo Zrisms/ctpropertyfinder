@@ -1530,7 +1530,7 @@ async function firecrawlScrape(apiKey: string, url: string): Promise<string | nu
     const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: true, waitFor: 5000 }),
+      body: JSON.stringify({ url, formats: ['markdown'], onlyMainContent: true, waitFor: 2000 }),
     });
     if (!resp.ok) { console.error(`Firecrawl ${resp.status}`); return null; }
     const data = await resp.json();
