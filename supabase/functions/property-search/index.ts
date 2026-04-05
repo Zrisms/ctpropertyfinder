@@ -431,7 +431,93 @@ async function scrapeQDS(apiKey: string, baseUrl: string, address: string, town:
   try {
     console.log(`Scraping QDS for ${town}: ${baseUrl}`);
 
-    // Strategy 1: Try Firecrawl web search
+    // QDS sites like Avon have a structured URL pattern:
+    // 1. Streets listing: /propcards/streets.html
+    // 2. Street page: /propcards/Xstreet.html (where X = first letter)
+    // 3. Property card: /propcards/N/admin/aNNNNNNNNN.html
+    // 4. PDF field card: /cards/N/NNNNNNNNN.pdf
+
+    // Parse the address to get street name and house number
+    const addrMatch = address.match(/^(\d+)\s+(.+)$/i);
+    if (!addrMatch) {
+      return json({ success: false, error: `Could not parse address: ${address}`, searchUrl: baseUrl });
+    }
+
+    const houseNum = addrMatch[1];
+    const streetName = addrMatch[2].toUpperCase().replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE)\.?$/i, '').trim();
+    const fullStreetName = addrMatch[2].toUpperCase();
+    const firstLetter = streetName.charAt(0).toLowerCase();
+
+    console.log(`Looking for house #${houseNum} on ${fullStreetName} (first letter: ${firstLetter})`);
+
+    // Step 1: Fetch the street listing page to find our street
+    const streetPageUrl = `${baseUrl.replace(/\/$/, '')}/propcards/${firstLetter.toUpperCase()}street.html`;
+    const streetPageMd = await firecrawlScrape(apiKey, streetPageUrl);
+
+    if (!streetPageMd) {
+      // Try alternate format
+      const altUrl = `${baseUrl.replace(/\/$/, '')}/propcards/streets.html#${firstLetter}`;
+      return await scrapeQDSViaSearch(apiKey, baseUrl, address, town);
+    }
+
+    // Step 2: Find the matching property link in the street page
+    // Links look like: [00100 FISHER DRIVE](http://assessor.avonct.gov/propcards/2/admin/a228010001.html)
+    const paddedNum = houseNum.padStart(5, '0');
+    const lines = streetPageMd.split('\n');
+
+    let propertyUrl = '';
+    for (const line of lines) {
+      // Match on padded house number + street name
+      const linkMatch = line.match(/\[(\d+)\s+([^\]]+)\]\((https?:\/\/[^\)]+)\)/i);
+      if (linkMatch) {
+        const linkNum = linkMatch[1].replace(/^0+/, '');
+        const linkStreet = linkMatch[2].trim().toUpperCase();
+        if (linkNum === houseNum && (linkStreet.includes(streetName) || fullStreetName.includes(linkStreet.replace(/\s+\d+$/, '').trim()))) {
+          propertyUrl = linkMatch[3];
+          console.log(`Found QDS property: ${propertyUrl}`);
+          break;
+        }
+      }
+    }
+
+    if (!propertyUrl) {
+      console.log(`Property not found in street listing, trying search fallback`);
+      return await scrapeQDSViaSearch(apiKey, baseUrl, address, town);
+    }
+
+    // Step 3: Fetch the property card page
+    const cardMd = await firecrawlScrape(apiKey, propertyUrl);
+    if (!cardMd) {
+      return json({ success: false, error: `Could not load property card for ${address}`, searchUrl: propertyUrl });
+    }
+
+    // Step 4: Extract data from QDS card format
+    const extracted = extractQDSCardData(cardMd, address, town);
+    if (extracted) {
+      extracted.propertyCardUrl = propertyUrl;
+
+      // Try to find the PDF field card URL
+      const pdfMatch = cardMd.match(/\[Street Card\]\((https?:\/\/[^\)]+\.pdf)\)/i);
+      if (pdfMatch) {
+        extracted.fieldCardPdfUrl = pdfMatch[1];
+      }
+
+      if (extracted.isLLC) {
+        try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+      }
+      return json({ success: true, property: extracted });
+    }
+
+    return json({ success: false, error: `Could not extract property data from ${town} assessor.`, searchUrl: propertyUrl });
+  } catch (e) {
+    console.error("QDS error:", e);
+    return json({ success: false, error: `Error searching ${town} assessor database.`, searchUrl: baseUrl });
+  }
+}
+
+async function scrapeQDSViaSearch(apiKey: string, baseUrl: string, address: string, town: string) {
+  // Fallback: try Firecrawl web search
+  try {
     const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -443,11 +529,10 @@ async function scrapeQDS(apiKey: string, baseUrl: string, address: string, town:
       const results = data.data || [];
       for (const result of results) {
         const url = result.url || '';
-        if (url.includes('assessor') && url.includes(town.toLowerCase().replace(/\s+/g, ''))) {
-          console.log(`Found QDS property: ${url}`);
+        if (url.includes('assessor') || url.includes('propcard')) {
           const md = await firecrawlScrape(apiKey, url);
           if (md) {
-            const extracted = extractQDSData(md, address, town);
+            const extracted = extractQDSCardData(md, address, town) || extractGenericPropertyData(md, address, town);
             if (extracted) {
               extracted.propertyCardUrl = url;
               if (extracted.isLLC) {
@@ -459,65 +544,9 @@ async function scrapeQDS(apiKey: string, baseUrl: string, address: string, town:
         }
       }
     }
+  } catch (e) { console.error("QDS search fallback error:", e); }
 
-    // Strategy 2: Try scraping the QDS site with Firecrawl actions
-    const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: baseUrl,
-        formats: ['markdown', 'html', 'links'],
-        waitFor: 3000,
-        actions: [
-          { type: 'wait', milliseconds: 2000 },
-          // QDS sites typically have "Search by Property Address" link
-          { type: 'click', selector: 'a[href*="Address"], a[href*="address"], a:contains("Address")' },
-          { type: 'wait', milliseconds: 2000 },
-          { type: 'click', selector: 'input[name*="addr"], input[name*="Addr"], input[name*="street"], input[type="text"]' },
-          { type: 'write', text: address },
-          { type: 'click', selector: 'input[type="submit"], button[type="submit"], input[value="Search"], input[value="Go"]' },
-          { type: 'wait', milliseconds: 5000 },
-        ],
-      }),
-    });
-
-    if (resp.ok) {
-      const data = await resp.json();
-      const markdown = data.data?.markdown || data.markdown || '';
-      const html = data.data?.html || data.html || '';
-
-      // Look for a link to a property detail page
-      const detailMatch = html.match(/href="([^"]*(?:detail|view|card)[^"]*)"/i);
-      if (detailMatch) {
-        const detailUrl = new URL(detailMatch[1], baseUrl).href;
-        const detailMd = await firecrawlScrape(apiKey, detailUrl);
-        if (detailMd) {
-          const extracted = extractQDSData(detailMd, address, town);
-          if (extracted) {
-            extracted.propertyCardUrl = detailUrl;
-            if (extracted.isLLC) {
-              try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
-            }
-            return json({ success: true, property: extracted });
-          }
-        }
-      }
-
-      // Try extracting from the search results page
-      if (markdown.length > 200) {
-        const extracted = extractQDSData(markdown, address, town);
-        if (extracted) {
-          extracted.propertyCardUrl = baseUrl;
-          if (extracted.isLLC) {
-            try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
-          }
-          return json({ success: true, property: extracted });
-        }
-      }
-    }
-  } catch (e) { console.error("QDS error:", e); }
-
-  return json({ success: false, error: `Could not find property in ${town}. Try searching the assessor database directly.`, searchUrl: baseUrl });
+  return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
 }
 
 // ========== ACT DATA SCOUT SCRAPING ==========
