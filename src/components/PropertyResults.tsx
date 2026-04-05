@@ -181,19 +181,23 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
               <p className="apple-section-title mb-3">Principals / Agents</p>
               <div className="space-y-2">
                 {data.llcDetails.principals.map((p, i) => (
-                  <div key={i} className="glass rounded-xl px-4 py-3 space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-foreground">{p.name}</p>
-                      {p.title && <span className="text-[9px] px-2 py-0.5 rounded-full bg-primary/15 text-primary font-semibold uppercase tracking-wide">{p.title}</span>}
-                    </div>
-                    {p.address && (
-                      <div><p className="text-[10px] text-muted-foreground/60 font-medium uppercase tracking-wider">Business Address</p><p className="text-xs text-foreground">{p.address}</p></div>
-                    )}
-                    {p.residentialAddress && p.residentialAddress !== p.address && (
-                      <div><p className="text-[10px] text-muted-foreground/60 font-medium uppercase tracking-wider">Residence Address</p><p className="text-xs text-foreground">{p.residentialAddress}</p></div>
-                    )}
-                  </div>
-                ))}
+                   <div key={i} className="glass rounded-xl px-4 py-3 space-y-2">
+                     <div className="flex items-center gap-2">
+                       <p className="text-sm font-medium text-foreground">{p.name}</p>
+                       {p.title && <span className="text-[9px] px-2 py-0.5 rounded-full bg-primary/15 text-primary font-semibold uppercase tracking-wide">{p.title}</span>}
+                     </div>
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                       <div>
+                         <p className="text-[10px] text-muted-foreground/60 font-medium uppercase tracking-wider">Principal Business Address</p>
+                         <p className="text-xs text-foreground">{p.address || 'N/A'}</p>
+                       </div>
+                       <div>
+                         <p className="text-[10px] text-muted-foreground/60 font-medium uppercase tracking-wider">Principal Residence Address</p>
+                         <p className="text-xs text-foreground">{p.residentialAddress || p.address || 'N/A'}</p>
+                       </div>
+                     </div>
+                   </div>
+                 ))}
               </div>
             </div>
           )}
