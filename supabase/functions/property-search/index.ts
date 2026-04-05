@@ -352,135 +352,101 @@ Deno.serve(async (req) => {
 async function scrapeAvonGIS(apiKey: string, address: string, town: string): Promise<Response> {
   const AVON_GIS_URL = 'https://hostingdata4.tighebond.com/arcgis/rest/services/AvonCT/AvonDynamic_Public/MapServer/0/query';
 
-  // Parse house number and street from address
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
   const houseNum = addrParts?.[1] || '';
   const streetName = addrParts?.[2] || address;
-
-  // Try multiple query strategies to find the property
-  const queries = [
-    // Exact match: "23 ARLINGTON DRIVE"
-    `CAMA.STRLOC = '${address}'`,
-    // Like match with original form
-    `CAMA.STRLOC LIKE '${houseNum} ${streetName}%'`,
-  ];
-
-  // Also try address variants (e.g., DR vs DRIVE, LN vs LANE)
-  const variants = getAddressVariants(address);
-  for (const v of variants) {
-    if (v !== address) {
-      queries.push(`CAMA.STRLOC LIKE '${v}%'`);
-    }
-  }
-
-  // Also try just house number + base street name (without suffix)
   const streetBase = streetName.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, '').trim();
-  if (streetBase !== streetName) {
-    queries.push(`CAMA.STRLOC LIKE '${houseNum} ${streetBase}%'`);
+
+  // Build all query variants
+  const whereSet = new Set<string>();
+  whereSet.add(`CAMA.STRLOC = '${address}'`);
+  whereSet.add(`CAMA.STRLOC LIKE '${houseNum} ${streetName}%'`);
+  if (streetBase !== streetName) whereSet.add(`CAMA.STRLOC LIKE '${houseNum} ${streetBase}%'`);
+  for (const v of getAddressVariants(address)) {
+    if (v !== address) whereSet.add(`CAMA.STRLOC LIKE '${v}%'`);
   }
 
-  console.log(`Avon GIS: searching for ${address}`);
+  console.log(`Avon GIS: searching for ${address} with ${whereSet.size} parallel queries`);
 
-  for (const where of queries) {
-    try {
-      const params = new URLSearchParams({
-        where,
-        outFields: '*',
-        f: 'json',
-        returnGeometry: 'false',
-      });
+  // Fire ALL queries in parallel
+  const queryFn = async (where: string) => {
+    const params = new URLSearchParams({ where, outFields: '*', f: 'json', returnGeometry: 'false' });
+    const resp = await fetch(`${AVON_GIS_URL}?${params.toString()}`);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return (data.features?.length > 0) ? data.features : null;
+  };
 
-      console.log(`Avon GIS query: ${where}`);
-      const resp = await fetch(`${AVON_GIS_URL}?${params.toString()}`);
-      if (!resp.ok) continue;
-
-      const data = await resp.json();
-      const features = data.features || [];
-      if (features.length === 0) continue;
-
-      // Find best match — prefer exact house number match
-      let best = features[0];
-      for (const f of features) {
-        const strloc = (f.attributes['CAMA.STRLOC'] || '').toUpperCase();
-        if (strloc.startsWith(houseNum + ' ')) {
-          best = f;
-          break;
-        }
-      }
-
-      const a = best.attributes;
-      const owner = (a['CAMA.NAME'] || '').trim();
-      const coOwner = (a['CAMA.NDNA'] || '').trim();
-      if (!owner || owner.length < 3) continue;
-
-      console.log(`Avon GIS found: ${owner}, ${a['CAMA.STRLOC']}`);
-
-      const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner + ' ' + coOwner);
-      const recordCardUrl = a['CAMA.RecordCard'] || '';
-
-      // Try to scrape the record card for additional building details
-      let extraData: any = {};
-      if (recordCardUrl && apiKey) {
-        try {
-          extraData = await scrapeAvonRecordCard(apiKey, recordCardUrl);
-        } catch (e) {
-          console.log(`Record card scrape failed: ${e}`);
-        }
-      }
-
-      const prop: any = {
-        address: a['CAMA.STRLOC'] || address,
-        town: 'Avon',
-        owner,
-        coOwner,
-        ownerAddress: [a['CAMA.STREET'], a['CAMA.CITY'], a['CAMA.ST'], (a['CAMA.ZIP'] || '').trim()].filter(Boolean).join(', '),
-        isLLC,
-        parcelId: a['CAMA.GISPin'] || a['Cadastral_MDB_Parcels.PARNO'] || '',
-        mblu: '', accountNumber: String(a['CAMA.ACCT'] || ''), buildingCount: '', bookPage: `Vol ${a['CAMA.VOL'] || ''} / Pg ${a['CAMA.PAGE'] || ''}`,
-        certificate: '', instrument: '',
-        assessedValue: extraData.assessedValue || '', totalAppraisal: extraData.totalAppraisal || '',
-        totalMarketValue: extraData.totalMarketValue || '', improvementsValue: extraData.improvementsValue || '',
-        landValue: extraData.landValue || '',
-        assessImprovements: '', assessLand: '', assessTotal: extraData.assessedValue || '',
-        salePrice: a['CAMA.SALEPR'] ? `$${Number(a['CAMA.SALEPR']).toLocaleString()}` : '',
-        saleDate: a['CAMA.SDATE'] || '',
-        lotSize: extraData.lotSize || '', frontage: '', depth: '',
-        useCode: '', useDescription: a['Cadastral_MDB_Parcels.PROPERTYTYPE'] || extraData.propertyType || '',
-        zoning: a['CAMA.ZONE'] || '', neighborhood: '',
-        totalMarketLand: '', landAppraisedValue: '',
-        yearBuilt: extraData.yearBuilt || '', buildingStyle: extraData.buildingStyle || '', model: '',
-        stories: extraData.stories || '',
-        livingArea: extraData.livingArea || '', replacementCost: '', buildingPercentGood: '',
-        occupancy: '', totalRooms: extraData.totalRooms || '', bedrooms: extraData.bedrooms || '',
-        totalBaths: extraData.totalBaths || '', halfBaths: extraData.halfBaths || '',
-        totalXtraFixtures: '', bathStyle: '', kitchenStyle: '',
-        interiorCondition: '', finBsmntArea: extraData.basement || '', finBsmntQual: '', grade: extraData.grade || '',
-        exteriorWall: extraData.exteriorWall || '', roofStructure: extraData.roofStructure || '',
-        roofCover: extraData.roofCover || '',
-        interiorWall: '', flooring: extraData.flooring || '',
-        heating: extraData.heating || '', heatingFuel: extraData.heatingFuel || '',
-        cooling: extraData.cooling || '',
-        buildingPhoto: '',
-        garage: extraData.garage || '', pool: extraData.pool || '',
-        fireplace: extraData.fireplace || '', foundation: extraData.foundation || '',
-        taxAmount: extraData.taxAmount || '',
-        water: a['CAMA.WATER'] || '', sewer: a['CAMA.SEWER'] || '', gas: a['CAMA.GAS'] || '',
-        ownershipHistory: [], subAreas: [], valuationHistory: [],
-        propertyCardUrl: recordCardUrl || `https://hosting.tighebond.com/AvonCT_public/index.html`,
-        llcDetails: undefined as any,
-      };
-
-      if (isLLC) {
-        try { prop.llcDetails = await searchCTBusiness(apiKey, owner); } catch (e) { console.error("LLC:", e); }
-      }
-
-      return json({ success: true, property: prop });
-    } catch (e) {
-      console.error(`Avon GIS query error:`, e);
+  const results = await Promise.all([...whereSet].map(queryFn));
+  
+  // Find first result with features
+  let best: any = null;
+  for (const features of results) {
+    if (!features) continue;
+    for (const f of features) {
+      const strloc = (f.attributes['CAMA.STRLOC'] || '').toUpperCase();
+      if (strloc.startsWith(houseNum + ' ')) { best = f; break; }
     }
+    if (best) break;
+    best = features[0]; // fallback to first result
+    break;
   }
 
-  return json({ success: false, error: `Could not find "${address}" in Avon GIS database.`, searchUrl: 'https://hosting.tighebond.com/AvonCT_public/index.html' });
+  if (!best) {
+    return json({ success: false, error: `Could not find "${address}" in Avon GIS database.`, searchUrl: 'https://hosting.tighebond.com/AvonCT_public/index.html' });
+  }
+
+  const a = best.attributes;
+  const owner = (a['CAMA.NAME'] || '').trim();
+  const coOwner = (a['CAMA.NDNA'] || '').trim();
+  if (!owner || owner.length < 3) {
+    return json({ success: false, error: `Could not find "${address}" in Avon GIS database.`, searchUrl: 'https://hosting.tighebond.com/AvonCT_public/index.html' });
+  }
+
+  console.log(`Avon GIS found: ${owner}, ${a['CAMA.STRLOC']}`);
+  const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner + ' ' + coOwner);
+  const recordCardUrl = a['CAMA.RecordCard'] || '';
+
+  const prop: any = {
+    address: a['CAMA.STRLOC'] || address, town: 'Avon', owner, coOwner,
+    ownerAddress: [a['CAMA.STREET'], a['CAMA.CITY'], a['CAMA.ST'], (a['CAMA.ZIP'] || '').trim()].filter(Boolean).join(', '),
+    isLLC,
+    parcelId: a['CAMA.GISPin'] || a['Cadastral_MDB_Parcels.PARNO'] || '',
+    mblu:'', accountNumber: String(a['CAMA.ACCT'] || ''), buildingCount:'',
+    bookPage: `Vol ${a['CAMA.VOL'] || ''} / Pg ${a['CAMA.PAGE'] || ''}`,
+    certificate:'', instrument:'',
+    assessedValue: a['CAMA.TOTVAL'] || '', totalAppraisal: a['CAMA.APRTOT'] || '',
+    totalMarketValue:'', improvementsValue: a['CAMA.BLDVAL'] || '', landValue: a['CAMA.LNDVAL'] || '',
+    assessImprovements:'', assessLand:'', assessTotal: a['CAMA.TOTVAL'] || '',
+    salePrice: a['CAMA.SALEPR'] ? `$${Number(a['CAMA.SALEPR']).toLocaleString()}` : '',
+    saleDate: a['CAMA.SDATE'] || '', lotSize: a['CAMA.ACRES'] || '', frontage:'', depth:'',
+    useCode:'', useDescription: a['Cadastral_MDB_Parcels.PROPERTYTYPE'] || '',
+    zoning: a['CAMA.ZONE'] || '', neighborhood:'',
+    totalMarketLand:'', landAppraisedValue:'',
+    yearBuilt: a['CAMA.YRBUILT'] || '', buildingStyle: a['CAMA.STYLE'] || '', model:'',
+    stories: a['CAMA.STORIES'] || '', livingArea: a['CAMA.SFLA'] || '',
+    replacementCost:'', buildingPercentGood:'', occupancy:'',
+    totalRooms: a['CAMA.RMTOT'] || '', bedrooms: a['CAMA.RMBED'] || '',
+    totalBaths: a['CAMA.FIXBATH'] || '', halfBaths: a['CAMA.FIXHALF'] || '',
+    totalXtraFixtures:'', bathStyle:'', kitchenStyle:'',
+    interiorCondition:'', finBsmntArea:'', finBsmntQual:'', grade: a['CAMA.GRADE'] || '',
+    exteriorWall: a['CAMA.EXTWALL'] || '', roofStructure: a['CAMA.ROOFTYP'] || '',
+    roofCover: a['CAMA.ROOFMAT'] || '', interiorWall:'', flooring:'',
+    heating: a['CAMA.HEAT'] || '', heatingFuel: a['CAMA.FUEL'] || '',
+    cooling: a['CAMA.COOL'] || '', buildingPhoto:'',
+    garage:'', pool:'', fireplace: a['CAMA.FIREPLC'] || '', foundation:'',
+    taxAmount:'',
+    water: a['CAMA.WATER'] || '', sewer: a['CAMA.SEWER'] || '', gas: a['CAMA.GAS'] || '',
+    ownershipHistory:[], subAreas:[], valuationHistory:[],
+    propertyCardUrl: recordCardUrl || 'https://hosting.tighebond.com/AvonCT_public/index.html',
+    llcDetails: undefined as any,
+  };
+
+  if (isLLC) {
+    try { prop.llcDetails = await searchCTBusiness(apiKey, owner); } catch (e) { console.error("LLC:", e); }
+  }
+
+  return json({ success: true, property: prop });
 }
 
 // Try to scrape the Avon assessor record card for building details

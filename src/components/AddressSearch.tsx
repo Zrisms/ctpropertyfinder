@@ -38,9 +38,9 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
         if (!error && data?.suggestions) setAddressSuggestions(data.suggestions);
       } catch {}
       finally { setIsFetching(false); }
-    }, 800);
+    }, 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [address, town]);
+  }, [address]);
 
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); if (address.trim() && town.trim()) onSearch(address.trim(), town.trim()); };
 
