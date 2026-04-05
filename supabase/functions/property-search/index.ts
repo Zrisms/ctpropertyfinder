@@ -551,7 +551,202 @@ async function scrapeQDSViaSearch(apiKey: string, baseUrl: string, address: stri
   return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
 }
 
-// ========== ACT DATA SCOUT SCRAPING ==========
+// ========== PROPERTY RECORD CARDS (PRC) SCRAPING ==========
+async function scrapePRC(apiKey: string, townCode: string, address: string, town: string) {
+  const baseUrl = `https://www.propertyrecordcards.com/SearchMaster.aspx?towncode=${townCode}`;
+  try {
+    console.log(`Scraping PRC for ${town} (code=${townCode}): ${baseUrl}`);
+
+    // Strategy 1: Use Firecrawl actions to search on PRC
+    const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: baseUrl,
+        formats: ['markdown', 'html', 'links'],
+        waitFor: 3000,
+        actions: [
+          { type: 'wait', milliseconds: 2000 },
+          { type: 'click', selector: '#ContentPlaceHolder1_txtLocation' },
+          { type: 'write', text: address.replace(/\b(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL)\b/gi, '').trim() },
+          { type: 'click', selector: '#ContentPlaceHolder1_btnSearch' },
+          { type: 'wait', milliseconds: 5000 },
+        ],
+      }),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      const markdown = data.data?.markdown || data.markdown || '';
+      const html = data.data?.html || data.html || '';
+      const links = data.data?.links || data.links || [];
+
+      // Check if we got search results with links to PropertyResults
+      const uniqueIdMatch = (html + markdown + JSON.stringify(links)).match(/PropertyResults\.aspx\?towncode=\d+&uniqueid=(\d+)/i)
+        || (html + markdown + JSON.stringify(links)).match(/PrintPage\.aspx\?towncode=\d+&uniqueid=(\d+)/i);
+
+      if (uniqueIdMatch) {
+        const detailUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${uniqueIdMatch[1]}`;
+        console.log(`Found PRC detail page: ${detailUrl}`);
+        const detailMd = await firecrawlScrape(apiKey, detailUrl);
+        if (detailMd) {
+          const extracted = extractPRCData(detailMd, address, town);
+          if (extracted) {
+            extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uniqueIdMatch[1]}`;
+            if (extracted.isLLC) {
+              try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+            }
+            return json({ success: true, property: extracted });
+          }
+        }
+      }
+
+      // Maybe we landed directly on results - try extracting from markdown
+      if (markdown.includes('Parcel Information') || markdown.includes('Owner')) {
+        const extracted = extractPRCData(markdown, address, town);
+        if (extracted) {
+          extracted.propertyCardUrl = baseUrl;
+          if (extracted.isLLC) {
+            try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+          }
+          return json({ success: true, property: extracted });
+        }
+      }
+    }
+
+    // Strategy 2: Firecrawl web search
+    try {
+      const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: `"${address}" "${town}" CT propertyrecordcards.com`, limit: 5 }),
+      });
+      if (searchResp.ok) {
+        const sData = await searchResp.json();
+        const results = sData.data || [];
+        for (const result of results) {
+          const url = result.url || '';
+          const uidMatch = url.match(/uniqueid=(\d+)/i);
+          if (uidMatch && url.includes('propertyrecordcards.com')) {
+            const detailUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${uidMatch[1]}`;
+            const detailMd = await firecrawlScrape(apiKey, detailUrl);
+            if (detailMd) {
+              const extracted = extractPRCData(detailMd, address, town);
+              if (extracted) {
+                extracted.propertyCardUrl = url;
+                if (extracted.isLLC) {
+                  try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+                }
+                return json({ success: true, property: extracted });
+              }
+            }
+          }
+        }
+      }
+    } catch (e) { console.error("PRC search fallback error:", e); }
+  } catch (e) { console.error("PRC error:", e); }
+
+  return json({ success: false, error: `Could not find property in ${town}. Try the Property Record Cards database directly.`, searchUrl: baseUrl });
+}
+
+function extractPRCData(markdown: string, address: string, town: string) {
+  const text = markdown;
+
+  const tableGrab = (label: string): string => {
+    const re = new RegExp(`\\|\\s*${label}:?\\s*\\|\\s*([^|]*?)\\s*\\|`, 'i');
+    const m = text.match(re);
+    return m?.[1]?.trim() || '';
+  };
+
+  let propertyAddress = tableGrab('Location') || address;
+  const propertyUse = tableGrab('Property Use');
+  const primaryUse = tableGrab('Primary Use');
+  const uniqueId = tableGrab('Unique ID');
+  const mapBlockLot = tableGrab('Map Block Lot');
+  const acres = tableGrab('Acres');
+  const zone = tableGrab('Zone');
+  const volPage = tableGrab('Volume / Page') || tableGrab('Volume\\/Page');
+
+  // Value Information
+  let landAppraised = '', landAssessed = '', bldgAppraised = '', bldgAssessed = '', totalAppraised = '', totalAssessed = '';
+  const landRow = text.match(/\|\s*Land\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*\|/i);
+  if (landRow) { landAppraised = landRow[1]; landAssessed = landRow[2]; }
+  const bldgRow = text.match(/\|\s*Buildings?\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*\|/i);
+  if (bldgRow) { bldgAppraised = bldgRow[1]; bldgAssessed = bldgRow[2]; }
+  const totalRow = text.match(/\|\s*Total\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*\|/i);
+  if (totalRow) { totalAppraised = totalRow[1]; totalAssessed = totalRow[2]; }
+
+  // Owner from "Owner's Data" cell (uses <br> separators)
+  let owner = '', coOwner = '', ownerAddress = '';
+  const ownerMatch = text.match(/Owner'?s?\s*Data[\s|]*\n?\|?\s*([^|]+)\|/i);
+  if (ownerMatch) {
+    const parts = ownerMatch[1].replace(/<br\/?>/gi, '\n').split('\n').map(s => s.trim()).filter(Boolean);
+    owner = parts[0] || '';
+    if (parts.length > 2) {
+      coOwner = parts[1] || '';
+      ownerAddress = parts.slice(2).join(', ');
+    } else {
+      ownerAddress = parts.slice(1).join(', ');
+    }
+  }
+
+  // Building info
+  const yearBuilt = tableGrab('Year Built');
+  const livingArea = tableGrab('Living Area') || tableGrab('Total Living Area');
+  const buildingStyle = tableGrab('Style') || tableGrab('Building Style');
+  const stories = tableGrab('Stories');
+  const totalRooms = tableGrab('Total Rooms') || tableGrab('Rooms');
+  const bedrooms = tableGrab('Bedrooms') || tableGrab('Total Bedrooms');
+  const totalBaths = tableGrab('Full Baths') || tableGrab('Total Baths');
+  const halfBaths = tableGrab('Half Baths');
+  const exteriorWall = tableGrab('Exterior Wall') || tableGrab('Ext Wall');
+  const roofCover = tableGrab('Roof Cover') || tableGrab('Roof');
+  const heating = tableGrab('Heat Type') || tableGrab('Heating');
+  const heatingFuel = tableGrab('Heat Fuel') || tableGrab('Fuel');
+  const cooling = tableGrab('AC Type') || tableGrab('Air Conditioning');
+  const grade = tableGrab('Grade');
+  const condition = tableGrab('Condition') || tableGrab('Overall Condition');
+
+  // Sales
+  const salePrice = tableGrab('Sale Price');
+  const saleDate = tableGrab('Sale Date');
+
+  owner = owner.replace(/[*#\[\]|]/g, '').replace(/\s+/g, ' ').trim();
+  if (!owner || owner.length < 2) return null;
+
+  const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b|\bLP\b|\bL\.P\b/i.test(owner);
+  const fmt$ = (v: string) => v ? `$${v}` : '';
+
+  return {
+    address: propertyAddress, town, owner, coOwner, ownerAddress, isLLC,
+    parcelId: uniqueId, mblu: mapBlockLot, accountNumber: '', buildingCount: '',
+    bookPage: volPage, certificate: '', instrument: '',
+    assessedValue: fmt$(totalAssessed), totalAppraisal: fmt$(totalAppraised),
+    totalMarketValue: fmt$(totalAppraised), improvementsValue: fmt$(bldgAppraised),
+    landValue: fmt$(landAppraised), assessImprovements: fmt$(bldgAssessed),
+    assessLand: fmt$(landAssessed), assessTotal: fmt$(totalAssessed),
+    salePrice, saleDate,
+    lotSize: acres ? `${acres} acres` : '', frontage: '', depth: '',
+    useCode: '', useDescription: propertyUse || primaryUse, zoning: zone, neighborhood: '',
+    totalMarketLand: '', landAppraisedValue: fmt$(landAppraised),
+    yearBuilt, buildingStyle, model: '', stories,
+    livingArea: livingArea ? `${livingArea} sq ft` : '',
+    replacementCost: '', buildingPercentGood: '',
+    occupancy: '', totalRooms, bedrooms, totalBaths, halfBaths,
+    totalXtraFixtures: '', bathStyle: '', kitchenStyle: '',
+    interiorCondition: condition, finBsmntArea: '', finBsmntQual: '', grade,
+    exteriorWall, roofStructure: '', roofCover,
+    interiorWall: '', flooring: '',
+    heating, heatingFuel, cooling,
+    buildingPhoto: '',
+    ownershipHistory: [] as { owner: string; salePrice: string; bookPage: string; saleDate: string }[],
+    subAreas: [] as { code: string; description: string; grossArea: string; livingArea: string }[],
+    valuationHistory: [] as { year: string; improvements: string; land: string; total: string }[],
+    propertyCardUrl: '', llcDetails: undefined as any,
+  };
+}
+
+
 async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: string, town: string) {
   try {
     console.log(`Scraping ACT Data Scout for ${town}: ${baseUrl}`);
