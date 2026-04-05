@@ -1599,7 +1599,7 @@ async function scrapeGenericWithFallback(apiKey: string, baseUrl: string, addres
       for (const result of results) {
         const url = result.url || '';
         // Skip generic listing sites
-        if (/zillow|realtor|trulia|redfin|homes\.com|movoto|homesnap|countyoffice|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch/i.test(url)) continue;
+        if (BLOCKED_SITES.test(url)) continue;
         if (url.includes(town.toLowerCase().replace(/\s+/g, '')) || url.includes('assessor') || url.includes('property')) {
           const md = await firecrawlScrape(apiKey, url);
           if (md && md.length > 300) {
