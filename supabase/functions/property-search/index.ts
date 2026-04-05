@@ -826,7 +826,7 @@ async function scrapeGrotonGIS(address: string, town: string): Promise<Response>
   let features = arcData.features || [];
   
   // Filter to exact house number match
-  if (houseNum && features.length > 1) {
+  if (houseNum && features.length >= 1) {
     const exact = features.filter((f: any) => {
       const loc = (f.attributes.PROPERTY_LOCATION || '').trim();
       return loc.startsWith(houseNum + ' ');
