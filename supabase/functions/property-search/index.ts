@@ -768,30 +768,30 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
   // For autocomplete, just use number + street base (e.g., "25 arlington")
   const searchText = houseNum ? `${houseNum} ${streetBase.toLowerCase()}` : address.toLowerCase();
 
-  // Strategy 1: Firecrawl web search to find the property page
+  // Strategy 1: Firecrawl web search to find the property page (parallel queries)
   try {
     console.log(`Searching for property via Firecrawl search`);
-    // Try with full address first, then street base
-    for (const query of [
+    const queries = [
       `"${address}" "${town}" CT property vgsi.com`,
       `"${houseNum} ${streetBase}" "${town}" CT vgsi.com`,
-      `${houseNum} ${streetBase} ${town} CT property assessor`,
-    ]) {
+    ];
+    const searchResults = await Promise.all(queries.map(async (query) => {
       const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, limit: 5 }),
       });
+      if (!searchResp.ok) return [];
+      const searchData = await searchResp.json();
+      return searchData.data || [];
+    }));
 
-      if (searchResp.ok) {
-        const searchData = await searchResp.json();
-        const results = searchData.data || [];
-        for (const result of results) {
-          const url = result.url || '';
-          if (url.includes('vgsi.com') && url.includes('Parcel.aspx')) {
-            console.log(`Found VGS parcel page: ${url}`);
-            return await scrapePropertyDetail(apiKey, url, address, town);
-          }
+    for (const results of searchResults) {
+      for (const result of results) {
+        const url = result.url || '';
+        if (url.includes('vgsi.com') && url.includes('Parcel.aspx')) {
+          console.log(`Found VGS parcel page: ${url}`);
+          return await scrapePropertyDetail(apiKey, url, address, town);
         }
       }
     }
