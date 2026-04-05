@@ -701,7 +701,6 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
   const searchUrl = `https://gis.vgsi.com/${slug}/Search.aspx`;
   const baseUrl = `https://gis.vgsi.com/${slug}`;
 
-  // Parse address to get number and street base (without suffix like DR/RD/ST)
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
   const houseNum = addrParts?.[1] || "";
   const streetFull = addrParts?.[2] || address;
@@ -712,9 +711,7 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
     )
     .trim();
 
-  // Generate all address variants (PARK → PK, PRK, etc.)
   const allVariants = getAddressVariants(address);
-  // Also generate search texts for VGS autocomplete (number + street variants)
   const searchTexts = new Set<string>();
   searchTexts.add(houseNum ? `${houseNum} ${streetBase.toLowerCase()}` : address.toLowerCase());
   for (const v of allVariants) {
@@ -724,7 +721,6 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
 
   console.log(`VGS: ${allVariants.length} address variants, ${searchTexts.size} search texts`);
 
-  // Use Firecrawl actions on VGS search page — try each search text variant
   const searchTextArr = [...searchTexts];
   for (const searchText of searchTextArr) {
     try {
@@ -757,6 +753,68 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
         const html = data.data?.html || data.html || "";
         const finalUrl = data.data?.metadata?.url || data.data?.metadata?.sourceURL || "";
 
+        // Extract PID from URL or page content
+        let pid = "";
+        const pidFromUrl = finalUrl.match(/[Pp]id=(\d+)/);
+        if (pidFromUrl) pid = pidFromUrl[1];
+        if (!pid) {
+          const pidFromContent = (html + markdown).match(/Parcel\.aspx\?[Pp]id=(\d+)/);
+          if (pidFromContent) pid = pidFromContent[1];
+        }
+
+        if (pid) {
+          // STEP 1: Scrape the full property card print view (shows ALL data on one page)
+          const printUrl = `${baseUrl}/Parcel.aspx?Pid=${pid}`;
+          console.log(`VGS: Scraping full property detail: ${printUrl}`);
+          const fullMd = await firecrawlScrapeFullPage(apiKey, printUrl);
+          if (fullMd) {
+            const extracted = extractVGSData(fullMd, address, town);
+            if (extracted && extracted.owner && !extracted.owner.includes("Enter an")) {
+              extracted.propertyCardUrl = printUrl;
+
+              // STEP 2: Try to get additional data from tabbed sections
+              // Scrape with tab clicks to get Building, Land, and Ownership History tabs
+              try {
+                const tabResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    url: printUrl,
+                    formats: ["markdown"],
+                    onlyMainContent: false,
+                    waitFor: 1000,
+                    actions: [
+                      { type: "wait", milliseconds: 500 },
+                      // Click "Building" tab
+                      { type: "click", selector: 'a[href*="Building"], a:has-text("Building Information"), #tabBuilding, [data-tab="building"]' },
+                      { type: "wait", milliseconds: 1500 },
+                    ],
+                  }),
+                });
+                if (tabResp.ok) {
+                  const tabData = await tabResp.json();
+                  const tabMd = tabData.data?.markdown || tabData.markdown || "";
+                  if (tabMd.length > 200) {
+                    // Merge any missing building fields from tab data
+                    const tabExtracted = extractVGSData(tabMd, address, town);
+                    if (tabExtracted) {
+                      mergeVGSFields(extracted, tabExtracted);
+                    }
+                  }
+                }
+              } catch (e) {
+                console.log("Tab scraping optional, continuing:", e);
+              }
+
+              return json({ success: true, property: extracted });
+            }
+          }
+
+          // Fallback: scrape the basic detail page
+          return await scrapePropertyDetail(apiKey, `${baseUrl}/Parcel.aspx?Pid=${pid}`, address, town);
+        }
+
+        // If we landed on the detail page directly
         if (
           finalUrl.includes("Parcel.aspx") ||
           markdown.includes("Parcel ID") ||
@@ -765,14 +823,8 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
           const extracted = extractVGSData(markdown, address, town);
           if (extracted && extracted.owner && !extracted.owner.includes("Enter an")) {
             extracted.propertyCardUrl = finalUrl;
-// LLC lookup removed - handled separately by frontend
             return json({ success: true, property: extracted });
           }
-        }
-
-        const pidMatch = (html + markdown).match(/Parcel\.aspx\?[Pp]id=(\d+)/);
-        if (pidMatch) {
-          return await scrapePropertyDetail(apiKey, `${baseUrl}/Parcel.aspx?Pid=${pidMatch[1]}`, address, town);
         }
       }
     } catch (e) {
@@ -785,6 +837,30 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
     error: `Could not find property in ${town}. Try the assessor database directly.`,
     searchUrl,
   });
+}
+
+// Merge missing fields from secondary VGS scrape into primary
+function mergeVGSFields(primary: any, secondary: any) {
+  const fields = [
+    'yearBuilt', 'buildingStyle', 'stories', 'livingArea', 'totalRooms', 'bedrooms',
+    'totalBaths', 'halfBaths', 'grade', 'exteriorWall', 'roofStructure', 'roofCover',
+    'interiorWall', 'flooring', 'heating', 'heatingFuel', 'cooling', 'garage', 'pool',
+    'fireplace', 'foundation', 'finBsmntArea', 'finBsmntQual', 'bathStyle', 'kitchenStyle',
+    'interiorCondition', 'replacementCost', 'buildingPercentGood', 'buildingPhoto',
+    'occupancy', 'totalXtraFixtures', 'model',
+  ];
+  for (const f of fields) {
+    if (!primary[f] && secondary[f]) primary[f] = secondary[f];
+  }
+  if ((!primary.subAreas || primary.subAreas.length === 0) && secondary.subAreas?.length > 0) {
+    primary.subAreas = secondary.subAreas;
+  }
+  if ((!primary.ownershipHistory || primary.ownershipHistory.length === 0) && secondary.ownershipHistory?.length > 0) {
+    primary.ownershipHistory = secondary.ownershipHistory;
+  }
+  if ((!primary.valuationHistory || primary.valuationHistory.length === 0) && secondary.valuationHistory?.length > 0) {
+    primary.valuationHistory = secondary.valuationHistory;
+  }
 }
 
 // ========== MAPXPRESS SCRAPING ==========
@@ -1316,14 +1392,57 @@ function extractPRCData(markdown: string, address: string, town: string) {
 async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: string, town: string) {
   try {
     console.log(`Scraping ACT Data Scout for ${town}: ${baseUrl}`);
-    // Scrape the base URL directly
-    const md = await firecrawlScrape(apiKey, baseUrl);
-    if (md) {
-      const extracted = extractGenericPropertyData(md, address, town);
-      if (extracted) {
-        extracted.propertyCardUrl = baseUrl;
-// LLC lookup removed - handled separately by frontend
-        return json({ success: true, property: extracted });
+    const addrParts = address.match(/^(\d+)\s+(.+)$/i);
+    const houseNum = addrParts?.[1] || "";
+    const streetBase = (addrParts?.[2] || address)
+      .replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY)\.?$/i, "").trim();
+
+    // ACT Data Scout: use Firecrawl actions to search
+    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: baseUrl,
+        formats: ["markdown", "html", "links"],
+        onlyMainContent: false,
+        waitFor: 2000,
+        actions: [
+          { type: "wait", milliseconds: 1000 },
+          { type: "click", selector: 'input[name*="StreetNumber"], input[name*="streetNumber"], input[id*="StreetNumber"], input[placeholder*="Number"], input[placeholder*="number"]' },
+          { type: "write", text: houseNum },
+          { type: "click", selector: 'input[name*="StreetName"], input[name*="streetName"], input[id*="StreetName"], input[placeholder*="Street"], input[placeholder*="street"]' },
+          { type: "write", text: streetBase },
+          { type: "click", selector: 'button[type="submit"], input[type="submit"], button:has-text("Search"), a:has-text("Search"), input[value="Search"]' },
+          { type: "wait", milliseconds: 3000 },
+        ],
+      }),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      const markdown = data.data?.markdown || data.markdown || "";
+      const html = data.data?.html || data.html || "";
+      const links = data.data?.links || data.links || [];
+
+      if (markdown.length > 300) {
+        // Look for property detail links
+        const detailLink = links.find((l: string) => l.includes("PropertyDetail") || l.includes("parcel") || l.includes("detail"));
+        if (detailLink) {
+          console.log(`ACT: Following detail link: ${detailLink}`);
+          const detailMd = await firecrawlScrapeFullPage(apiKey, detailLink);
+          if (detailMd) {
+            const extracted = extractGenericPropertyData(detailMd, address, town);
+            if (extracted) {
+              extracted.propertyCardUrl = detailLink;
+              return json({ success: true, property: extracted });
+            }
+          }
+        }
+        const extracted = extractGenericPropertyData(markdown, address, town);
+        if (extracted) {
+          extracted.propertyCardUrl = data.data?.metadata?.url || baseUrl;
+          return json({ success: true, property: extracted });
+        }
       }
     }
   } catch (e) {
@@ -1340,12 +1459,66 @@ async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: stri
 async function scrapeIASCLT(apiKey: string, baseUrl: string, address: string, town: string) {
   try {
     console.log(`Scraping IAS-CLT for ${town}: ${baseUrl}`);
-    const md = await firecrawlScrape(apiKey, baseUrl);
+    const addrParts = address.match(/^(\d+)\s+(.+)$/i);
+    const houseNum = addrParts?.[1] || "";
+    const streetBase = (addrParts?.[2] || address)
+      .replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY)\.?$/i, "").trim();
+
+    // IAS-CLT: use Firecrawl actions to search for address
+    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: baseUrl,
+        formats: ["markdown", "html", "links"],
+        onlyMainContent: false,
+        waitFor: 2000,
+        actions: [
+          { type: "wait", milliseconds: 1000 },
+          { type: "click", selector: 'input[name*="addr"], input[name*="street"], input[id*="txtStreet"], input[id*="txtAddress"], input[type="text"]' },
+          { type: "write", text: `${houseNum} ${streetBase}` },
+          { type: "click", selector: 'input[type="submit"], button[type="submit"], input[value="Search"], input[value="Go"], button:has-text("Search")' },
+          { type: "wait", milliseconds: 3000 },
+        ],
+      }),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      const markdown = data.data?.markdown || data.markdown || "";
+      const links = data.data?.links || data.links || [];
+      const finalUrl = data.data?.metadata?.url || "";
+
+      if (markdown.length > 300) {
+        // Check for property detail links
+        const detailLinks = links.filter((l: string) =>
+          l.includes("parcel") || l.includes("detail") || l.includes("property") || l.includes("account")
+        );
+        for (const link of detailLinks.slice(0, 3)) {
+          console.log(`IAS: Following detail link: ${link}`);
+          const detailMd = await firecrawlScrapeFullPage(apiKey, link);
+          if (detailMd && detailMd.length > 300) {
+            const extracted = extractGenericPropertyData(detailMd, address, town);
+            if (extracted) {
+              extracted.propertyCardUrl = link;
+              return json({ success: true, property: extracted });
+            }
+          }
+        }
+        const extracted = extractGenericPropertyData(markdown, address, town);
+        if (extracted) {
+          extracted.propertyCardUrl = finalUrl || baseUrl;
+          return json({ success: true, property: extracted });
+        }
+      }
+    }
+
+    // Fallback: simple scrape
+    const md = await firecrawlScrapeFullPage(apiKey, baseUrl);
     if (md) {
       const extracted = extractGenericPropertyData(md, address, town);
       if (extracted) {
         extracted.propertyCardUrl = baseUrl;
-// LLC lookup removed - handled separately by frontend
         return json({ success: true, property: extracted });
       }
     }
@@ -1415,12 +1588,11 @@ async function scrapeGenericWithFallback(
 // ========== SHARED HELPERS ==========
 async function scrapePropertyDetail(apiKey: string, url: string, address: string, town: string) {
   console.log(`Scraping property detail: ${url}`);
-  const detailMd = await firecrawlScrape(apiKey, url);
+  const detailMd = await firecrawlScrapeFullPage(apiKey, url);
   if (detailMd) {
     const extracted = extractVGSData(detailMd, address, town);
     if (extracted && extracted.owner && !extracted.owner.includes("Enter an")) {
       extracted.propertyCardUrl = url;
-      // LLC lookup removed - handled separately by frontend
       return json({ success: true, property: extracted });
     }
   }
@@ -1443,6 +1615,27 @@ async function firecrawlScrape(apiKey: string, url: string): Promise<string | nu
     return data.data?.markdown || data.markdown || null;
   } catch (e) {
     console.error("Firecrawl fetch error:", e);
+    return null;
+  }
+}
+
+// Full page scrape (includes headers, sidebars, all content — better for property detail pages)
+async function firecrawlScrapeFullPage(apiKey: string, url: string): Promise<string | null> {
+  console.log(`Firecrawl full-page scraping: ${url}`);
+  try {
+    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ url, formats: ["markdown"], onlyMainContent: false, waitFor: 3000 }),
+    });
+    if (!resp.ok) {
+      console.error(`Firecrawl full-page ${resp.status}`);
+      return null;
+    }
+    const data = await resp.json();
+    return data.data?.markdown || data.markdown || null;
+  } catch (e) {
+    console.error("Firecrawl full-page fetch error:", e);
     return null;
   }
 }
@@ -1588,6 +1781,13 @@ function extractVGSData(markdown: string, address: string, town: string) {
   const finBsmntQual = tableGrab("Fin Bsmnt Qual");
   const nbhdCode = tableGrab("NBHD Code");
 
+  // Additional building features
+  const garage = tableGrab("Garage") || tableGrab("Garage Type") || tableGrab("Garage Capacity");
+  const pool = tableGrab("Pool") || tableGrab("Pool Type");
+  const fireplace = tableGrab("Fireplace") || tableGrab("# Fireplaces") || tableGrab("Fireplaces");
+  const foundation = tableGrab("Foundation") || tableGrab("Foundation Type");
+  const taxAmount = tableGrab("Tax Amount") || tableGrab("Total Tax") || tableGrab("Annual Tax") || dollarGrab("Tax\\s*Amount") || dollarGrab("Total\\s*Tax");
+
   const subAreas: { code: string; description: string; grossArea: string; livingArea: string }[] = [];
   const subAreaSection = text.match(/\| Code \| Description \| Gross[\s\S]*?\n([\s\S]*?)(?:\n\n|Building Sub-Areas)/i);
   if (subAreaSection) {
@@ -1693,6 +1893,11 @@ function extractVGSData(markdown: string, address: string, town: string) {
     heatingFuel: heatFuel,
     cooling: acType,
     buildingPhoto,
+    garage,
+    pool,
+    fireplace,
+    foundation,
+    taxAmount: taxAmount ? `$${taxAmount.replace(/[$]/g, "")}` : "",
     ownershipHistory,
     subAreas,
     valuationHistory,
