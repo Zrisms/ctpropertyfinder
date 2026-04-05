@@ -8,7 +8,7 @@ const ABBREVIATIONS: Record<string, string> = {
   street: 'st', road: 'rd', drive: 'dr', avenue: 'ave', lane: 'ln',
   court: 'ct', circle: 'cir', boulevard: 'blvd', place: 'pl',
   terrace: 'ter', way: 'way', trail: 'trl', highway: 'hwy',
-  parkway: 'pkwy', turnpike: 'tpke', extension: 'ext',
+  parkway: 'pkwy', turnpike: 'tpke', extension: 'ext', park: 'pk',
 };
 
 // Reverse map: ST → STREET, LN → LANE etc.
@@ -16,6 +16,52 @@ const REVERSE_ABBR: Record<string, string> = {};
 for (const [full, abbr] of Object.entries(ABBREVIATIONS)) {
   REVERSE_ABBR[abbr.toUpperCase()] = full.toUpperCase();
 }
+
+// Additional non-standard abbreviations used by some assessor databases
+const EXTRA_SUFFIX_VARIANTS: Record<string, string[]> = {
+  'PARK':      ['PK', 'PRK'],
+  'PK':        ['PARK', 'PRK'],
+  'PRK':       ['PARK', 'PK'],
+  'PARKWAY':   ['PKWY', 'PKY', 'PKWAY'],
+  'PKWY':      ['PARKWAY', 'PKY', 'PKWAY'],
+  'DRIVE':     ['DR', 'DRV', 'DRIV'],
+  'DR':        ['DRIVE', 'DRV'],
+  'STREET':    ['ST', 'STR'],
+  'ST':        ['STREET', 'STR'],
+  'ROAD':      ['RD'],
+  'RD':        ['ROAD'],
+  'AVENUE':    ['AVE', 'AV'],
+  'AVE':       ['AVENUE', 'AV'],
+  'LANE':      ['LN', 'LA'],
+  'LN':        ['LANE', 'LA'],
+  'COURT':     ['CT', 'CRT'],
+  'CT':        ['COURT', 'CRT'],
+  'CIRCLE':    ['CIR', 'CRCL', 'CIRCL'],
+  'CIR':       ['CIRCLE', 'CRCL'],
+  'BOULEVARD': ['BLVD', 'BLV'],
+  'BLVD':      ['BOULEVARD', 'BLV'],
+  'PLACE':     ['PL', 'PLC'],
+  'PL':        ['PLACE', 'PLC'],
+  'TERRACE':   ['TER', 'TERR', 'TRCE'],
+  'TER':       ['TERRACE', 'TERR', 'TRCE'],
+  'TRAIL':     ['TRL', 'TR'],
+  'TRL':       ['TRAIL', 'TR'],
+  'HIGHWAY':   ['HWY', 'HIWAY'],
+  'HWY':       ['HIGHWAY'],
+  'TURNPIKE':  ['TPKE', 'TPK'],
+  'TPKE':      ['TURNPIKE', 'TPK'],
+  'EXTENSION': ['EXT', 'EXTN'],
+  'EXT':       ['EXTENSION', 'EXTN'],
+  'WAY':       ['WY'],
+  'WY':        ['WAY'],
+  'RIDGE':     ['RDG', 'RDGE'],
+  'RDG':       ['RIDGE'],
+  'CROSSING':  ['XING', 'XNG'],
+  'XING':      ['CROSSING'],
+  'PATH':      ['PTH'],
+  'PTH':       ['PATH'],
+  'RUN':       ['RN'],
+};
 
 function normalizeAddress(address: string): string {
   let normalized = address.trim();
@@ -26,25 +72,33 @@ function normalizeAddress(address: string): string {
   return normalized;
 }
 
-// Get alternate address forms for matching (e.g., "8 LINDEN LN" → also try "8 LINDEN LANE")
+// Get ALL alternate address forms for matching
+// e.g., "34 OWENOKE PARK" → ["34 OWENOKE PARK", "34 OWENOKE PK", "34 OWENOKE PRK"]
 function getAddressVariants(address: string): string[] {
-  const variants = [address];
+  const variants = new Set<string>([address]);
   const upper = address.toUpperCase();
-  // Try expanding abbreviation to full word
+
+  // Standard expansions/abbreviations
   for (const [abbr, full] of Object.entries(REVERSE_ABBR)) {
     const re = new RegExp(`\\b${abbr}\\.?\\b`, 'g');
-    if (re.test(upper)) {
-      variants.push(upper.replace(re, full));
-    }
+    if (re.test(upper)) variants.add(upper.replace(re, full));
   }
-  // Try abbreviating full word
   for (const [full, abbr] of Object.entries(ABBREVIATIONS)) {
     const re = new RegExp(`\\b${full.toUpperCase()}\\b`, 'g');
+    if (re.test(upper)) variants.add(upper.replace(re, abbr.toUpperCase()));
+  }
+
+  // Extra suffix variants (PK ↔ PARK ↔ PRK, etc.)
+  for (const [suffix, alts] of Object.entries(EXTRA_SUFFIX_VARIANTS)) {
+    const re = new RegExp(`\\b${suffix}\\b`, 'g');
     if (re.test(upper)) {
-      variants.push(upper.replace(re, abbr.toUpperCase()));
+      for (const alt of alts) {
+        variants.add(upper.replace(re, alt));
+      }
     }
   }
-  return [...new Set(variants)];
+
+  return [...variants];
 }
 
 // Verify extracted address matches the searched address (prevent wrong-property results)
@@ -355,7 +409,7 @@ async function scrapeAvonGIS(apiKey: string, address: string, town: string): Pro
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
   const houseNum = addrParts?.[1] || '';
   const streetName = addrParts?.[2] || address;
-  const streetBase = streetName.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, '').trim();
+  const streetBase = streetName.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|PARK|TERRACE|TRAIL|HIGHWAY)\.?$/i, '').trim();
 
   // Build all query variants
   const whereSet = new Set<string>();
@@ -485,7 +539,7 @@ async function smartExtractProperty(apiKey: string, address: string, town: strin
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
   const houseNum = addrParts?.[1] || '';
   const streetFull = addrParts?.[2] || address;
-  const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, '').trim();
+  const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK)\.?$/i, '').trim();
 
   console.log(`Smart extract: ${address}, ${town}`);
   const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
@@ -571,16 +625,22 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
   const houseNum = addrParts?.[1] || '';
   const streetFull = addrParts?.[2] || address;
-  const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, '').trim();
+  const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK)\.?$/i, '').trim();
 
-  // Strategy 1: Search official assessor sources (parallel queries)
-  const searchQueries = [
-    `"${houseNum} ${streetBase}" "${town}" CT property vgsi.com OR propertyrecordcards.com`,
-    `"${houseNum} ${streetBase}" "${town}" CT assessor property owner assessment`,
-  ];
+  // Strategy 1: Search official assessor sources (parallel queries with variants)
+  const variants = getAddressVariants(address);
+  const searchQueries = new Set<string>();
+  searchQueries.add(`"${houseNum} ${streetBase}" "${town}" CT property vgsi.com OR propertyrecordcards.com`);
+  searchQueries.add(`"${houseNum} ${streetBase}" "${town}" CT assessor property owner assessment`);
+  // Add variant-based queries
+  for (const v of variants.slice(0, 3)) {
+    const vParts = v.match(/^(\d+)\s+(.+)$/i);
+    if (vParts) searchQueries.add(`"${vParts[1]} ${vParts[2]}" "${town}" CT property`);
+  }
+  const uniqueSearchQueries = [...searchQueries].slice(0, 4);
 
   // Fire both searches in parallel
-  const allSearchResults = await Promise.all(searchQueries.map(async (query) => {
+  const allSearchResults = await Promise.all(uniqueSearchQueries.map(async (query) => {
     try {
       console.log(`Universal search: ${query}`);
       const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
@@ -762,18 +822,33 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
   const houseNum = addrParts?.[1] || '';
   const streetFull = addrParts?.[2] || address;
-  const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, '').trim();
-  // For autocomplete, just use number + street base (e.g., "25 arlington")
-  const searchText = houseNum ? `${houseNum} ${streetBase.toLowerCase()}` : address.toLowerCase();
+  const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, '').trim();
 
-  // Strategy 1: Firecrawl web search to find the property page (parallel queries)
+  // Generate all address variants (PARK → PK, PRK, etc.)
+  const allVariants = getAddressVariants(address);
+  // Also generate search texts for VGS autocomplete (number + street variants)
+  const searchTexts = new Set<string>();
+  searchTexts.add(houseNum ? `${houseNum} ${streetBase.toLowerCase()}` : address.toLowerCase());
+  for (const v of allVariants) {
+    const parts = v.match(/^(\d+)\s+(.+)$/i);
+    if (parts) searchTexts.add(`${parts[1]} ${parts[2].toLowerCase()}`);
+  }
+
+  console.log(`VGS: ${allVariants.length} address variants, ${searchTexts.size} search texts`);
+
+  // Strategy 1: Firecrawl web search to find the property page (parallel queries with variants)
   try {
     console.log(`Searching for property via Firecrawl search`);
-    const queries = [
-      `"${address}" "${town}" CT property vgsi.com`,
-      `"${houseNum} ${streetBase}" "${town}" CT vgsi.com`,
-    ];
-    const searchResults = await Promise.all(queries.map(async (query) => {
+    const queries = new Set<string>();
+    queries.add(`"${address}" "${town}" CT property vgsi.com`);
+    queries.add(`"${houseNum} ${streetBase}" "${town}" CT vgsi.com`);
+    // Add variant-based queries (limit to 4 total to stay fast)
+    for (const v of allVariants.slice(0, 3)) {
+      queries.add(`"${v}" "${town}" CT vgsi.com`);
+    }
+    const uniqueQueries = [...queries].slice(0, 4);
+
+    const searchResults = await Promise.all(uniqueQueries.map(async (query) => {
       const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -795,50 +870,53 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
     }
   } catch (e) { console.error("Search error:", e); }
 
-  // Strategy 2: Use Firecrawl actions on VGS search page with autocomplete
-  try {
-    console.log(`Trying VGS with actions (search: "${searchText}")`);
-    const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: searchUrl,
-        formats: ['markdown', 'links', 'html'],
-        waitFor: 1500,
-        actions: [
-          { type: 'wait', milliseconds: 500 },
-          { type: 'click', selector: 'input[id*="TextBox_Search"], input[id*="txtSearch"], input[type="text"]' },
-          { type: 'write', text: searchText },
-          { type: 'wait', milliseconds: 2500 },
-          { type: 'click', selector: '.ui-autocomplete li:first-child a, .ui-menu-item:first-child a, ul.ui-autocomplete li:first-child' },
-          { type: 'wait', milliseconds: 3000 },
-        ],
-      }),
-    });
+  // Strategy 2: Use Firecrawl actions on VGS search page — try each search text variant
+  const searchTextArr = [...searchTexts];
+  for (const searchText of searchTextArr) {
+    try {
+      console.log(`Trying VGS with actions (search: "${searchText}")`);
+      const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: searchUrl,
+          formats: ['markdown', 'links', 'html'],
+          waitFor: 1500,
+          actions: [
+            { type: 'wait', milliseconds: 500 },
+            { type: 'click', selector: 'input[id*="TextBox_Search"], input[id*="txtSearch"], input[type="text"]' },
+            { type: 'write', text: searchText },
+            { type: 'wait', milliseconds: 2500 },
+            { type: 'click', selector: '.ui-autocomplete li:first-child a, .ui-menu-item:first-child a, ul.ui-autocomplete li:first-child' },
+            { type: 'wait', milliseconds: 3000 },
+          ],
+        }),
+      });
 
-    if (resp.ok) {
-      const data = await resp.json();
-      const markdown = data.data?.markdown || data.markdown || '';
-      const html = data.data?.html || data.html || '';
-      const finalUrl = data.data?.metadata?.url || data.data?.metadata?.sourceURL || '';
+      if (resp.ok) {
+        const data = await resp.json();
+        const markdown = data.data?.markdown || data.markdown || '';
+        const html = data.data?.html || data.html || '';
+        const finalUrl = data.data?.metadata?.url || data.data?.metadata?.sourceURL || '';
 
-      if (finalUrl.includes('Parcel.aspx') || markdown.includes('Parcel ID') || markdown.includes('Total Market Value')) {
-        const extracted = extractVGSData(markdown, address, town);
-        if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
-          extracted.propertyCardUrl = finalUrl;
-          if (extracted.isLLC) {
-            try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+        if (finalUrl.includes('Parcel.aspx') || markdown.includes('Parcel ID') || markdown.includes('Total Market Value')) {
+          const extracted = extractVGSData(markdown, address, town);
+          if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
+            extracted.propertyCardUrl = finalUrl;
+            if (extracted.isLLC) {
+              try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+            }
+            return json({ success: true, property: extracted });
           }
-          return json({ success: true, property: extracted });
+        }
+
+        const pidMatch = (html + markdown).match(/Parcel\.aspx\?[Pp]id=(\d+)/);
+        if (pidMatch) {
+          return await scrapePropertyDetail(apiKey, `${baseUrl}/Parcel.aspx?Pid=${pidMatch[1]}`, address, town);
         }
       }
-
-      const pidMatch = (html + markdown).match(/Parcel\.aspx\?[Pp]id=(\d+)/);
-      if (pidMatch) {
-        return await scrapePropertyDetail(apiKey, `${baseUrl}/Parcel.aspx?Pid=${pidMatch[1]}`, address, town);
-      }
-    }
-  } catch (e) { console.error("Actions error:", e); }
+    } catch (e) { console.error("Actions error:", e); }
+  }
 
   return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl });
 }
@@ -1080,7 +1158,7 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
     matchedStreet = streets.find(s => s === streetPart) || '';
     // Try without suffix abbreviation
     if (!matchedStreet) {
-      const streetBase = streetPart.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, '').trim();
+      const streetBase = streetPart.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK)\.?$/i, '').trim();
       matchedStreet = streets.find(s => s.startsWith(streetBase)) || '';
     }
     // Try contains match
