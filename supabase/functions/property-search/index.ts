@@ -348,6 +348,172 @@ Deno.serve(async (req) => {
   }
 });
 
+// ========== AVON GIS (Tighebond ArcGIS REST API) ==========
+async function scrapeAvonGIS(apiKey: string, address: string, town: string): Promise<Response> {
+  const AVON_GIS_URL = 'https://hostingdata4.tighebond.com/arcgis/rest/services/AvonCT/AvonDynamic_Public/MapServer/0/query';
+
+  // Parse house number and street from address
+  const addrParts = address.match(/^(\d+)\s+(.+)$/i);
+  const houseNum = addrParts?.[1] || '';
+  const streetName = addrParts?.[2] || address;
+
+  // Try multiple query strategies to find the property
+  const queries = [
+    // Exact match: "23 ARLINGTON DRIVE"
+    `CAMA.STRLOC = '${address}'`,
+    // Like match with original form
+    `CAMA.STRLOC LIKE '${houseNum} ${streetName}%'`,
+  ];
+
+  // Also try address variants (e.g., DR vs DRIVE, LN vs LANE)
+  const variants = getAddressVariants(address);
+  for (const v of variants) {
+    if (v !== address) {
+      queries.push(`CAMA.STRLOC LIKE '${v}%'`);
+    }
+  }
+
+  // Also try just house number + base street name (without suffix)
+  const streetBase = streetName.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, '').trim();
+  if (streetBase !== streetName) {
+    queries.push(`CAMA.STRLOC LIKE '${houseNum} ${streetBase}%'`);
+  }
+
+  console.log(`Avon GIS: searching for ${address}`);
+
+  for (const where of queries) {
+    try {
+      const params = new URLSearchParams({
+        where,
+        outFields: '*',
+        f: 'json',
+        returnGeometry: 'false',
+      });
+
+      console.log(`Avon GIS query: ${where}`);
+      const resp = await fetch(`${AVON_GIS_URL}?${params.toString()}`);
+      if (!resp.ok) continue;
+
+      const data = await resp.json();
+      const features = data.features || [];
+      if (features.length === 0) continue;
+
+      // Find best match — prefer exact house number match
+      let best = features[0];
+      for (const f of features) {
+        const strloc = (f.attributes['CAMA.STRLOC'] || '').toUpperCase();
+        if (strloc.startsWith(houseNum + ' ')) {
+          best = f;
+          break;
+        }
+      }
+
+      const a = best.attributes;
+      const owner = (a['CAMA.NAME'] || '').trim();
+      const coOwner = (a['CAMA.NDNA'] || '').trim();
+      if (!owner || owner.length < 3) continue;
+
+      console.log(`Avon GIS found: ${owner}, ${a['CAMA.STRLOC']}`);
+
+      const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner + ' ' + coOwner);
+      const recordCardUrl = a['CAMA.RecordCard'] || '';
+
+      // Try to scrape the record card for additional building details
+      let extraData: any = {};
+      if (recordCardUrl && apiKey) {
+        try {
+          extraData = await scrapeAvonRecordCard(apiKey, recordCardUrl);
+        } catch (e) {
+          console.log(`Record card scrape failed: ${e}`);
+        }
+      }
+
+      const prop: any = {
+        address: a['CAMA.STRLOC'] || address,
+        town: 'Avon',
+        owner,
+        coOwner,
+        ownerAddress: [a['CAMA.STREET'], a['CAMA.CITY'], a['CAMA.ST'], (a['CAMA.ZIP'] || '').trim()].filter(Boolean).join(', '),
+        isLLC,
+        parcelId: a['CAMA.GISPin'] || a['Cadastral_MDB_Parcels.PARNO'] || '',
+        mblu: '', accountNumber: String(a['CAMA.ACCT'] || ''), buildingCount: '', bookPage: `Vol ${a['CAMA.VOL'] || ''} / Pg ${a['CAMA.PAGE'] || ''}`,
+        certificate: '', instrument: '',
+        assessedValue: extraData.assessedValue || '', totalAppraisal: extraData.totalAppraisal || '',
+        totalMarketValue: extraData.totalMarketValue || '', improvementsValue: extraData.improvementsValue || '',
+        landValue: extraData.landValue || '',
+        assessImprovements: '', assessLand: '', assessTotal: extraData.assessedValue || '',
+        salePrice: a['CAMA.SALEPR'] ? `$${Number(a['CAMA.SALEPR']).toLocaleString()}` : '',
+        saleDate: a['CAMA.SDATE'] || '',
+        lotSize: extraData.lotSize || '', frontage: '', depth: '',
+        useCode: '', useDescription: a['Cadastral_MDB_Parcels.PROPERTYTYPE'] || extraData.propertyType || '',
+        zoning: a['CAMA.ZONE'] || '', neighborhood: '',
+        totalMarketLand: '', landAppraisedValue: '',
+        yearBuilt: extraData.yearBuilt || '', buildingStyle: extraData.buildingStyle || '', model: '',
+        stories: extraData.stories || '',
+        livingArea: extraData.livingArea || '', replacementCost: '', buildingPercentGood: '',
+        occupancy: '', totalRooms: extraData.totalRooms || '', bedrooms: extraData.bedrooms || '',
+        totalBaths: extraData.totalBaths || '', halfBaths: extraData.halfBaths || '',
+        totalXtraFixtures: '', bathStyle: '', kitchenStyle: '',
+        interiorCondition: '', finBsmntArea: extraData.basement || '', finBsmntQual: '', grade: extraData.grade || '',
+        exteriorWall: extraData.exteriorWall || '', roofStructure: extraData.roofStructure || '',
+        roofCover: extraData.roofCover || '',
+        interiorWall: '', flooring: extraData.flooring || '',
+        heating: extraData.heating || '', heatingFuel: extraData.heatingFuel || '',
+        cooling: extraData.cooling || '',
+        buildingPhoto: '',
+        garage: extraData.garage || '', pool: extraData.pool || '',
+        fireplace: extraData.fireplace || '', foundation: extraData.foundation || '',
+        taxAmount: extraData.taxAmount || '',
+        water: a['CAMA.WATER'] || '', sewer: a['CAMA.SEWER'] || '', gas: a['CAMA.GAS'] || '',
+        ownershipHistory: [], subAreas: [], valuationHistory: [],
+        propertyCardUrl: recordCardUrl || `https://hosting.tighebond.com/AvonCT_public/index.html`,
+        llcDetails: undefined as any,
+      };
+
+      if (isLLC) {
+        try { prop.llcDetails = await searchCTBusiness(apiKey, owner); } catch (e) { console.error("LLC:", e); }
+      }
+
+      return json({ success: true, property: prop });
+    } catch (e) {
+      console.error(`Avon GIS query error:`, e);
+    }
+  }
+
+  return json({ success: false, error: `Could not find "${address}" in Avon GIS database.`, searchUrl: 'https://hosting.tighebond.com/AvonCT_public/index.html' });
+}
+
+// Try to scrape the Avon assessor record card for building details
+async function scrapeAvonRecordCard(apiKey: string, url: string): Promise<any> {
+  try {
+    const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url, formats: ['extract'],
+        extract: {
+          prompt: 'Extract all property assessment data from this Avon CT property record card.',
+          schema: { type: 'object', properties: {
+            assessedValue:{type:'string'}, totalAppraisal:{type:'string'}, totalMarketValue:{type:'string'},
+            improvementsValue:{type:'string'}, landValue:{type:'string'}, yearBuilt:{type:'string'},
+            livingArea:{type:'string'}, lotSize:{type:'string'}, bedrooms:{type:'string'},
+            totalBaths:{type:'string'}, halfBaths:{type:'string'}, totalRooms:{type:'string'},
+            stories:{type:'string'}, buildingStyle:{type:'string'}, exteriorWall:{type:'string'},
+            roofStructure:{type:'string'}, roofCover:{type:'string'}, foundation:{type:'string'},
+            heating:{type:'string'}, heatingFuel:{type:'string'}, cooling:{type:'string'},
+            flooring:{type:'string'}, garage:{type:'string'}, pool:{type:'string'},
+            fireplace:{type:'string'}, basement:{type:'string'}, grade:{type:'string'},
+            propertyType:{type:'string'}, taxAmount:{type:'string'},
+          }},
+        },
+      }),
+    });
+    if (!resp.ok) return {};
+    const ex = (await resp.json())?.data?.extract;
+    return ex || {};
+  } catch { return {}; }
+}
+
 // ========== SMART EXTRACT (for towns without dedicated scrapers) ==========
 async function smartExtractProperty(apiKey: string, address: string, town: string, fallbackUrl?: string) {
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
