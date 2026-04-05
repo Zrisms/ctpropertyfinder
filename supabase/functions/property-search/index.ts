@@ -587,18 +587,19 @@ async function scrapeAvonRecordCard(apiKey: string, url: string): Promise<any> {
 }
 
 // ========== SMART EXTRACT (for towns without dedicated scrapers) ==========
-async function smartExtractProperty(apiKey: string, address: string, town: string, fallbackUrl?: string) {
+async function smartExtractProperty(apiKey: string, address: string, lookupTown: string, fallbackUrl?: string, displayTown?: string) {
+  const town = displayTown || lookupTown;
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
   const houseNum = addrParts?.[1] || '';
   const streetFull = addrParts?.[2] || address;
   const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK)\.?$/i, '').trim();
 
-  console.log(`Smart extract: ${address}, ${town}`);
+  console.log(`Smart extract: ${address}, ${lookupTown}`);
   const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      query: `"${houseNum} ${streetBase}" "${town}" CT property owner assessment`,
+      query: `"${houseNum} ${streetBase}" "${lookupTown}" CT property owner assessment`,
       limit: 3,
     }),
   });
@@ -617,7 +618,7 @@ async function smartExtractProperty(apiKey: string, address: string, town: strin
         body: JSON.stringify({
           url, formats: ['extract'],
           extract: {
-            prompt: `Extract ALL property data for ${address}, ${town}, CT. For insurance. If unavailable return "".`,
+            prompt: `Extract ALL property data for ${address}, ${lookupTown}, CT. For insurance. If unavailable return "".`,
             schema: { type: 'object', properties: {
               owner:{type:'string'},coOwner:{type:'string'},ownerAddress:{type:'string'},
               assessedValue:{type:'string'},totalAppraisal:{type:'string'},landValue:{type:'string'},
@@ -671,8 +672,9 @@ async function smartExtractProperty(apiKey: string, address: string, town: strin
 
 // ========== UNIVERSAL FALLBACK SEARCH ==========
 // Tries multiple web search strategies to find any CT property data
-async function universalPropertySearch(apiKey: string, address: string, town: string, fallbackUrl?: string) {
-  console.log(`Universal fallback search: ${address}, ${town}, CT`);
+async function universalPropertySearch(apiKey: string, address: string, lookupTown: string, fallbackUrl?: string, displayTown?: string) {
+  const town = displayTown || lookupTown;
+  console.log(`Universal fallback search: ${address}, ${lookupTown}, CT`);
 
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
   const houseNum = addrParts?.[1] || '';
