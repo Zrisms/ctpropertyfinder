@@ -383,6 +383,37 @@ function resolveTownLookup(town: string): { lookupTown: string; config?: TownCon
   return { lookupTown: townLower, config: TOWN_DB[townLower] };
 }
 
+// ========== CT ECO STATEWIDE PARCEL API (fast ~1s lookup) ==========
+async function queryCTEcoParcel(address: string, town: string): Promise<any | null> {
+  try {
+    const CT_ECO_URL = "https://cteco.uconn.edu/ctmaps/rest/services/Parcels/Parcels/MapServer/0/query";
+    const where = `UPPER(LOCATION) LIKE '%${address.toUpperCase().replace(/'/g, "''")}%' AND UPPER(TOWN) LIKE '%${town.toUpperCase().replace(/'/g, "''")}%'`;
+    const params = new URLSearchParams({ where, outFields: "*", f: "json", returnGeometry: "false", resultRecordCount: "5" });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const resp = await fetch(`${CT_ECO_URL}?${params}`, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (!data.features?.length) return null;
+    const a = data.features[0].attributes;
+    return {
+      owner: a.OWNER1 || a.NAME || "",
+      coOwner: a.OWNER2 || "",
+      address: a.LOCATION || address,
+      parcelId: a.PARCEL_ID || a.GIS_PIN || "",
+      assessedValue: a.ASSESS_TOT || a.TOTAL_VALU || "",
+      landValue: a.LAND_VALUE || a.ASSESS_LND || "",
+      improvementsValue: a.BLDG_VALUE || a.ASSESS_IMP || "",
+      lotSize: a.ACRES || a.LOT_SIZE || "",
+      useDescription: a.USE_CODE || a.PROP_TYPE || "",
+      yearBuilt: a.YEAR_BUILT || "",
+    };
+  } catch {
+    return null; // Timeout or network error — don't block
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -407,9 +438,11 @@ Deno.serve(async (req) => {
       return json({ success: false, error: "Scraping service not configured" }, 500);
     }
 
+    // Launch CT ECO parcel lookup in parallel with the main scraper
+    const ctecoPromise = queryCTEcoParcel(normalizedAddress, lookupTown);
+
     if (!config) {
       console.log(`Town "${town}" not in DB — trying dynamic scrape`);
-      // Even without config, try a dynamic scrape approach
       const dynamicResult = await scrapeDynamic(apiKey, normalizedAddress, lookupTown, town);
       return dynamicResult;
     }
@@ -467,6 +500,18 @@ Deno.serve(async (req) => {
     try {
       const body = await result.clone().json();
       if (body.success) {
+        // Merge any CT ECO data into empty fields
+        const cteco = await ctecoPromise;
+        if (cteco && body.property) {
+          const p = body.property;
+          if (!p.owner && cteco.owner) p.owner = cteco.owner;
+          if (!p.parcelId && cteco.parcelId) p.parcelId = cteco.parcelId;
+          if (!p.assessedValue && cteco.assessedValue) p.assessedValue = `$${Number(cteco.assessedValue).toLocaleString()}`;
+          if (!p.landValue && cteco.landValue) p.landValue = `$${Number(cteco.landValue).toLocaleString()}`;
+          if (!p.improvementsValue && cteco.improvementsValue) p.improvementsValue = `$${Number(cteco.improvementsValue).toLocaleString()}`;
+          if (!p.lotSize && cteco.lotSize) p.lotSize = `${cteco.lotSize} acres`;
+          if (!p.yearBuilt && cteco.yearBuilt) p.yearBuilt = String(cteco.yearBuilt);
+        }
         if (lookupTown !== town.toLowerCase().trim() && body.property) {
           body.property.town = town;
         }
@@ -475,6 +520,35 @@ Deno.serve(async (req) => {
       console.log(`Platform ${config.platform} failed for ${town}`);
     } catch {
       console.log(`Could not parse platform response`);
+    }
+
+    // Platform failed — check if CT ECO got basic data
+    const cteco = await ctecoPromise;
+    if (cteco && cteco.owner) {
+      console.log(`CT ECO fallback: found owner ${cteco.owner}`);
+      const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(cteco.owner);
+      return json({ success: true, property: {
+        address: cteco.address || normalizedAddress, town, owner: cteco.owner, coOwner: cteco.coOwner || "",
+        ownerAddress: "", isLLC, parcelId: cteco.parcelId || "", mblu: "", accountNumber: "",
+        buildingCount: "", bookPage: "", certificate: "", instrument: "",
+        assessedValue: cteco.assessedValue ? `$${Number(cteco.assessedValue).toLocaleString()}` : "",
+        totalAppraisal: "", totalMarketValue: "",
+        improvementsValue: cteco.improvementsValue ? `$${Number(cteco.improvementsValue).toLocaleString()}` : "",
+        landValue: cteco.landValue ? `$${Number(cteco.landValue).toLocaleString()}` : "",
+        assessImprovements: "", assessLand: "", assessTotal: "",
+        salePrice: "", saleDate: "", lotSize: cteco.lotSize ? `${cteco.lotSize} acres` : "",
+        frontage: "", depth: "", useCode: "", useDescription: cteco.useDescription || "",
+        zoning: "", neighborhood: "", totalMarketLand: "", landAppraisedValue: "",
+        yearBuilt: cteco.yearBuilt ? String(cteco.yearBuilt) : "", buildingStyle: "", model: "", stories: "",
+        livingArea: "", replacementCost: "", buildingPercentGood: "", occupancy: "",
+        totalRooms: "", bedrooms: "", totalBaths: "", halfBaths: "",
+        totalXtraFixtures: "", bathStyle: "", kitchenStyle: "", interiorCondition: "",
+        finBsmntArea: "", finBsmntQual: "", grade: "", exteriorWall: "", roofStructure: "", roofCover: "",
+        interiorWall: "", flooring: "", heating: "", heatingFuel: "", cooling: "", buildingPhoto: "",
+        garage: "", pool: "", fireplace: "", foundation: "", taxAmount: "",
+        ownershipHistory: [], subAreas: [], valuationHistory: [],
+        propertyCardUrl: config.url || "", llcDetails: undefined as any,
+      }});
     }
 
     return json({
