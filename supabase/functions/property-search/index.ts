@@ -11,6 +11,12 @@ const ABBREVIATIONS: Record<string, string> = {
   parkway: 'pkwy', turnpike: 'tpke', extension: 'ext',
 };
 
+// Reverse map: ST → STREET, LN → LANE etc.
+const REVERSE_ABBR: Record<string, string> = {};
+for (const [full, abbr] of Object.entries(ABBREVIATIONS)) {
+  REVERSE_ABBR[abbr.toUpperCase()] = full.toUpperCase();
+}
+
 function normalizeAddress(address: string): string {
   let normalized = address.trim();
   for (const [full, abbr] of Object.entries(ABBREVIATIONS)) {
@@ -18,6 +24,27 @@ function normalizeAddress(address: string): string {
     normalized = normalized.replace(re, abbr.toUpperCase());
   }
   return normalized;
+}
+
+// Get alternate address forms for matching (e.g., "8 LINDEN LN" → also try "8 LINDEN LANE")
+function getAddressVariants(address: string): string[] {
+  const variants = [address];
+  const upper = address.toUpperCase();
+  // Try expanding abbreviation to full word
+  for (const [abbr, full] of Object.entries(REVERSE_ABBR)) {
+    const re = new RegExp(`\\b${abbr}\\.?\\b`, 'g');
+    if (re.test(upper)) {
+      variants.push(upper.replace(re, full));
+    }
+  }
+  // Try abbreviating full word
+  for (const [full, abbr] of Object.entries(ABBREVIATIONS)) {
+    const re = new RegExp(`\\b${full.toUpperCase()}\\b`, 'g');
+    if (re.test(upper)) {
+      variants.push(upper.replace(re, abbr.toUpperCase()));
+    }
+  }
+  return [...new Set(variants)];
 }
 
 // ========== PLATFORM TYPES ==========
