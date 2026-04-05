@@ -871,62 +871,25 @@ function mergeVGSFields(primary: any, secondary: any) {
   }
 }
 
-// ========== MAPXPRESS SCRAPING (via Firecrawl with execute_javascript) ==========
+// ========== MAPXPRESS SCRAPING ==========
 async function scrapeMapXpress(apiKey: string, baseUrl: string, address: string, town: string) {
   try {
     const addrParts = address.match(/^(\d+)\s+(.+)$/i);
     const houseNum = addrParts?.[1] || "";
     const streetFull = (addrParts?.[2] || address).toUpperCase();
+    const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|PARK|TERRACE|TRAIL|HIGHWAY)\.?$/i, "").trim();
 
-    console.log(`MapXpress: searching ${baseUrl} for #${houseNum} on ${streetFull}`);
+    console.log(`MapXpress: searching ${baseUrl} for #${houseNum} on ${streetBase}`);
 
-    // MapXpress uses portal.asp → frameset. The search form is inside a frame.
-    // portal.asp contains the actual form with:
-    //   input[name='houseno'] = text input
-    //   select[name='street'] = dropdown (must match exact value like "BREEZY KNOLL DR")
-    //   input[name='searchname'] = owner name search
-    // We use execute_javascript to set values and submit programmatically.
+    // MapXpress portal.asp has:
+    //   input[name='houseno'] - house number text input
+    //   select[name='street'] - street dropdown (leave as "All Streets")
+    //   input[name='searchname'] - owner name text input
+    //   go button (image input type)
+    // The form POSTs to PAGES/search.asp
+    // Strategy: fill house number only, leave street as "All Streets", filter results by street name
 
     const portalUrl = `${baseUrl.replace(/\/$/, "")}/portal.asp`;
-
-    // Build JS to match street from dropdown
-    const streetEscaped = streetFull.replace(/'/g, "\\'");
-    const jsCode = `
-      (function() {
-        var form = document.querySelector('form');
-        if (!form) return 'NO_FORM';
-        var houseInput = form.querySelector('input[name="houseno"]');
-        var streetSelect = form.querySelector('select[name="street"]');
-        if (!houseInput) return 'NO_HOUSE_INPUT';
-        houseInput.value = '${houseNum}';
-        if (streetSelect) {
-          var opts = streetSelect.options;
-          var matched = false;
-          var searchStr = '${streetEscaped}';
-          for (var i = 0; i < opts.length; i++) {
-            if (opts[i].value.toUpperCase() === searchStr || opts[i].value.toUpperCase().indexOf(searchStr.split(' ')[0]) === 0) {
-              if (opts[i].value.toUpperCase().indexOf(searchStr.replace(/ (ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK|PK)$/,'').trim()) >= 0) {
-                streetSelect.selectedIndex = i;
-                matched = true;
-                break;
-              }
-            }
-          }
-          if (!matched) {
-            for (var i = 0; i < opts.length; i++) {
-              var base = searchStr.replace(/ (ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK|PK|DRIVE|STREET|ROAD|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)$/i,'').trim();
-              if (opts[i].value.toUpperCase().indexOf(base) >= 0) {
-                streetSelect.selectedIndex = i;
-                matched = true;
-                break;
-              }
-            }
-          }
-        }
-        form.submit();
-        return 'SUBMITTED';
-      })()
-    `;
 
     const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
@@ -935,10 +898,15 @@ async function scrapeMapXpress(apiKey: string, baseUrl: string, address: string,
         url: portalUrl,
         formats: ["html"],
         onlyMainContent: false,
-        waitFor: 1500,
+        waitFor: 2000,
         actions: [
-          { type: "wait", milliseconds: 1000 },
-          { type: "execute_javascript", code: jsCode },
+          { type: "wait", milliseconds: 800 },
+          // Fill house number field
+          { type: "click", selector: "input[name='houseno']" },
+          { type: "write", text: houseNum },
+          { type: "wait", milliseconds: 300 },
+          // Click the Go button (image input)
+          { type: "click", selector: "input[type='image'], input[name*='go']" },
           { type: "wait", milliseconds: 3000 },
         ],
       }),
@@ -946,7 +914,6 @@ async function scrapeMapXpress(apiKey: string, baseUrl: string, address: string,
 
     if (!resp.ok) {
       console.log(`MapXpress Firecrawl failed: ${resp.status}`);
-      // Fallback: try scraping search.asp directly via Firecrawl POST simulation
       return await scrapeMapXpressFallbackDirect(apiKey, baseUrl, address, town, houseNum, streetFull);
     }
 
@@ -954,7 +921,6 @@ async function scrapeMapXpress(apiKey: string, baseUrl: string, address: string,
     const html = data.data?.html || data.html || "";
     console.log(`MapXpress response: ${html.length} chars`);
 
-    // Parse results from the search results page
     return parseMapXpressResults(apiKey, baseUrl, html, address, town, houseNum, streetFull);
   } catch (e) {
     console.error("MapXpress error:", e);
