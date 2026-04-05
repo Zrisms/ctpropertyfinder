@@ -312,107 +312,199 @@ async function firecrawlScrape(apiKey: string, url: string): Promise<string | nu
 function extractVGSData(markdown: string, address: string, town: string) {
   const text = markdown;
 
-  // Helper to extract table or inline values
-  const grab = (patterns: RegExp[]): string => {
-    for (const p of patterns) {
-      const m = text.match(p);
-      if (m && m[1]?.trim()) return m[1].trim();
-    }
-    return '';
+  // Helper: grab from table row "| Label | Value |" format
+  const tableGrab = (label: string): string => {
+    // Match "| Label | Value |" or "| Label: | Value |"
+    const re = new RegExp(`\\|\\s*${label}:?\\s*\\|\\s*([^|]*?)\\s*\\|`, 'i');
+    const m = text.match(re);
+    return m?.[1]?.trim().replace(/<br\/?>/gi, ', ') || '';
+  };
+
+  // Helper: grab inline concatenated "LabelValue" format
+  const inlineGrab = (label: string, stopWords: string[] = []): string => {
+    const stops = stopWords.length ? stopWords.join('|') : '\\n';
+    const re = new RegExp(`${label}\\s*([^\\n]+?)(?:${stops}|$)`, 'i');
+    const m = text.match(re);
+    return m?.[1]?.trim() || '';
+  };
+
+  // Helper: grab dollar value from inline format "Label$Value" or "Label$Value"
+  const dollarGrab = (label: string): string => {
+    const re = new RegExp(`${label}\\s*\\$([\\d,]+)`, 'i');
+    const m = text.match(re);
+    return m?.[1]?.trim() || '';
   };
 
   let owner = '';
   let propertyAddress = address;
 
-  // Owner
-  const tableOwner = text.match(/\|\s*Owner\s*\|\s*([^|]+)\|/i);
-  if (tableOwner) owner = tableOwner[1].trim();
+  // Owner - table format first "| Owner | NAME |"
+  owner = tableGrab('Owner');
+  // Fallback: inline "OwnerNAME" 
   if (!owner) {
-    const inlineOwner = text.match(/Owner([A-Z][A-Z\s\+\.\,\-\']+?)(?:Total|Sale|Co-Owner|$)/m);
+    const inlineOwner = text.match(/Owner([A-Z][A-Z\s\+\.\,\-\'&]+?)(?:Total|Sale|Co-Owner|Appraisal)/m);
     if (inlineOwner) owner = inlineOwner[1].trim();
   }
 
   // Co-Owner
-  const coOwner = grab([/\|\s*Co-Owner\s*\|\s*([^|]+)\|/i, /Co-Owner([A-Z][A-Z\s\+\.\,\-\']+?)(?:\n|Total)/m]);
+  const coOwner = tableGrab('Co-Owner');
 
-  // Location/Address
-  const locMatch = text.match(/Location([A-Z0-9][A-Z0-9\s]+?)(?:\n|Mblu)/i);
+  // Location - inline "Location53 ADMIRAL ST"
+  const locMatch = text.match(/Location(\d+[A-Z0-9\s]+?)(?:\n|Mblu)/i);
   if (locMatch) propertyAddress = locMatch[1].trim();
 
-  // MBLU (Map-Block-Lot-Unit)
-  const mblu = grab([/Mblu\s*\|?\s*([\w\-\/]+)/i, /Map-Block-Lot\s*\|?\s*([\w\-\/]+)/i]);
+  // MBLU - inline "Mblu282/ 0347/ 02400/ /"
+  const mbluMatch = text.match(/Mblu([\d\/\s]+?)(?:Acct|Owner|\n)/i);
+  const mblu = mbluMatch?.[1]?.trim().replace(/\s+/g, '') || '';
 
-  // Parcel ID
-  const parcelId = grab([/Parcel\s*ID\s*\|?\s*([0-9][\w\s\-]*)/i]);
+  // Account number - inline "Acct#282 0347 02400"
+  const acctMatch = text.match(/Acct#?([\d\s]+)/i);
+  const accountNumber = acctMatch?.[1]?.trim() || '';
 
-  // Book & Page (deed reference)
-  const bookPage = grab([/Book\s*&?\s*Page\s*\|?\s*([\w\-\/\s]+?)(?:\n|$)/i, /Book\/Page\s*\|?\s*([\w\-\/\s]+?)(?:\n|$)/i]);
+  // PID - inline "PID16971"
+  const pidMatch = text.match(/PID(\d+)/i);
+  const parcelId = pidMatch?.[1] || '';
+
+  // Building Count - inline "Building Count1"
+  const bldgCountMatch = text.match(/Building\s*Count\s*(\d+)/i);
+  const buildingCount = bldgCountMatch?.[1] || '';
+
+  // Owner mailing address from table "| Address | 53 ADMIRAL ST ... |"
+  const ownerAddress = tableGrab('Address');
 
   // === VALUES ===
-  const totalAssessment = grab([/Total\s*Assessment\s*\$?([\d,]+)/i, /Assessment\s*Total\s*\$?([\d,]+)/i]);
-  const totalAppraisal = grab([/Total\s*(?:Market\s*)?(?:Value|Appraisal)\s*\$?([\d,]+)/i, /Appraisal\s*\$?([\d,]+)/i]);
-  const landValue = grab([/Land\s*(?:Value|Appraisal)\s*\$?([\d,]+)/i]);
-  const buildingValue = grab([/(?:Building|Improvement)\s*(?:Value|Appraisal)\s*\$?([\d,]+)/i]);
-  const otherValue = grab([/Other\s*(?:Value|Appraisal)\s*\$?([\d,]+)/i]);
+  // Inline: "Total Market Value$168,000"
+  const totalMarketValue = dollarGrab('Total\\s*Market\\s*Value');
+  // Inline: "Appraisal$240,000"  
+  const totalAppraisal = dollarGrab('Appraisal');
 
-  // === SALE INFO ===
-  const salePrice = grab([/Sale\s*Price\s*\$?([\d,]+)/i, /Last\s*Sale\s*\$?([\d,]+)/i]);
-  const saleDate = grab([/Sale\s*Date\s*\|?\s*([\d\/\-]+)/i]);
-  const saleQualification = grab([/Qualification\s*\|?\s*([^\n|]+)/i]);
-  const grantor = grab([/Grantor\s*\|?\s*([^\n|]+)/i]);
+  // From Current Value table: "| 2025 | $192,500 | $47,500 | $240,000 |"
+  // Get the first data row from "Current Value" section
+  let improvementsValue = '', landValueCV = '', totalValueCV = '';
+  const cvMatch = text.match(/Current Value[\s\S]*?\|\s*\d{4}\s*\|\s*\$([\d,]+)\s*\|\s*\$([\d,]+)\s*\|\s*\$([\d,]+)\s*\|/i);
+  if (cvMatch) {
+    improvementsValue = cvMatch[1];
+    landValueCV = cvMatch[2];
+    totalValueCV = cvMatch[3];
+  }
 
-  // === LOT ===
-  const lotSize = grab([/Size\s*\(Acres\)\s*\|?\s*([\d\.]+)/i, /(\d+\.?\d*)\s*acres/i]);
-  const landUse = grab([/Land\s*Use\s*(?:Code\s*)?\|?\s*([^\n|]+)/i, /Use\s*Code\s*\|?\s*([^\n|]+)/i]);
-  const zoning = grab([/Zone\s*\|\s*([A-Z0-9\-]+)/i, /Zone\s+([A-Z0-9\-]+)/i]);
-  const neighborhood = grab([/Neighborhood\s*\|?\s*([^\n|]+)/i, /Nbhd\s*\|?\s*([^\n|]+)/i]);
+  // Assessment table values
+  let assessImprovements = '', assessLand = '', assessTotal = '';
+  const assessSection = text.match(/Assessment[\s\S]*?\|\s*\d{4}\s*\|\s*\$([\d,]+)\s*\|\s*\$([\d,]+)\s*\|\s*\$([\d,]+)\s*\|/i);
+  if (assessSection) {
+    assessImprovements = assessSection[1];
+    assessLand = assessSection[2];
+    assessTotal = assessSection[3];
+  }
 
-  // === BUILDING ===
-  const yearBuilt = grab([/Year\s*Built:?\s*\|?\s*(1[89]\d{2}|20[0-2]\d)/i]);
-  const buildingStyle = grab([/Style\s*\|?\s*([^\n|]+)/i, /Building\s*Style\s*\|?\s*([^\n|]+)/i]);
-  const stories = grab([/Stories\s*\|?\s*([\d\.]+)/i, /(?:Num|#)\s*Stories\s*\|?\s*([\d\.]+)/i]);
-  const livingArea = grab([/Living\s*Area\s*\|?\s*([\d,]+)/i, /Gross\s*Living\s*(?:Area)?\s*\|?\s*([\d,]+)/i]);
-  const totalRooms = grab([/Total\s*Rooms\s*\|?\s*(\d+)/i, /Rooms?\s*\|?\s*(\d+)/i]);
-  const bedrooms = grab([/Bed\s*(?:rooms?)?\s*\|?\s*(\d+)/i, /BR\s*\|?\s*(\d+)/i]);
-  const fullBaths = grab([/Full\s*Bath\s*\|?\s*(\d+)/i]);
-  const halfBaths = grab([/Half\s*Bath\s*\|?\s*(\d+)/i]);
-  const totalBaths = grab([/Total\s*Bath\s*\|?\s*([\d\.]+)/i, /Baths?\s*\|?\s*([\d\.]+)/i]);
-  const basement = grab([/Basement\s*\|?\s*([^\n|]+)/i]);
-  const basementFinished = grab([/Basement\s*Finished\s*\|?\s*([^\n|]+)/i, /Finished\s*Basement\s*\|?\s*([\d,]+)/i]);
+  // === SALE INFO === from table rows
+  const salePrice = tableGrab('Sale Price');
+  const saleDate = tableGrab('Sale Date');
+  const certificate = tableGrab('Certificate');
+  const bookPage = tableGrab('Book & Page') || tableGrab('Book \\& Page');
+  const instrument = tableGrab('Instrument');
 
-  // === CONSTRUCTION ===
-  const exteriorWall = grab([/Exterior\s*Wall\s*\|?\s*([^\n|]+)/i, /Ext\s*Wall\s*\|?\s*([^\n|]+)/i]);
-  const roofType = grab([/Roof\s*(?:Type|Cover|Material)\s*\|?\s*([^\n|]+)/i]);
-  const roofStructure = grab([/Roof\s*Structure\s*\|?\s*([^\n|]+)/i]);
-  const foundation = grab([/Foundation\s*\|?\s*([^\n|]+)/i]);
-  const interiorWall = grab([/Interior\s*Wall\s*\|?\s*([^\n|]+)/i, /Int\s*Wall\s*\|?\s*([^\n|]+)/i]);
-  const flooring = grab([/Floor(?:ing)?\s*\|?\s*([^\n|]+)/i]);
-  const framework = grab([/Frame(?:work)?\s*\|?\s*([^\n|]+)/i]);
+  // Ownership History - extract all rows
+  const ownershipHistory: { owner: string; salePrice: string; bookPage: string; saleDate: string }[] = [];
+  const historySection = text.match(/Ownership History[\s\S]*?\| Owner \| Sale Price[\s\S]*?\n([\s\S]*?)(?:\n\n|Ownership History|Building Information)/i);
+  if (historySection) {
+    const rows = historySection[1].split('\n').filter(r => r.includes('|') && !r.includes('---'));
+    for (const row of rows) {
+      const cols = row.split('|').map(c => c.trim()).filter(Boolean);
+      if (cols.length >= 5) {
+        ownershipHistory.push({
+          owner: cols[0],
+          salePrice: cols[1],
+          bookPage: cols[2] || cols[3] || '',
+          saleDate: cols[cols.length - 1],
+        });
+      }
+    }
+  }
 
-  // === SYSTEMS ===
-  const heating = grab([/Heat(?:ing)?\s*(?:Type)?\s*\|?\s*([^\n|]+)/i]);
-  const heatingFuel = grab([/Heat(?:ing)?\s*Fuel\s*\|?\s*([^\n|]+)/i]);
-  const cooling = grab([/(?:AC|Air\s*Condition|Cool(?:ing)?)\s*\|?\s*([^\n|]+)/i]);
-  const fireplaces = grab([/Fireplace\s*\|?\s*(\d+)/i]);
-  const water = grab([/Water\s*\|?\s*([^\n|]+)/i]);
-  const sewer = grab([/Sewer\s*\|?\s*([^\n|]+)/i]);
+  // === LOT INFO ===
+  const lotSize = tableGrab('Size \\(Acres\\)');
+  const frontage = tableGrab('Frontage');
+  const depth = tableGrab('Depth');
+  const useCode = tableGrab('Use Code');
+  // Use Description comes right after Use Code in Land Use section
+  const useDescMatch = text.match(/Use Code\s*\|\s*\d+[\s\S]*?\|\s*Description\s*\|\s*([^|]*?)\s*\|/i);
+  const useDescription = useDescMatch?.[1]?.trim() || '';
+  const zoning = tableGrab('Zone');
+  const neighborhood = tableGrab('Neighborhood') || tableGrab('NBHD Code');
+  const totalMarketLand = tableGrab('Total Market Land');
+  const landAppraisedValue = tableGrab('Appraised Value');
 
-  // === GARAGE / PARKING ===
-  const garage = grab([/Garage\s*(?:Type)?\s*\|?\s*([^\n|]+)/i]);
-  const garageCapacity = grab([/Garage\s*(?:Cap(?:acity)?|Stalls?)\s*\|?\s*(\d+)/i]);
+  // === BUILDING INFO ===
+  const yearBuilt = tableGrab('Year Built');
+  const livingArea = tableGrab('Living Area');
+  const replacementCost = tableGrab('Replacement Cost');
+  const buildingPercentGood = tableGrab('Building Percent Good');
+  const replacementCostLessDepr = tableGrab('Replacement Cost Less Depreciation');
 
-  // === OTHER ===
-  const propertyClass = grab([/(?:Property\s*)?Class\s*\|?\s*([^\n|]+)/i]);
-  const grade = grab([/Grade\s*\|?\s*([^\n|]+)/i]);
-  const condition = grab([/Condition\s*\|?\s*([^\n|]+)/i]);
-  const taxDistrict = grab([/Tax\s*District\s*\|?\s*([^\n|]+)/i]);
+  const buildingStyle = tableGrab('Style');
+  const model = tableGrab('Model');
+  const grade = tableGrab('Grade');
+  const stories = tableGrab('Stories');
+  const occupancy = tableGrab('Occupancy');
+  const exteriorWall1 = tableGrab('Exterior Wall 1');
+  const exteriorWall2 = tableGrab('Exterior Wall 2');
+  const roofStructure = tableGrab('Roof Structure');
+  const roofCover = tableGrab('Roof Cover');
+  const interiorWall1 = tableGrab('Interior Wall 1');
+  const interiorWall2 = tableGrab('Interior Wall 2');
+  const interiorFlr1 = tableGrab('Interior Flr 1');
+  const interiorFlr2 = tableGrab('Interior Flr 2');
+  const heatFuel = tableGrab('Heat Fuel');
+  const heatType = tableGrab('Heat Type');
+  const acType = tableGrab('AC Type');
+  const totalBedrooms = tableGrab('Total Bedrooms').replace(/\s*Bedrooms?/i, '');
+  const totalBathrooms = tableGrab('Total Bthrms');
+  const totalHalfBaths = tableGrab('Total Half Baths');
+  const totalXtraFixtures = tableGrab('Total Xtra Fixtrs');
+  const totalRooms = tableGrab('Total Rooms').replace(/\s*Rooms?/i, '');
+  const bathStyle = tableGrab('Bath Style');
+  const kitchenStyle = tableGrab('Kitchen Style');
+  const interiorCondition = tableGrab('Interior Condition');
+  const finBsmntArea = tableGrab('Fin Bsmnt Area');
+  const finBsmntQual = tableGrab('Fin Bsmnt Qual');
+  const nbhdCode = tableGrab('NBHD Code');
+
+  // Building sub-areas
+  const subAreas: { code: string; description: string; grossArea: string; livingArea: string }[] = [];
+  const subAreaSection = text.match(/\| Code \| Description \| Gross[\s\S]*?\n([\s\S]*?)(?:\n\n|Building Sub-Areas)/i);
+  if (subAreaSection) {
+    const rows = subAreaSection[1].split('\n').filter(r => r.includes('|') && !r.includes('---'));
+    for (const row of rows) {
+      const cols = row.split('|').map(c => c.trim()).filter(Boolean);
+      if (cols.length >= 4 && cols[0].match(/^[A-Z]/)) {
+        subAreas.push({ code: cols[0], description: cols[1], grossArea: cols[2], livingArea: cols[3] });
+      }
+    }
+  }
+
+  // Building photo
+  const photoMatch = text.match(/Building Photo\s*!\[.*?\]\((https?:\/\/[^\)]+)\)/i);
+  const buildingPhoto = photoMatch?.[1] || '';
+
+  // Valuation history
+  const valuationHistory: { year: string; improvements: string; land: string; total: string }[] = [];
+  const valSection = text.match(/Valuation History[\s\S]*?Current Value[\s\S]*?\n([\s\S]*?)(?:\n\nAppraisal|\n\n\(c\))/i);
+  if (valSection) {
+    const rows = valSection[1].split('\n').filter(r => r.includes('|') && !r.includes('---') && r.match(/\d{4}/));
+    for (const row of rows) {
+      const cols = row.split('|').map(c => c.trim()).filter(Boolean);
+      if (cols.length >= 4) {
+        valuationHistory.push({ year: cols[0], improvements: cols[1], land: cols[2], total: cols[3] });
+      }
+    }
+  }
 
   // Clean owner
   owner = owner.replace(/[*#\[\]]/g, '').replace(/<br\/?>/gi, ' ').trim();
   if (!owner || owner.length < 2) return null;
 
   const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner);
-
   const fmt$ = (v: string) => v ? `$${v}` : '';
 
   return {
@@ -420,61 +512,73 @@ function extractVGSData(markdown: string, address: string, town: string) {
     town,
     owner,
     coOwner,
+    ownerAddress,
     isLLC,
     parcelId,
     mblu,
+    accountNumber,
+    buildingCount,
     bookPage,
+    certificate,
+    instrument,
     // Values
-    assessedValue: fmt$(totalAssessment) || fmt$(totalAppraisal),
-    totalAppraisal: fmt$(totalAppraisal),
-    landValue: fmt$(landValue),
-    buildingValue: fmt$(buildingValue),
-    otherValue: fmt$(otherValue),
+    assessedValue: fmt$(assessTotal) || fmt$(totalMarketValue),
+    totalAppraisal: fmt$(totalValueCV) || fmt$(totalAppraisal),
+    totalMarketValue: fmt$(totalMarketValue),
+    improvementsValue: fmt$(improvementsValue),
+    landValue: fmt$(landValueCV),
+    assessImprovements: fmt$(assessImprovements),
+    assessLand: fmt$(assessLand),
+    assessTotal: fmt$(assessTotal),
     // Sale
-    salePrice: fmt$(salePrice),
+    salePrice,
     saleDate,
-    saleQualification,
-    grantor,
     // Lot
     lotSize: lotSize ? `${lotSize} acres` : '',
-    landUse,
+    frontage: frontage ? `${frontage} ft` : '',
+    depth: depth ? `${depth} ft` : '',
+    useCode,
+    useDescription,
     zoning,
-    neighborhood,
+    neighborhood: nbhdCode || neighborhood,
+    totalMarketLand,
+    landAppraisedValue,
     // Building
     yearBuilt,
     buildingStyle,
+    model,
     stories,
     livingArea: livingArea ? `${livingArea} sq ft` : '',
+    replacementCost: replacementCost ? `$${replacementCost.replace(/[$]/g, '')}` : '',
+    buildingPercentGood: buildingPercentGood ? `${buildingPercentGood}%` : '',
+    occupancy,
     totalRooms,
-    bedrooms,
-    fullBaths,
-    halfBaths,
-    totalBaths,
-    basement,
-    basementFinished,
-    // Construction
-    exteriorWall,
-    roofType,
-    roofStructure,
-    foundation,
-    interiorWall,
-    flooring,
-    framework,
-    // Systems
-    heating,
-    heatingFuel,
-    cooling,
-    fireplaces,
-    water,
-    sewer,
-    // Garage
-    garage,
-    garageCapacity,
-    // Other
-    propertyClass,
+    bedrooms: totalBedrooms,
+    totalBaths: totalBathrooms,
+    halfBaths: totalHalfBaths,
+    totalXtraFixtures,
+    bathStyle,
+    kitchenStyle,
+    interiorCondition,
+    finBsmntArea,
+    finBsmntQual,
     grade,
-    condition,
-    taxDistrict,
+    // Construction
+    exteriorWall: [exteriorWall1, exteriorWall2].filter(Boolean).join(', '),
+    roofStructure,
+    roofCover,
+    interiorWall: [interiorWall1, interiorWall2].filter(Boolean).join(', '),
+    flooring: [interiorFlr1, interiorFlr2].filter(Boolean).join(', '),
+    // Systems
+    heating: heatType,
+    heatingFuel: heatFuel,
+    cooling: acType,
+    // Photo
+    buildingPhoto,
+    // History
+    ownershipHistory,
+    subAreas,
+    valuationHistory,
     propertyCardUrl: '',
     llcDetails: undefined as any,
   };

@@ -1,4 +1,4 @@
-import { FileDown, FileSpreadsheet, Building2, Loader2, Eye, Download, ExternalLink } from "lucide-react";
+import { FileDown, FileSpreadsheet, Loader2, Eye, Download, ExternalLink } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,61 +10,74 @@ export interface PropertyData {
   town: string;
   owner: string;
   coOwner?: string;
+  ownerAddress?: string;
   isLLC: boolean;
   parcelId?: string;
   mblu?: string;
+  accountNumber?: string;
+  buildingCount?: string;
   bookPage?: string;
+  certificate?: string;
+  instrument?: string;
   // Values
   assessedValue?: string;
   totalAppraisal?: string;
+  totalMarketValue?: string;
+  improvementsValue?: string;
   landValue?: string;
-  buildingValue?: string;
-  otherValue?: string;
+  assessImprovements?: string;
+  assessLand?: string;
+  assessTotal?: string;
   // Sale
   salePrice?: string;
   saleDate?: string;
-  saleQualification?: string;
-  grantor?: string;
   // Lot
   lotSize?: string;
-  landUse?: string;
+  frontage?: string;
+  depth?: string;
+  useCode?: string;
+  useDescription?: string;
   zoning?: string;
   neighborhood?: string;
+  totalMarketLand?: string;
+  landAppraisedValue?: string;
   // Building
   yearBuilt?: string;
   buildingStyle?: string;
+  model?: string;
   stories?: string;
   livingArea?: string;
+  replacementCost?: string;
+  buildingPercentGood?: string;
+  occupancy?: string;
   totalRooms?: string;
   bedrooms?: string;
-  fullBaths?: string;
-  halfBaths?: string;
   totalBaths?: string;
-  basement?: string;
-  basementFinished?: string;
+  halfBaths?: string;
+  totalXtraFixtures?: string;
+  bathStyle?: string;
+  kitchenStyle?: string;
+  interiorCondition?: string;
+  finBsmntArea?: string;
+  finBsmntQual?: string;
+  grade?: string;
   // Construction
   exteriorWall?: string;
-  roofType?: string;
   roofStructure?: string;
-  foundation?: string;
+  roofCover?: string;
   interiorWall?: string;
   flooring?: string;
-  framework?: string;
   // Systems
   heating?: string;
   heatingFuel?: string;
   cooling?: string;
-  fireplaces?: string;
-  water?: string;
-  sewer?: string;
-  // Garage
-  garage?: string;
-  garageCapacity?: string;
+  // Photo
+  buildingPhoto?: string;
+  // History
+  ownershipHistory?: { owner: string; salePrice: string; bookPage: string; saleDate: string }[];
+  subAreas?: { code: string; description: string; grossArea: string; livingArea: string }[];
+  valuationHistory?: { year: string; improvements: string; land: string; total: string }[];
   // Other
-  propertyClass?: string;
-  grade?: string;
-  condition?: string;
-  taxDistrict?: string;
   propertyCardUrl?: string;
   llcDetails?: {
     mailingAddress: string;
@@ -94,7 +107,7 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6 animate-fade-in">
-      {/* Header */}
+      {/* Header with Photo */}
       <Card className="p-6 border-border bg-card shadow-sm">
         <div className="flex items-start justify-between mb-4">
           <div>
@@ -114,45 +127,91 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
             )}
           </div>
         </div>
+        {data.buildingPhoto && (
+          <img
+            src={data.buildingPhoto}
+            alt={`Building photo of ${data.address}`}
+            className="w-full max-w-md rounded-lg border border-border mt-2"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+        )}
       </Card>
 
       {/* Ownership & Identification */}
       <DetailSection title="Ownership & Identification">
         <TableRow label="Owner" value={data.owner} />
         {data.coOwner && <TableRow label="Co-Owner" value={data.coOwner} />}
-        {data.parcelId && <TableRow label="Parcel ID" value={data.parcelId} />}
-        {data.mblu && <TableRow label="MBLU (Map-Block-Lot-Unit)" value={data.mblu} />}
-        {data.bookPage && <TableRow label="Book & Page" value={data.bookPage} />}
-        {data.propertyClass && <TableRow label="Property Class" value={data.propertyClass} />}
-        {data.landUse && <TableRow label="Land Use" value={data.landUse} />}
-        {data.taxDistrict && <TableRow label="Tax District" value={data.taxDistrict} />}
+        {data.ownerAddress && <TableRow label="Owner Mailing Address" value={data.ownerAddress} />}
+        {data.parcelId && <TableRow label="PID" value={data.parcelId} />}
+        {data.mblu && <TableRow label="MBLU" value={data.mblu} />}
+        {data.accountNumber && <TableRow label="Account #" value={data.accountNumber} />}
+        {data.buildingCount && <TableRow label="Building Count" value={data.buildingCount} />}
+        {data.useCode && <TableRow label="Use Code" value={data.useCode} />}
+        {data.useDescription && <TableRow label="Use Description" value={data.useDescription} />}
       </DetailSection>
 
-      {/* Valuation */}
-      <DetailSection title="Valuation">
-        {data.assessedValue && <TableRow label="Total Assessment" value={data.assessedValue} highlight />}
-        {data.totalAppraisal && <TableRow label="Total Appraisal / Market Value" value={data.totalAppraisal} highlight />}
-        {data.landValue && <TableRow label="Land Value" value={data.landValue} />}
-        {data.buildingValue && <TableRow label="Building Value" value={data.buildingValue} />}
-        {data.otherValue && <TableRow label="Other Value" value={data.otherValue} />}
-        {!data.assessedValue && !data.totalAppraisal && <EmptyRow />}
+      {/* Current Value (Appraisal) */}
+      <DetailSection title="Current Value">
+        {data.totalAppraisal && <TableRow label="Total Current Value" value={data.totalAppraisal} highlight />}
+        {data.improvementsValue && <TableRow label="Improvements" value={data.improvementsValue} />}
+        {data.landValue && <TableRow label="Land" value={data.landValue} />}
+        {data.totalMarketValue && <TableRow label="Total Market Value (Assessment)" value={data.totalMarketValue} highlight />}
+        {data.assessTotal && <TableRow label="Assessment Total" value={`$${data.assessTotal}`} />}
+        {data.assessImprovements && <TableRow label="Assessment - Improvements" value={`$${data.assessImprovements}`} />}
+        {data.assessLand && <TableRow label="Assessment - Land" value={`$${data.assessLand}`} />}
+        {!data.totalAppraisal && !data.totalMarketValue && <EmptyRow />}
       </DetailSection>
 
-      {/* Sale History */}
-      {(data.salePrice || data.saleDate || data.grantor) && (
+      {/* Last Sale */}
+      {(data.salePrice || data.saleDate || data.bookPage) && (
         <DetailSection title="Last Sale">
           {data.salePrice && <TableRow label="Sale Price" value={data.salePrice} highlight />}
           {data.saleDate && <TableRow label="Sale Date" value={data.saleDate} />}
-          {data.saleQualification && <TableRow label="Qualification" value={data.saleQualification} />}
-          {data.grantor && <TableRow label="Grantor" value={data.grantor} />}
+          {data.bookPage && <TableRow label="Book & Page" value={data.bookPage} />}
+          {data.certificate && <TableRow label="Certificate" value={data.certificate} />}
+          {data.instrument && <TableRow label="Instrument" value={data.instrument} />}
         </DetailSection>
+      )}
+
+      {/* Ownership History */}
+      {data.ownershipHistory && data.ownershipHistory.length > 0 && (
+        <Card className="p-6 border-border bg-card shadow-sm">
+          <h3 className="font-display text-lg text-foreground mb-3">Ownership History</h3>
+          <Separator className="mb-3" />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="py-2 pr-3 text-left text-muted-foreground font-medium">Owner</th>
+                  <th className="py-2 pr-3 text-left text-muted-foreground font-medium">Sale Price</th>
+                  <th className="py-2 pr-3 text-left text-muted-foreground font-medium">Book & Page</th>
+                  <th className="py-2 text-left text-muted-foreground font-medium">Sale Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.ownershipHistory.map((h, i) => (
+                  <tr key={i} className="border-b border-border last:border-0">
+                    <td className="py-2 pr-3 text-foreground">{h.owner}</td>
+                    <td className="py-2 pr-3 text-foreground">{h.salePrice}</td>
+                    <td className="py-2 pr-3 text-foreground">{h.bookPage}</td>
+                    <td className="py-2 text-foreground">{h.saleDate}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       {/* Lot Details */}
       <DetailSection title="Lot Details">
         {data.lotSize && <TableRow label="Lot Size" value={data.lotSize} />}
-        {data.zoning && <TableRow label="Zoning" value={data.zoning} />}
+        {data.frontage && <TableRow label="Frontage" value={data.frontage} />}
+        {data.depth && <TableRow label="Depth" value={data.depth} />}
+        {data.zoning && <TableRow label="Zone" value={data.zoning} />}
         {data.neighborhood && <TableRow label="Neighborhood" value={data.neighborhood} />}
+        {data.totalMarketLand && <TableRow label="Total Market Land" value={data.totalMarketLand} />}
+        {data.landAppraisedValue && <TableRow label="Land Appraised Value" value={data.landAppraisedValue} />}
         {!data.lotSize && !data.zoning && <EmptyRow />}
       </DetailSection>
 
@@ -160,51 +219,104 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
       <DetailSection title="Building Details">
         {data.yearBuilt && <TableRow label="Year Built" value={data.yearBuilt} />}
         {data.buildingStyle && <TableRow label="Style" value={data.buildingStyle} />}
+        {data.model && <TableRow label="Model" value={data.model} />}
+        {data.grade && <TableRow label="Grade" value={data.grade} />}
         {data.stories && <TableRow label="Stories" value={data.stories} />}
+        {data.occupancy && <TableRow label="Occupancy" value={data.occupancy} />}
         {data.livingArea && <TableRow label="Living Area" value={data.livingArea} />}
         {data.totalRooms && <TableRow label="Total Rooms" value={data.totalRooms} />}
         {data.bedrooms && <TableRow label="Bedrooms" value={data.bedrooms} />}
-        {data.fullBaths && <TableRow label="Full Baths" value={data.fullBaths} />}
+        {data.totalBaths && <TableRow label="Full Baths" value={data.totalBaths} />}
         {data.halfBaths && <TableRow label="Half Baths" value={data.halfBaths} />}
-        {data.totalBaths && <TableRow label="Total Baths" value={data.totalBaths} />}
-        {data.basement && <TableRow label="Basement" value={data.basement} />}
-        {data.basementFinished && <TableRow label="Finished Basement" value={data.basementFinished} />}
-        {data.grade && <TableRow label="Grade" value={data.grade} />}
-        {data.condition && <TableRow label="Condition" value={data.condition} />}
+        {data.totalXtraFixtures && <TableRow label="Extra Fixtures" value={data.totalXtraFixtures} />}
+        {data.bathStyle && <TableRow label="Bath Style" value={data.bathStyle} />}
+        {data.kitchenStyle && <TableRow label="Kitchen Style" value={data.kitchenStyle} />}
+        {data.interiorCondition && <TableRow label="Interior Condition" value={data.interiorCondition} />}
+        {data.finBsmntArea && <TableRow label="Finished Basement Area" value={data.finBsmntArea} />}
+        {data.finBsmntQual && <TableRow label="Finished Basement Quality" value={data.finBsmntQual} />}
+        {data.replacementCost && <TableRow label="Replacement Cost" value={data.replacementCost} />}
+        {data.buildingPercentGood && <TableRow label="Percent Good" value={data.buildingPercentGood} />}
         {!data.yearBuilt && !data.livingArea && <EmptyRow />}
       </DetailSection>
 
+      {/* Building Sub-Areas */}
+      {data.subAreas && data.subAreas.length > 0 && (
+        <Card className="p-6 border-border bg-card shadow-sm">
+          <h3 className="font-display text-lg text-foreground mb-3">Building Sub-Areas (sq ft)</h3>
+          <Separator className="mb-3" />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="py-2 pr-3 text-left text-muted-foreground font-medium">Code</th>
+                  <th className="py-2 pr-3 text-left text-muted-foreground font-medium">Description</th>
+                  <th className="py-2 pr-3 text-right text-muted-foreground font-medium">Gross Area</th>
+                  <th className="py-2 text-right text-muted-foreground font-medium">Living Area</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.subAreas.map((s, i) => (
+                  <tr key={i} className="border-b border-border last:border-0">
+                    <td className="py-2 pr-3 text-foreground font-mono text-xs">{s.code}</td>
+                    <td className="py-2 pr-3 text-foreground">{s.description}</td>
+                    <td className="py-2 pr-3 text-right text-foreground">{s.grossArea}</td>
+                    <td className="py-2 text-right text-foreground">{s.livingArea}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
       {/* Construction */}
-      {(data.exteriorWall || data.roofType || data.foundation || data.framework) && (
+      {(data.exteriorWall || data.roofCover || data.roofStructure || data.interiorWall || data.flooring) && (
         <DetailSection title="Construction">
-          {data.framework && <TableRow label="Framework" value={data.framework} />}
           {data.exteriorWall && <TableRow label="Exterior Wall" value={data.exteriorWall} />}
-          {data.roofType && <TableRow label="Roof Cover" value={data.roofType} />}
           {data.roofStructure && <TableRow label="Roof Structure" value={data.roofStructure} />}
-          {data.foundation && <TableRow label="Foundation" value={data.foundation} />}
+          {data.roofCover && <TableRow label="Roof Cover" value={data.roofCover} />}
           {data.interiorWall && <TableRow label="Interior Wall" value={data.interiorWall} />}
-          {data.flooring && <TableRow label="Flooring" value={data.flooring} />}
+          {data.flooring && <TableRow label="Interior Floor" value={data.flooring} />}
         </DetailSection>
       )}
 
       {/* Systems & Utilities */}
-      {(data.heating || data.cooling || data.water || data.sewer || data.fireplaces) && (
+      {(data.heating || data.cooling || data.heatingFuel) && (
         <DetailSection title="Systems & Utilities">
-          {data.heating && <TableRow label="Heating" value={data.heating} />}
-          {data.heatingFuel && <TableRow label="Heating Fuel" value={data.heatingFuel} />}
-          {data.cooling && <TableRow label="Cooling" value={data.cooling} />}
-          {data.fireplaces && <TableRow label="Fireplaces" value={data.fireplaces} />}
-          {data.water && <TableRow label="Water" value={data.water} />}
-          {data.sewer && <TableRow label="Sewer" value={data.sewer} />}
+          {data.heating && <TableRow label="Heat Type" value={data.heating} />}
+          {data.heatingFuel && <TableRow label="Heat Fuel" value={data.heatingFuel} />}
+          {data.cooling && <TableRow label="AC Type" value={data.cooling} />}
         </DetailSection>
       )}
 
-      {/* Garage / Parking */}
-      {(data.garage || data.garageCapacity) && (
-        <DetailSection title="Garage / Parking">
-          {data.garage && <TableRow label="Garage Type" value={data.garage} />}
-          {data.garageCapacity && <TableRow label="Capacity" value={data.garageCapacity} />}
-        </DetailSection>
+      {/* Valuation History */}
+      {data.valuationHistory && data.valuationHistory.length > 0 && (
+        <Card className="p-6 border-border bg-card shadow-sm">
+          <h3 className="font-display text-lg text-foreground mb-3">Valuation History</h3>
+          <Separator className="mb-3" />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="py-2 pr-3 text-left text-muted-foreground font-medium">Year</th>
+                  <th className="py-2 pr-3 text-right text-muted-foreground font-medium">Improvements</th>
+                  <th className="py-2 pr-3 text-right text-muted-foreground font-medium">Land</th>
+                  <th className="py-2 text-right text-muted-foreground font-medium">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.valuationHistory.map((v, i) => (
+                  <tr key={i} className="border-b border-border last:border-0">
+                    <td className="py-2 pr-3 text-foreground">{v.year}</td>
+                    <td className="py-2 pr-3 text-right text-foreground">{v.improvements}</td>
+                    <td className="py-2 pr-3 text-right text-foreground">{v.land}</td>
+                    <td className="py-2 text-right text-foreground font-semibold">{v.total}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       {/* Official Business Details */}
@@ -252,7 +364,7 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
             {data.llcDetails.rawMarkdown && (
               <Button variant="outline" onClick={() => setShowRawDetails(!showRawDetails)} className="flex-1">
                 <Eye className="mr-2 h-4 w-4" />
-                {showRawDetails ? "Hide" : "View"} Full Details
+                {showRawDetails ? "Hide" : "View"} Raw Data
               </Button>
             )}
             {onDownloadLLCPdf && (
@@ -274,7 +386,7 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
       {data.isLLC && !data.llcDetails && (
         <Card className="p-6 border-border bg-card shadow-sm">
           <p className="text-muted-foreground text-sm text-center">
-            Printable business details not available. Try searching manually at{" "}
+            Business details not available. Try{" "}
             <a href="https://service.ct.gov/business/s/onlinebusinesssearch?language=en_US" target="_blank" rel="noopener noreferrer" className="text-primary underline">
               CT Secretary of State
             </a>
@@ -303,9 +415,7 @@ function DetailSection({ title, children }: { title: string; children: React.Rea
       <h3 className="font-display text-lg text-foreground mb-3">{title}</h3>
       <Separator className="mb-3" />
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <tbody>{children}</tbody>
-        </table>
+        <table className="w-full text-sm"><tbody>{children}</tbody></table>
       </div>
     </Card>
   );
@@ -322,8 +432,6 @@ function TableRow({ label, value, highlight }: { label: string; value: string; h
 
 function EmptyRow() {
   return (
-    <tr>
-      <td colSpan={2} className="py-2.5 text-muted-foreground text-sm italic">No data available</td>
-    </tr>
+    <tr><td colSpan={2} className="py-2.5 text-muted-foreground text-sm italic">No data available</td></tr>
   );
 }
