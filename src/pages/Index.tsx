@@ -59,8 +59,7 @@ const Index = () => {
                 <Sparkles className="h-3.5 w-3.5" />
                 Connecticut Property Intelligence
               </div>
-              <h1 className="text-5xl md:text-6xl lg:text-7xl font-semibold tracking-tight leading-[1.05] mb-6 animate-fade-in" style={{ animationDelay: '0.1s', opacity: 0 }}>
-                <span className="text-shimmer">Foyr</span>
+              <img src={foyrLogo} alt="Foyr" className="h-28 md:h-36 mx-auto mb-2" />
               </h1>
               <p className="text-lg md:text-xl text-muted-foreground font-light leading-relaxed max-w-lg mx-auto animate-fade-in" style={{ animationDelay: '0.2s', opacity: 0 }}>
                 Owners, valuations, building details, and LLC records — all in one search.
