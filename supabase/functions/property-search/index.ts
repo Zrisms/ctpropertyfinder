@@ -1027,39 +1027,7 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
             if (extracted && extracted.owner && !extracted.owner.includes("Enter an")) {
               extracted.propertyCardUrl = printUrl;
 
-              // STEP 2: Try to get additional data from tabbed sections
-              // Scrape with tab clicks to get Building, Land, and Ownership History tabs
-              try {
-                const tabResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-                  method: "POST",
-                  headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    url: printUrl,
-                    formats: ["markdown"],
-                    onlyMainContent: false,
-                    waitFor: 1000,
-                    actions: [
-                      { type: "wait", milliseconds: 500 },
-                      // Click "Building" tab
-                      { type: "click", selector: 'a[href*="Building"], a:has-text("Building Information"), #tabBuilding, [data-tab="building"]' },
-                      { type: "wait", milliseconds: 1500 },
-                    ],
-                  }),
-                });
-                if (tabResp.ok) {
-                  const tabData = await tabResp.json();
-                  const tabMd = tabData.data?.markdown || tabData.markdown || "";
-                  if (tabMd.length > 200) {
-                    // Merge any missing building fields from tab data
-                    const tabExtracted = extractVGSData(tabMd, address, town);
-                    if (tabExtracted) {
-                      mergeVGSFields(extracted, tabExtracted);
-                    }
-                  }
-                }
-              } catch (e) {
-                console.log("Tab scraping optional, continuing:", e);
-              }
+              // Tab scraping removed for performance — primary scrape captures most fields
 
               return json({ success: true, property: extracted });
             }
