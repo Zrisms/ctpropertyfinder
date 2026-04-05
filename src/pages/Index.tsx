@@ -185,6 +185,8 @@ const Index = () => {
           </div>
         )}
 
+        {isLoading && !propertyData && <PropertySkeleton />}
+
         {propertyData && (
           <div className="mt-14 pb-20 animate-fade-in" style={{ animationDelay: '0.1s', opacity: 0 }}>
             <PropertyResults data={propertyData} onDownloadPdf={handleDownloadPdf} onDownloadExcel={handleDownloadExcel}
