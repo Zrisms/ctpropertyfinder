@@ -1,16 +1,7 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
-
-function getSupabaseAdmin() {
-  return createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-  );
-}
 
 // Address abbreviation normalization
 const ABBREVIATIONS: Record<string, string> = {
@@ -75,30 +66,6 @@ const EXTRA_SUFFIX_VARIANTS: Record<string, string[]> = {
 // Comprehensive blocklist: only government/assessor sites allowed
 const BLOCKED_SITES = /zillow|realtor\.com|realtor\b|trulia|redfin|homes\.com|compass\.com|movoto|homesnap|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch|loopnet|realtyhop|apartments\.com|rent\.com|hotpads|streeteasy|greatschools|niche\.com|yelp|nextdoor|facebook|instagram|twitter|linkedin|youtube|pinterest|tiktok|reddit|wikipedia|patch\.com|areavibes|city-data|nerdwallet|bankrate|lendingtree|rocket|homelight|opendoor|offerpad|homeadvisor|angi\.com|thumbtack|bing\.com|yahoo\.com/i;
 
-// Cache a successful property result (fire-and-forget)
-function cacheProperty(address: string, town: string, propertyData: unknown) {
-  try {
-    const sb = getSupabaseAdmin();
-    sb.from('property_cache')
-      .upsert(
-        { address: address.toLowerCase(), town: town.toLowerCase(), property_data: propertyData, searched_at: new Date().toISOString() },
-        { onConflict: 'address,town' }
-      )
-      .then(({ error }) => { if (error) console.error('Cache write error:', error); else console.log(`Cached: ${address}, ${town}`); });
-  } catch (e) { console.error('Cache write setup error:', e); }
-}
-
-// Wrapper: run a search function, cache if successful, return the response
-async function withCache(normalizedAddress: string, lookupTown: string, fn: () => Promise<Response>): Promise<Response> {
-  const result = await fn();
-  try {
-    const body = await result.clone().json();
-    if (body.success && body.property) {
-      cacheProperty(normalizedAddress, lookupTown, body.property);
-    }
-  } catch {}
-  return result;
-}
 
 function normalizeAddress(address: string): string {
   let normalized = address.trim();
@@ -417,23 +384,6 @@ Deno.serve(async (req) => {
       console.log(`Resolved lookup town: ${town} -> ${lookupTown}`);
     }
 
-    // ===== CHECK CACHE FIRST =====
-    try {
-      const sb = getSupabaseAdmin();
-      const { data: cached } = await sb
-        .from('property_cache')
-        .select('property_data')
-        .eq('address', normalizedAddress.toLowerCase())
-        .eq('town', lookupTown)
-        .maybeSingle();
-      if (cached?.property_data) {
-        console.log(`Cache HIT for ${normalizedAddress}, ${lookupTown}`);
-        return json({ success: true, property: cached.property_data });
-      }
-      console.log(`Cache MISS for ${normalizedAddress}, ${lookupTown}`);
-    } catch (e) {
-      console.error('Cache lookup error (continuing):', e);
-    }
 
     const apiKey = Deno.env.get('FIRECRAWL_API_KEY');
     if (!apiKey) {
@@ -442,13 +392,13 @@ Deno.serve(async (req) => {
 
     if (!config) {
       console.log(`Town "${town}" not in DB, trying universal fallback`);
-      return await withCache(normalizedAddress, lookupTown, () => universalPropertySearch(apiKey, normalizedAddress, town));
+      return await universalPropertySearch(apiKey, normalizedAddress, town);
     }
 
     // For 'custom' platform towns (no real scraper), skip directly to smart extract
     if (config.platform === 'custom') {
       console.log(`Custom platform for ${town}, going straight to smart extract`);
-      return await withCache(normalizedAddress, lookupTown, () => smartExtractProperty(apiKey, normalizedAddress, lookupTown, config.url, town));
+      return await smartExtractProperty(apiKey, normalizedAddress, lookupTown, config.url, town);
     }
 
     // Try platform-specific scraper first using canonical lookup town
@@ -494,8 +444,6 @@ Deno.serve(async (req) => {
         if (lookupTown !== town.toLowerCase().trim() && body.property) {
           body.property.town = town;
         }
-        // Cache the result asynchronously
-        cacheProperty(normalizedAddress, lookupTown, body.property);
         return json(body);
       }
       console.log(`Platform ${config.platform} failed for ${town}, trying universal fallback...`);
@@ -503,7 +451,7 @@ Deno.serve(async (req) => {
       console.log(`Could not parse platform response, trying universal fallback...`);
     }
 
-    return await withCache(normalizedAddress, lookupTown, () => universalPropertySearch(apiKey, normalizedAddress, lookupTown, config.url, town));
+    return await universalPropertySearch(apiKey, normalizedAddress, lookupTown, config.url, town);
   } catch (error) {
     console.error("Error:", error);
     return json({ success: false, error: error instanceof Error ? error.message : "Search failed" }, 500);
