@@ -357,13 +357,13 @@ async function smartExtractProperty(apiKey: string, address: string, town: strin
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      query: `"${houseNum} ${streetBase}" "${town}" CT property owner assessment site:.gov OR site:.us OR site:vgsi.com OR site:propertyrecordcards.com`,
+      query: `"${houseNum} ${streetBase}" "${town}" CT property owner assessment`,
       limit: 3,
     }),
   });
   if (!searchResp.ok) return json({ success: false, error: 'Search failed', searchUrl: fallbackUrl });
   const results = (await searchResp.json()).data || [];
-  const skip = /zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch|neighborwho|blockshopper|realtor\.com|redfin|homes\.com|movoto|propertyshark|loopnet|realtyhop|coldwellbanker|century21|berkshirehathaway|sothebysrealty|compass\.com|opendoor|offerpad|homelight|homeadvisor|homesforsale|apartmentguide|apartments\.com|rent\.com|hotpads|padmapper|streeteasy|curbed|countyoffice\.org|landwatch|landandfarm|housecanary|estately|homefacts|city-data|niche\.com|greatschools|yelp|yellowpages|angi\.com|thumbtack|houzz|porch\.com/i;
+  const skip = /zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch|neighborwho|blockshopper/i;
 
   for (const r of results) {
     const url = r.url || '';
@@ -440,8 +440,8 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
 
   // Strategy 1: Search official assessor sources (limit to 2 queries to save time)
   const searchQueries = [
-    `"${houseNum} ${streetBase}" "${town}" CT property vgsi.com OR propertyrecordcards.com OR .gov OR .us`,
-    `"${houseNum} ${streetBase}" "${town}" Connecticut assessor property record card site:.gov OR site:.us OR site:vgsi.com`,
+    `"${houseNum} ${streetBase}" "${town}" CT property vgsi.com OR propertyrecordcards.com`,
+    `"${houseNum} ${streetBase}" "${town}" CT assessor property owner assessment`,
   ];
 
   for (const query of searchQueries) {
@@ -460,7 +460,7 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
       for (const result of results) {
         const url = result.url || '';
         // Skip pure listing sites
-        if (/zillow|realtor\.com|trulia|redfin|homes\.com|movoto|homesnap|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch|loopnet|realtyhop|coldwellbanker|century21|berkshirehathaway|sothebysrealty|compass\.com|opendoor|offerpad|homelight|apartmentguide|apartments\.com|rent\.com|hotpads|streeteasy|countyoffice\.org|landwatch|landandfarm|housecanary|estately|homefacts|city-data|niche\.com|yelp|yellowpages|angi\.com|houzz|porch\.com/i.test(url)) continue;
+        if (/zillow|realtor\.com|trulia|redfin|homes\.com|movoto|homesnap|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch|loopnet|realtyhop/i.test(url)) continue;
 
         // VGS parcel page
         if (url.includes('vgsi.com') && url.includes('Parcel.aspx')) {
@@ -514,7 +514,7 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        query: `"${houseNum} ${streetBase}" "${town}" CT property owner assessment site:.gov OR site:.us OR site:vgsi.com OR site:actdatascout.com`,
+        query: `"${houseNum} ${streetBase}" "${town}" CT property owner year built square feet assessment`,
         limit: 5,
       }),
     });
@@ -522,7 +522,7 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
     if (searchResp.ok) {
       const searchData = await searchResp.json();
       const results = searchData.data || [];
-      const skipSites = /zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch|neighborwho|blockshopper|realtor\.com|redfin|homes\.com|movoto|propertyshark|loopnet|realtyhop|coldwellbanker|century21|berkshirehathaway|sothebysrealty|compass\.com|opendoor|offerpad|homelight|apartmentguide|apartments\.com|rent\.com|hotpads|streeteasy|countyoffice\.org|landwatch|landandfarm|housecanary|estately|homefacts|city-data|niche\.com|yelp|yellowpages|angi\.com|houzz|porch\.com/i;
+      const skipSites = /zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch|neighborwho|blockshopper/i;
 
       for (const result of results) {
         const url = result.url || '';
