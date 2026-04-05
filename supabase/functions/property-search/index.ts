@@ -424,156 +424,106 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
     } catch (e) { console.error("Universal search error:", e); }
   }
 
-  // Strategy 2: Multi-source deep extraction — scrape multiple sites and merge
+  // Strategy 2: LLM-powered extraction from any property data source
   try {
-    console.log(`Strategy 2: multi-source deep extract for ${address}, ${town}`);
-
-    // Search for property across multiple sources
+    console.log(`Strategy 2: smart extract for ${address}, ${town}`);
     const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        query: `"${houseNum} ${streetBase}" "${town}" CT property details owner assessment building`,
-        limit: 8,
+        query: `"${houseNum} ${streetBase}" "${town}" CT property owner year built square feet assessment`,
+        limit: 5,
       }),
     });
 
     if (searchResp.ok) {
       const searchData = await searchResp.json();
       const results = searchData.data || [];
-
-      // Skip junk sites
       const skipSites = /zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch|neighborwho|blockshopper/i;
-      const validUrls = results
-        .map((r: any) => r.url as string)
-        .filter((u: string) => u && !skipSites.test(u))
-        .slice(0, 3); // Scrape up to 3 sources in parallel
 
-      // The comprehensive extraction prompt for insurance-grade data
-      const extractPrompt = `Extract ALL available property record data for the property at ${address}, ${town}, CT. This is for insurance underwriting — be thorough. Extract every field you can find. If a field is not available, return empty string "".`;
-      const extractSchema = {
-        type: 'object',
-        properties: {
-          owner: { type: 'string', description: 'Full legal name of the current property owner (never "Sold" or status words)' },
-          coOwner: { type: 'string', description: 'Co-owner or additional owner name' },
-          ownerAddress: { type: 'string', description: 'Owner mailing address' },
-          assessedValue: { type: 'string', description: 'Total tax assessed value with $ sign' },
-          totalAppraisal: { type: 'string', description: 'Total appraised/market value with $ sign' },
-          landValue: { type: 'string', description: 'Land value portion with $ sign' },
-          improvementsValue: { type: 'string', description: 'Improvements/building value with $ sign' },
-          yearBuilt: { type: 'string', description: 'Year the building was constructed' },
-          sqft: { type: 'string', description: 'Total living area in square feet' },
-          lotSize: { type: 'string', description: 'Lot size in acres or sq ft' },
-          bedrooms: { type: 'string', description: 'Number of bedrooms' },
-          bathrooms: { type: 'string', description: 'Number of bathrooms (e.g., "2.5" for 2 full + 1 half)' },
-          halfBaths: { type: 'string', description: 'Number of half bathrooms' },
-          totalRooms: { type: 'string', description: 'Total number of rooms' },
-          stories: { type: 'string', description: 'Number of stories/floors' },
-          zoning: { type: 'string', description: 'Zoning code or district' },
-          salePrice: { type: 'string', description: 'Last sale price with $ sign' },
-          saleDate: { type: 'string', description: 'Last sale date' },
-          buildingStyle: { type: 'string', description: 'Architectural style (e.g., Colonial, Cape Cod, Ranch)' },
-          exteriorWall: { type: 'string', description: 'Exterior wall material (e.g., Vinyl Siding, Brick, Wood)' },
-          roofCover: { type: 'string', description: 'Roof material (e.g., Asphalt Shingles, Slate, Metal)' },
-          roofStructure: { type: 'string', description: 'Roof structure type (e.g., Gable, Hip)' },
-          foundation: { type: 'string', description: 'Foundation type (e.g., Concrete, Block, Slab)' },
-          heating: { type: 'string', description: 'Heating system type (e.g., Forced Hot Air, Hot Water)' },
-          heatingFuel: { type: 'string', description: 'Heating fuel type (e.g., Gas, Oil, Electric)' },
-          cooling: { type: 'string', description: 'Cooling/AC type (e.g., Central Air, None, Window Units)' },
-          flooring: { type: 'string', description: 'Primary flooring material' },
-          garage: { type: 'string', description: 'Garage details (e.g., 2-Car Attached)' },
-          pool: { type: 'string', description: 'Pool (Yes/No or details)' },
-          fireplace: { type: 'string', description: 'Fireplace (Yes/No or count)' },
-          basement: { type: 'string', description: 'Basement details (Finished, Unfinished, Walk-Out, None)' },
-          parcelId: { type: 'string', description: 'Parcel ID, APN, or map/block/lot number' },
-          propertyType: { type: 'string', description: 'Property use type (e.g., Single Family, Multi-Family, Condo)' },
-          neighborhood: { type: 'string', description: 'Neighborhood or subdivision name' },
-          taxAmount: { type: 'string', description: 'Annual property tax amount' },
-          buildingPhoto: { type: 'string', description: 'URL of the building/property photo if available' },
-        },
-      };
-
-      // Merged property data — fill gaps from each source
-      const merged: Record<string, string> = {};
-
-      // Scrape all sources in PARALLEL for speed
-      const scrapePromises = validUrls.map(async (url: string) => {
+      for (const result of results) {
+        const url = result.url || '';
+        if (skipSites.test(url)) continue;
+        console.log(`Strategy 2: extracting from ${url}`);
         try {
-          console.log(`Strategy 2: extracting from ${url}`);
           const scrapeResp = await fetch('https://api.firecrawl.dev/v1/scrape', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
               url,
               formats: ['extract'],
-              extract: { prompt: extractPrompt, schema: extractSchema },
+              extract: {
+                prompt: `Extract ALL property record data for ${address}, ${town}, CT. This is for insurance underwriting. Be thorough. If not available, return "".`,
+                schema: {
+                  type: 'object',
+                  properties: {
+                    owner: { type: 'string', description: 'Full legal name of current property owner' },
+                    coOwner: { type: 'string' }, ownerAddress: { type: 'string' },
+                    assessedValue: { type: 'string' }, totalAppraisal: { type: 'string' },
+                    landValue: { type: 'string' }, improvementsValue: { type: 'string' },
+                    yearBuilt: { type: 'string' }, sqft: { type: 'string' }, lotSize: { type: 'string' },
+                    bedrooms: { type: 'string' }, bathrooms: { type: 'string' }, halfBaths: { type: 'string' },
+                    totalRooms: { type: 'string' }, stories: { type: 'string' }, zoning: { type: 'string' },
+                    salePrice: { type: 'string' }, saleDate: { type: 'string' },
+                    buildingStyle: { type: 'string' }, exteriorWall: { type: 'string' },
+                    roofCover: { type: 'string' }, roofStructure: { type: 'string' },
+                    foundation: { type: 'string' }, heating: { type: 'string' },
+                    heatingFuel: { type: 'string' }, cooling: { type: 'string' },
+                    flooring: { type: 'string' }, garage: { type: 'string' },
+                    pool: { type: 'string' }, fireplace: { type: 'string' },
+                    basement: { type: 'string' }, parcelId: { type: 'string' },
+                    propertyType: { type: 'string' }, neighborhood: { type: 'string' },
+                    taxAmount: { type: 'string' }, buildingPhoto: { type: 'string' },
+                  },
+                },
+              },
             }),
           });
-          if (!scrapeResp.ok) { console.log(`Scrape failed ${scrapeResp.status} for ${url}`); return null; }
+          if (!scrapeResp.ok) continue;
           const scrapeData = await scrapeResp.json();
-          return scrapeData?.data?.extract || scrapeData?.extract || null;
-        } catch (e) { console.error(`Strategy 2 error for ${url}:`, e); return null; }
-      });
+          const ex = scrapeData?.data?.extract || scrapeData?.extract;
+          if (!ex?.owner || ex.owner.length < 4) continue;
+          if (/^(Sold|For Sale|Pending|N\/A|Unknown|Street View|Not Available)$/i.test(ex.owner)) continue;
 
-      const extractResults = await Promise.allSettled(scrapePromises);
-
-      for (const result of extractResults) {
-        if (result.status !== 'fulfilled' || !result.value) continue;
-        const extracted = result.value;
-        console.log(`Extracted: owner=${extracted.owner}, yearBuilt=${extracted.yearBuilt}, sqft=${extracted.sqft}`);
-        for (const [key, val] of Object.entries(extracted)) {
-          const v = (val as string || '').trim();
-          if (v && v.length > 0 && !merged[key]) {
-            if (key === 'owner') {
-              if (v.length < 4 || /^(Sold|For Sale|Pending|N\/A|Unknown|Street View|Not Available|Contact|View|Details)$/i.test(v)) continue;
-              if (/https?:\/\/|\.com|\.org/.test(v)) continue;
-            }
-            merged[key] = v;
+          console.log(`Strategy 2 success: owner=${ex.owner}, fields=${Object.keys(ex).filter(k => ex[k]).length}`);
+          const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(ex.owner);
+          const prop = {
+            address, town, owner: ex.owner, coOwner: ex.coOwner || '', ownerAddress: ex.ownerAddress || '', isLLC,
+            parcelId: ex.parcelId || '', mblu: '', accountNumber: '', buildingCount: '',
+            bookPage: '', certificate: '', instrument: '',
+            assessedValue: ex.assessedValue || '', totalAppraisal: ex.totalAppraisal || '',
+            totalMarketValue: ex.totalAppraisal || '',
+            improvementsValue: ex.improvementsValue || '', landValue: ex.landValue || '',
+            assessImprovements: '', assessLand: '', assessTotal: ex.assessedValue || '',
+            salePrice: ex.salePrice || '', saleDate: ex.saleDate || '',
+            lotSize: ex.lotSize || '', frontage: '', depth: '',
+            useCode: '', useDescription: ex.propertyType || '', zoning: ex.zoning || '',
+            neighborhood: ex.neighborhood || '',
+            totalMarketLand: '', landAppraisedValue: '',
+            yearBuilt: ex.yearBuilt || '', buildingStyle: ex.buildingStyle || '', model: '',
+            stories: ex.stories || '',
+            livingArea: ex.sqft || '', replacementCost: '', buildingPercentGood: '',
+            occupancy: '', totalRooms: ex.totalRooms || '',
+            bedrooms: ex.bedrooms || '', totalBaths: ex.bathrooms || '', halfBaths: ex.halfBaths || '',
+            totalXtraFixtures: '', bathStyle: '', kitchenStyle: '',
+            interiorCondition: '', finBsmntArea: ex.basement || '', finBsmntQual: '', grade: '',
+            exteriorWall: ex.exteriorWall || '', roofStructure: ex.roofStructure || '',
+            roofCover: ex.roofCover || '',
+            interiorWall: '', flooring: ex.flooring || '',
+            heating: ex.heating || '', heatingFuel: ex.heatingFuel || '', cooling: ex.cooling || '',
+            buildingPhoto: ex.buildingPhoto || '',
+            garage: ex.garage || '', pool: ex.pool || '', fireplace: ex.fireplace || '',
+            foundation: ex.foundation || '', taxAmount: ex.taxAmount || '',
+            ownershipHistory: [] as { owner: string; salePrice: string; bookPage: string; saleDate: string }[],
+            subAreas: [] as { code: string; description: string; grossArea: string; livingArea: string }[],
+            valuationHistory: [] as { year: string; improvements: string; land: string; total: string }[],
+            propertyCardUrl: url, llcDetails: undefined as any,
+          };
+          if (isLLC) {
+            try { prop.llcDetails = await searchCTBusiness(apiKey, prop.owner); } catch (e) { console.error("LLC:", e); }
           }
-        }
-      }
-
-      // If we got an owner, build the result
-      if (merged.owner) {
-        console.log(`Strategy 2 merged result: owner=${merged.owner}, ${Object.keys(merged).length} fields populated`);
-        const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(merged.owner);
-        const prop = {
-          address, town,
-          owner: merged.owner, coOwner: merged.coOwner || '', ownerAddress: merged.ownerAddress || '', isLLC,
-          parcelId: merged.parcelId || '', mblu: '', accountNumber: '', buildingCount: '',
-          bookPage: '', certificate: '', instrument: '',
-          assessedValue: merged.assessedValue || '', totalAppraisal: merged.totalAppraisal || '',
-          totalMarketValue: merged.totalAppraisal || '',
-          improvementsValue: merged.improvementsValue || '', landValue: merged.landValue || '',
-          assessImprovements: '', assessLand: '', assessTotal: merged.assessedValue || '',
-          salePrice: merged.salePrice || '', saleDate: merged.saleDate || '',
-          lotSize: merged.lotSize || '', frontage: '', depth: '',
-          useCode: '', useDescription: merged.propertyType || '', zoning: merged.zoning || '',
-          neighborhood: merged.neighborhood || '',
-          totalMarketLand: '', landAppraisedValue: '',
-          yearBuilt: merged.yearBuilt || '', buildingStyle: merged.buildingStyle || '', model: '',
-          stories: merged.stories || '',
-          livingArea: merged.sqft || '', replacementCost: '', buildingPercentGood: '',
-          occupancy: '', totalRooms: merged.totalRooms || '',
-          bedrooms: merged.bedrooms || '', totalBaths: merged.bathrooms || '', halfBaths: merged.halfBaths || '',
-          totalXtraFixtures: '', bathStyle: '', kitchenStyle: '',
-          interiorCondition: '', finBsmntArea: merged.basement || '', finBsmntQual: '', grade: '',
-          exteriorWall: merged.exteriorWall || '', roofStructure: merged.roofStructure || '',
-          roofCover: merged.roofCover || '',
-          interiorWall: '', flooring: merged.flooring || '',
-          heating: merged.heating || '', heatingFuel: merged.heatingFuel || '', cooling: merged.cooling || '',
-          buildingPhoto: merged.buildingPhoto || '',
-          garage: merged.garage || '', pool: merged.pool || '', fireplace: merged.fireplace || '',
-          foundation: merged.foundation || '', taxAmount: merged.taxAmount || '',
-          ownershipHistory: [] as { owner: string; salePrice: string; bookPage: string; saleDate: string }[],
-          subAreas: [] as { code: string; description: string; grossArea: string; livingArea: string }[],
-          valuationHistory: [] as { year: string; improvements: string; land: string; total: string }[],
-          propertyCardUrl: validUrls[0] || '', llcDetails: undefined as any,
-        };
-        if (isLLC) {
-          try { prop.llcDetails = await searchCTBusiness(apiKey, prop.owner); } catch (e) { console.error("LLC:", e); }
-        }
-        return json({ success: true, property: prop });
+          return json({ success: true, property: prop });
+        } catch (e) { console.error(`Strategy 2 scrape error:`, e); }
       }
     }
   } catch (e) { console.error("Strategy 2 error:", e); }
