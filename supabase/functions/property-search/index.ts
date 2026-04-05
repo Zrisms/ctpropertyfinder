@@ -288,10 +288,10 @@ Deno.serve(async (req) => {
       return await universalPropertySearch(apiKey, normalizedAddress, town);
     }
 
-    // For 'custom' platform towns (no real scraper), skip directly to universal fallback
+    // For 'custom' platform towns (no real scraper), skip directly to smart extract
     if (config.platform === 'custom') {
-      console.log(`Custom platform for ${town}, going straight to universal fallback`);
-      return await universalPropertySearch(apiKey, normalizedAddress, town, config.url);
+      console.log(`Custom platform for ${town}, going straight to smart extract`);
+      return await smartExtractProperty(apiKey, normalizedAddress, town, config.url);
     }
 
     // Try platform-specific scraper first
