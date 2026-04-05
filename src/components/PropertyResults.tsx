@@ -16,6 +16,7 @@ export interface PropertyData {
   kitchenStyle?: string; interiorCondition?: string; finBsmntArea?: string; finBsmntQual?: string;
   grade?: string; exteriorWall?: string; roofStructure?: string; roofCover?: string; interiorWall?: string;
   flooring?: string; heating?: string; heatingFuel?: string; cooling?: string; buildingPhoto?: string;
+  garage?: string; pool?: string; fireplace?: string; foundation?: string; taxAmount?: string;
   ownershipHistory?: { owner: string; salePrice: string; bookPage: string; saleDate: string }[];
   subAreas?: { code: string; description: string; grossArea: string; livingArea: string }[];
   valuationHistory?: { year: string; improvements: string; land: string; total: string }[];
