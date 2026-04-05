@@ -1592,8 +1592,8 @@ async function buildLLCDetails(businesses: Record<string, unknown>[], searchName
     mailingAddress, dateFormed, businessType, status: fullStatus,
     accountNumber, citizenship, formationPlace, email, naicsCode,
     principals: principals.length > 0
-      ? principals.map(p => ({ name: `${p.name} (${p.title})`, address: p.residentialAddress || p.address }))
-      : [{ name: 'No agents found in public records', address: '' }],
+      ? principals.map(p => ({ name: p.name, title: p.title, address: p.address, residentialAddress: p.residentialAddress }))
+      : [{ name: 'No agents found in public records', title: '', address: '', residentialAddress: '' }],
     rawMarkdown: rawLines.join('\n'),
   };
 }
