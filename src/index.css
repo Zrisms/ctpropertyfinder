@@ -2,38 +2,38 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 @layer base {
   :root {
-    --background: 220 16% 6%;
-    --foreground: 220 10% 92%;
-    --card: 220 16% 10%;
-    --card-foreground: 220 10% 92%;
-    --popover: 220 16% 10%;
-    --popover-foreground: 220 10% 92%;
-    --primary: 220 60% 55%;
+    --background: 0 0% 98%;
+    --foreground: 0 0% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
+    --primary: 211 100% 50%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 14% 16%;
-    --secondary-foreground: 220 10% 80%;
-    --muted: 220 14% 14%;
-    --muted-foreground: 220 10% 55%;
-    --accent: 38 90% 55%;
-    --accent-foreground: 220 16% 6%;
-    --destructive: 0 72% 55%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 14% 16%;
-    --input: 220 14% 18%;
-    --ring: 220 60% 55%;
-    --radius: 0.75rem;
-    --sidebar-background: 220 16% 8%;
-    --sidebar-foreground: 220 10% 90%;
-    --sidebar-primary: 220 60% 55%;
+    --border: 0 0% 91%;
+    --input: 0 0% 91%;
+    --ring: 211 100% 50%;
+    --radius: 0.875rem;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 0 0% 9%;
+    --sidebar-primary: 211 100% 50%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 14% 14%;
-    --sidebar-accent-foreground: 220 10% 90%;
-    --sidebar-border: 220 14% 16%;
-    --sidebar-ring: 220 60% 55%;
+    --sidebar-accent: 0 0% 96%;
+    --sidebar-accent-foreground: 0 0% 9%;
+    --sidebar-border: 0 0% 91%;
+    --sidebar-ring: 211 100% 50%;
   }
 
   * {
@@ -42,21 +42,29 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Inter', 'Helvetica Neue', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.01em;
   }
 }
 
 @layer utilities {
-  .glass-card {
-    @apply bg-card/80 backdrop-blur-xl border border-border/50 shadow-2xl;
+  .apple-card {
+    @apply bg-card rounded-2xl border border-border/60;
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.04), 0 1px 2px -1px rgb(0 0 0 / 0.04);
   }
-  .gradient-text {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary via-blue-400 to-accent;
+  .apple-card-elevated {
+    @apply bg-card rounded-3xl border border-border/40;
+    box-shadow: 0 4px 24px -4px rgb(0 0 0 / 0.08), 0 1px 2px 0 rgb(0 0 0 / 0.03);
   }
-  .glow-primary {
-    box-shadow: 0 0 40px -10px hsl(220 60% 55% / 0.3);
+  .apple-blur {
+    @apply backdrop-blur-2xl bg-card/80;
   }
-  .glow-accent {
-    box-shadow: 0 0 30px -8px hsl(38 90% 55% / 0.2);
+  .apple-button {
+    @apply rounded-full font-medium transition-all duration-200 active:scale-[0.97];
+  }
+  .apple-section-title {
+    @apply text-xs font-semibold text-muted-foreground uppercase tracking-wider;
   }
 }
