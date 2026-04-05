@@ -75,30 +75,6 @@ const EXTRA_SUFFIX_VARIANTS: Record<string, string[]> = {
 // Comprehensive blocklist: only government/assessor sites allowed
 const BLOCKED_SITES = /zillow|realtor\.com|realtor\b|trulia|redfin|homes\.com|compass\.com|movoto|homesnap|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch|loopnet|realtyhop|apartments\.com|rent\.com|hotpads|streeteasy|greatschools|niche\.com|yelp|nextdoor|facebook|instagram|twitter|linkedin|youtube|pinterest|tiktok|reddit|wikipedia|patch\.com|areavibes|city-data|nerdwallet|bankrate|lendingtree|rocket|homelight|opendoor|offerpad|homeadvisor|angi\.com|thumbtack|bing\.com|yahoo\.com/i;
 
-// Cache a successful property result (fire-and-forget)
-function cacheProperty(address: string, town: string, propertyData: unknown) {
-  try {
-    const sb = getSupabaseAdmin();
-    sb.from('property_cache')
-      .upsert(
-        { address: address.toLowerCase(), town: town.toLowerCase(), property_data: propertyData, searched_at: new Date().toISOString() },
-        { onConflict: 'address,town' }
-      )
-      .then(({ error }) => { if (error) console.error('Cache write error:', error); else console.log(`Cached: ${address}, ${town}`); });
-  } catch (e) { console.error('Cache write setup error:', e); }
-}
-
-// Wrapper: run a search function, cache if successful, return the response
-async function withCache(normalizedAddress: string, lookupTown: string, fn: () => Promise<Response>): Promise<Response> {
-  const result = await fn();
-  try {
-    const body = await result.clone().json();
-    if (body.success && body.property) {
-      cacheProperty(normalizedAddress, lookupTown, body.property);
-    }
-  } catch {}
-  return result;
-}
 
 function normalizeAddress(address: string): string {
   let normalized = address.trim();
