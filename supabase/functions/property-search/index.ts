@@ -816,18 +816,33 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
   const houseNum = addrParts?.[1] || '';
   const streetFull = addrParts?.[2] || address;
-  const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, '').trim();
-  // For autocomplete, just use number + street base (e.g., "25 arlington")
-  const searchText = houseNum ? `${houseNum} ${streetBase.toLowerCase()}` : address.toLowerCase();
+  const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, '').trim();
 
-  // Strategy 1: Firecrawl web search to find the property page (parallel queries)
+  // Generate all address variants (PARK → PK, PRK, etc.)
+  const allVariants = getAddressVariants(address);
+  // Also generate search texts for VGS autocomplete (number + street variants)
+  const searchTexts = new Set<string>();
+  searchTexts.add(houseNum ? `${houseNum} ${streetBase.toLowerCase()}` : address.toLowerCase());
+  for (const v of allVariants) {
+    const parts = v.match(/^(\d+)\s+(.+)$/i);
+    if (parts) searchTexts.add(`${parts[1]} ${parts[2].toLowerCase()}`);
+  }
+
+  console.log(`VGS: ${allVariants.length} address variants, ${searchTexts.size} search texts`);
+
+  // Strategy 1: Firecrawl web search to find the property page (parallel queries with variants)
   try {
     console.log(`Searching for property via Firecrawl search`);
-    const queries = [
-      `"${address}" "${town}" CT property vgsi.com`,
-      `"${houseNum} ${streetBase}" "${town}" CT vgsi.com`,
-    ];
-    const searchResults = await Promise.all(queries.map(async (query) => {
+    const queries = new Set<string>();
+    queries.add(`"${address}" "${town}" CT property vgsi.com`);
+    queries.add(`"${houseNum} ${streetBase}" "${town}" CT vgsi.com`);
+    // Add variant-based queries (limit to 4 total to stay fast)
+    for (const v of allVariants.slice(0, 3)) {
+      queries.add(`"${v}" "${town}" CT vgsi.com`);
+    }
+    const uniqueQueries = [...queries].slice(0, 4);
+
+    const searchResults = await Promise.all(uniqueQueries.map(async (query) => {
       const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -849,50 +864,53 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
     }
   } catch (e) { console.error("Search error:", e); }
 
-  // Strategy 2: Use Firecrawl actions on VGS search page with autocomplete
-  try {
-    console.log(`Trying VGS with actions (search: "${searchText}")`);
-    const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url: searchUrl,
-        formats: ['markdown', 'links', 'html'],
-        waitFor: 1500,
-        actions: [
-          { type: 'wait', milliseconds: 500 },
-          { type: 'click', selector: 'input[id*="TextBox_Search"], input[id*="txtSearch"], input[type="text"]' },
-          { type: 'write', text: searchText },
-          { type: 'wait', milliseconds: 2500 },
-          { type: 'click', selector: '.ui-autocomplete li:first-child a, .ui-menu-item:first-child a, ul.ui-autocomplete li:first-child' },
-          { type: 'wait', milliseconds: 3000 },
-        ],
-      }),
-    });
+  // Strategy 2: Use Firecrawl actions on VGS search page — try each search text variant
+  const searchTextArr = [...searchTexts];
+  for (const searchText of searchTextArr) {
+    try {
+      console.log(`Trying VGS with actions (search: "${searchText}")`);
+      const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: searchUrl,
+          formats: ['markdown', 'links', 'html'],
+          waitFor: 1500,
+          actions: [
+            { type: 'wait', milliseconds: 500 },
+            { type: 'click', selector: 'input[id*="TextBox_Search"], input[id*="txtSearch"], input[type="text"]' },
+            { type: 'write', text: searchText },
+            { type: 'wait', milliseconds: 2500 },
+            { type: 'click', selector: '.ui-autocomplete li:first-child a, .ui-menu-item:first-child a, ul.ui-autocomplete li:first-child' },
+            { type: 'wait', milliseconds: 3000 },
+          ],
+        }),
+      });
 
-    if (resp.ok) {
-      const data = await resp.json();
-      const markdown = data.data?.markdown || data.markdown || '';
-      const html = data.data?.html || data.html || '';
-      const finalUrl = data.data?.metadata?.url || data.data?.metadata?.sourceURL || '';
+      if (resp.ok) {
+        const data = await resp.json();
+        const markdown = data.data?.markdown || data.markdown || '';
+        const html = data.data?.html || data.html || '';
+        const finalUrl = data.data?.metadata?.url || data.data?.metadata?.sourceURL || '';
 
-      if (finalUrl.includes('Parcel.aspx') || markdown.includes('Parcel ID') || markdown.includes('Total Market Value')) {
-        const extracted = extractVGSData(markdown, address, town);
-        if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
-          extracted.propertyCardUrl = finalUrl;
-          if (extracted.isLLC) {
-            try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+        if (finalUrl.includes('Parcel.aspx') || markdown.includes('Parcel ID') || markdown.includes('Total Market Value')) {
+          const extracted = extractVGSData(markdown, address, town);
+          if (extracted && extracted.owner && !extracted.owner.includes('Enter an')) {
+            extracted.propertyCardUrl = finalUrl;
+            if (extracted.isLLC) {
+              try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+            }
+            return json({ success: true, property: extracted });
           }
-          return json({ success: true, property: extracted });
+        }
+
+        const pidMatch = (html + markdown).match(/Parcel\.aspx\?[Pp]id=(\d+)/);
+        if (pidMatch) {
+          return await scrapePropertyDetail(apiKey, `${baseUrl}/Parcel.aspx?Pid=${pidMatch[1]}`, address, town);
         }
       }
-
-      const pidMatch = (html + markdown).match(/Parcel\.aspx\?[Pp]id=(\d+)/);
-      if (pidMatch) {
-        return await scrapePropertyDetail(apiKey, `${baseUrl}/Parcel.aspx?Pid=${pidMatch[1]}`, address, town);
-      }
-    }
-  } catch (e) { console.error("Actions error:", e); }
+    } catch (e) { console.error("Actions error:", e); }
+  }
 
   return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl });
 }
