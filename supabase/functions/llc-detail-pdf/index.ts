@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
 });
 
 function generateLLCPdf(llc: Record<string, unknown>, ownerName: string): ArrayBuffer {
-  const principals = (llc.principals || []) as { name: string; address: string }[];
+  const principals = (llc.principals || []) as { name: string; title?: string; address: string; residentialAddress?: string }[];
   
   const lines = [
     '=== Connecticut Secretary of the State ===',
@@ -59,7 +59,11 @@ function generateLLCPdf(llc: Record<string, unknown>, ownerName: string): ArrayB
 
   for (const p of principals) {
     lines.push(`  Name: ${p.name}`);
-    if (p.address) lines.push(`  Address: ${p.address}`);
+    if (p.title) lines.push(`  Title: ${p.title}`);
+    if (p.address) lines.push(`  Business Address: ${p.address}`);
+    if (p.residentialAddress && p.residentialAddress !== p.address) {
+      lines.push(`  Residential Address: ${p.residentialAddress}`);
+    }
     lines.push('');
   }
 
