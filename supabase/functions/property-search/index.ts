@@ -63,8 +63,7 @@ const EXTRA_SUFFIX_VARIANTS: Record<string, string[]> = {
   'RUN':       ['RN'],
 };
 
-// Comprehensive blocklist: only government/assessor sites allowed
-const BLOCKED_SITES = /zillow|realtor\.com|realtor\b|trulia|redfin|homes\.com|compass\.com|movoto|homesnap|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch|loopnet|realtyhop|apartments\.com|rent\.com|hotpads|streeteasy|greatschools|niche\.com|yelp|nextdoor|facebook|instagram|twitter|linkedin|youtube|pinterest|tiktok|reddit|wikipedia|patch\.com|areavibes|city-data|nerdwallet|bankrate|lendingtree|rocket|homelight|opendoor|offerpad|homeadvisor|angi\.com|thumbtack|bing\.com|yahoo\.com/i;
+
 
 
 function normalizeAddress(address: string): string {
