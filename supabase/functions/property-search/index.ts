@@ -713,7 +713,7 @@ async function universalPropertySearch(apiKey: string, address: string, lookupTo
   for (const results of allSearchResults) {
     for (const result of results) {
       const url = result.url || '';
-      if (/zillow|realtor\.com|trulia|redfin|homes\.com|movoto|homesnap|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch|loopnet|realtyhop/i.test(url)) continue;
+      if (BLOCKED_SITES.test(url)) continue;
 
       if (url.includes('vgsi.com') && url.includes('Parcel.aspx')) {
         console.log(`Universal: found VGS parcel: ${url}`);
