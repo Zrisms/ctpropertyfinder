@@ -885,13 +885,13 @@ async function scrapeMapXpress(apiKey: string, baseUrl: string, address: string,
       body: JSON.stringify({
         url: baseUrl,
         formats: ['markdown', 'html'],
-        waitFor: 3000,
+        waitFor: 1500,
         actions: [
-          { type: 'wait', milliseconds: 2000 },
+          { type: 'wait', milliseconds: 1000 },
           { type: 'click', selector: 'input[name*="Address"], input[name*="address"], #txtAddress, input[placeholder*="Address"]' },
           { type: 'write', text: address },
           { type: 'click', selector: 'input[type="submit"], button[type="submit"], #btnSearch' },
-          { type: 'wait', milliseconds: 5000 },
+          { type: 'wait', milliseconds: 3000 },
         ],
       }),
     });
