@@ -336,12 +336,10 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
   const streetFull = addrParts?.[2] || address;
   const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, '').trim();
 
-  // Strategy 1: Search official assessor sources
+  // Strategy 1: Search official assessor sources (limit to 2 queries to save time)
   const searchQueries = [
-    `"${houseNum} ${streetBase}" "${town}" CT property vgsi.com`,
-    `"${houseNum} ${streetBase}" "${town}" CT assessor property owner`,
-    `"${address}" "${town}" Connecticut property record card`,
-    `${houseNum} ${streetBase} ${town} CT property tax assessment owner`,
+    `"${houseNum} ${streetBase}" "${town}" CT property vgsi.com OR propertyrecordcards.com`,
+    `"${houseNum} ${streetBase}" "${town}" CT assessor property owner assessment`,
   ];
 
   for (const query of searchQueries) {
