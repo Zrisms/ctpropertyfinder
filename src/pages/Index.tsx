@@ -66,10 +66,7 @@ const Index = () => {
             </>
           )}
           {propertyData && (
-            <h1 className="text-2xl font-semibold tracking-tight">
-              <span className="text-shimmer">Foyr</span>
-            </h1>
-          )}
+            <img src={foyrLogo} alt="Foyr" className="h-10 mx-auto" />
         </div>
       </header>
 
