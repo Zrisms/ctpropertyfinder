@@ -1053,6 +1053,7 @@ function extractQDSCardData(markdown: string, address: string, town: string) {
     parcelId, mblu: mapMatch?.[1] ? `${mapMatch[1]}/${lotMatch?.[1] || ''}` : '',
     accountNumber: '', buildingCount: String(assessments.filter(a => a.category.toLowerCase().includes('building')).length || ''),
     bookPage, certificate: '', instrument: '',
+    bookPage, certificate: '', instrument: '',
     assessedValue: fmt$(netAssessment || totalAssessment),
     totalAppraisal: fmt$(costValue || mktValue),
     totalMarketValue: fmt$(mktValue),
