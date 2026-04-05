@@ -823,13 +823,6 @@ async function scrapeGrotonGIS(address: string, town: string): Promise<Response>
     arcRes = await fetch(broadQuery);
     arcData = arcRes.ok ? await arcRes.json() : { features: [] };
   }
-  // Remove redundant fetch below
-  const arcRes = await fetch(queryUrl);
-  if (!arcRes.ok) {
-    return json({ success: false, error: 'Failed to query Groton GIS service' });
-  }
-
-  const arcData = await arcRes.json();
   let features = arcData.features || [];
   
   // Filter to exact house number match
