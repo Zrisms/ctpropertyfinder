@@ -15,21 +15,40 @@ const DIR_MAP: Record<string, string> = {
   no: 'North', so: 'South',
 };
 
+// Pre-computed lookups (run once at module load, not per keystroke)
+const TOWNS_LOWER = CT_TOWNS.map(t => t.toLowerCase());
+const TOWNS_SORTED_DESC = [...CT_TOWNS].sort((a, b) => b.length - a.length);
+const TOWNS_SORTED_LOWER = TOWNS_SORTED_DESC.map(t => t.toLowerCase());
+const TOWNS_EXACT_MAP = new Map(CT_TOWNS.map(t => [t.toLowerCase(), t]));
+
+const expandDirs = (s: string) =>
+  s.replace(/\b(n|s|e|w|no|so)\.?\s+/gi, (_, d) =>
+    (DIR_MAP[d.toLowerCase().replace('.', '')] || d) + ' '
+  );
+
+function matchTown(townInput: string): string | null {
+  const townLower = townInput.toLowerCase().trim();
+  const exact = TOWNS_EXACT_MAP.get(townLower);
+  if (exact) return exact;
+  for (let i = 0; i < TOWNS_LOWER.length; i++) {
+    const tl = TOWNS_LOWER[i];
+    if (tl.startsWith(townLower) || townLower.startsWith(tl)) return CT_TOWNS[i];
+  }
+  for (let i = 0; i < TOWNS_LOWER.length; i++) {
+    const tl = TOWNS_LOWER[i];
+    let dist = 0;
+    const minLen = Math.min(townLower.length, tl.length);
+    for (let j = 0; j < minLen; j++) { if (townLower[j] !== tl[j]) dist++; }
+    dist += Math.abs(townLower.length - tl.length);
+    if (dist <= 2) return CT_TOWNS[i];
+  }
+  return null;
+}
+
 /** Parse a full pasted address like "67 Blakeslee Rd, Wallingford, CT 06492" */
 function parseFullAddress(input: string): { street: string; town: string } | null {
-  // Remove zip codes and state abbreviation
-  let cleaned = input.replace(/,?\s*CT\s*\d{0,5}/i, '').replace(/\d{5}(-\d{4})?$/, '').trim();
-  // Remove trailing commas/spaces
-  cleaned = cleaned.replace(/[,\s]+$/, '');
+  let cleaned = input.replace(/,?\s*CT\s*\d{0,5}/i, '').replace(/\d{5}(-\d{4})?$/, '').trim().replace(/[,\s]+$/, '');
 
-  // Expand direction abbreviations for town matching: "S Windsor" → "South Windsor"
-  const expandDirs = (s: string) => {
-    return s.replace(/\b(n|s|e|w|no|so)\.?\s+/gi, (_, d) => {
-      return (DIR_MAP[d.toLowerCase().replace('.', '')] || d) + ' ';
-    });
-  };
-
-  // Try comma-separated first
   const parts = cleaned.split(',').map(p => p.trim()).filter(Boolean);
   if (parts.length >= 2) {
     const street = parts[0];
@@ -42,37 +61,16 @@ function parseFullAddress(input: string): { street: string; town: string } | nul
     return { street, town: townPart.trim() };
   }
 
-  // No commas — try to find a known CT town in the string
-  const expandedCleaned = expandDirs(cleaned);
-  // Sort towns longest-first so "South Windsor" matches before "Windsor"
-  const sortedTowns = [...CT_TOWNS].sort((a, b) => b.length - a.length);
-  for (const t of sortedTowns) {
-    const idx = expandedCleaned.toLowerCase().indexOf(t.toLowerCase());
+  // No commas — scan for known CT town using pre-sorted list
+  const expanded = expandDirs(cleaned).toLowerCase();
+  for (let i = 0; i < TOWNS_SORTED_DESC.length; i++) {
+    const idx = expanded.indexOf(TOWNS_SORTED_LOWER[i]);
     if (idx > 0) {
-      const street = expandedCleaned.substring(0, idx).replace(/[,\s]+$/, '').trim();
-      if (street.length > 0) return { street, town: t };
+      const street = cleaned.substring(0, idx).replace(/[,\s]+$/, '').trim();
+      if (street.length > 0) return { street, town: TOWNS_SORTED_DESC[i] };
     }
   }
-
   return null;
-}
-
-function matchTown(townInput: string): string | null {
-  const townLower = townInput.toLowerCase().trim();
-  // Exact match
-  const exact = CT_TOWNS.find(t => t.toLowerCase() === townLower);
-  if (exact) return exact;
-  // Fuzzy match
-  const fuzzy = CT_TOWNS.find(t => {
-    const tl = t.toLowerCase();
-    if (tl.startsWith(townLower) || townLower.startsWith(tl)) return true;
-    let dist = 0;
-    const minLen = Math.min(townLower.length, tl.length);
-    for (let i = 0; i < minLen; i++) { if (townLower[i] !== tl[i]) dist++; }
-    dist += Math.abs(townLower.length - tl.length);
-    return dist <= 2;
-  });
-  return fuzzy || null;
 }
 
 export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
@@ -96,18 +94,20 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
   const filteredTowns = useMemo(() => {
     if (!town) return CT_TOWNS.slice(0, 6);
     const q = town.toLowerCase();
-    const starts = CT_TOWNS.filter((t) => t.toLowerCase().startsWith(q));
-    const contains = CT_TOWNS.filter((t) => !t.toLowerCase().startsWith(q) && t.toLowerCase().includes(q));
-    // Fuzzy: allow 1-char difference for short inputs, 2 for longer
-    const fuzzy = q.length >= 3 ? CT_TOWNS.filter((t) => {
-      const tl = t.toLowerCase();
-      if (tl.startsWith(q) || tl.includes(q)) return false;
-      let dist = 0;
-      const minLen = Math.min(q.length, tl.length);
-      for (let i = 0; i < minLen; i++) { if (q[i] !== tl[i]) dist++; }
-      dist += Math.abs(q.length - tl.length);
-      return dist <= (q.length <= 4 ? 1 : 2);
-    }) : [];
+    const starts: string[] = [], contains: string[] = [], fuzzy: string[] = [];
+    const maxDist = q.length <= 4 ? 1 : 2;
+    for (let i = 0; i < TOWNS_LOWER.length; i++) {
+      const tl = TOWNS_LOWER[i];
+      if (tl.startsWith(q)) { starts.push(CT_TOWNS[i]); }
+      else if (tl.includes(q)) { contains.push(CT_TOWNS[i]); }
+      else if (q.length >= 3) {
+        let dist = 0;
+        const minLen = Math.min(q.length, tl.length);
+        for (let j = 0; j < minLen; j++) { if (q[j] !== tl[j]) dist++; }
+        dist += Math.abs(q.length - tl.length);
+        if (dist <= maxDist) fuzzy.push(CT_TOWNS[i]);
+      }
+    }
     return [...starts, ...contains, ...fuzzy].slice(0, 6);
   }, [town]);
 
@@ -126,7 +126,7 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
         if (!error && data?.suggestions) setAddressSuggestions(data.suggestions);
       } catch {}
       finally { if (!controller.signal.aborted) setIsFetching(false); }
-    }, 150);
+    }, 100);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); abortRef.current?.abort(); };
   }, [address]);
 
