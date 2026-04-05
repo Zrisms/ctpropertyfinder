@@ -503,7 +503,7 @@ Deno.serve(async (req) => {
       console.log(`Could not parse platform response, trying universal fallback...`);
     }
 
-    return await universalPropertySearch(apiKey, normalizedAddress, lookupTown, config.url, town);
+    return await withCache(normalizedAddress, lookupTown, () => universalPropertySearch(apiKey, normalizedAddress, lookupTown, config.url, town));
   } catch (error) {
     console.error("Error:", error);
     return json({ success: false, error: error instanceof Error ? error.message : "Search failed" }, 500);
