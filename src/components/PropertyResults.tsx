@@ -1,4 +1,4 @@
-import { FileDown, FileSpreadsheet, Loader2, Eye, ExternalLink } from "lucide-react";
+import { FileDown, FileSpreadsheet, Loader2, Eye, ExternalLink, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
