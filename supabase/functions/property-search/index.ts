@@ -674,37 +674,7 @@ async function scrapeMapXpress(apiKey: string, baseUrl: string, address: string,
   try {
     console.log(`Scraping MapXpress for ${town}: ${baseUrl}`);
 
-    // MapXpress sites use a property card page with address search
-    // Try Firecrawl search first
-    const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: `"${address}" "${town}" CT property mapxpress.net`, limit: 5 }),
-    });
-
-    if (searchResp.ok) {
-      const data = await searchResp.json();
-      const results = data.data || [];
-      for (const result of results) {
-        const url = result.url || '';
-        if (url.includes('mapxpress.net') && (url.includes('Pid=') || url.includes('pid='))) {
-          console.log(`Found MapXpress property: ${url}`);
-          const md = await firecrawlScrape(apiKey, url);
-          if (md) {
-            const extracted = extractMapXpressData(md, address, town);
-            if (extracted) {
-              extracted.propertyCardUrl = url;
-              if (extracted.isLLC) {
-                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
-              }
-              return json({ success: true, property: extracted });
-            }
-          }
-        }
-      }
-    }
-
-    // Strategy 2: Use Firecrawl actions to search on the MapXpress site
+    // Use Firecrawl actions to search on the MapXpress site directly
     const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
