@@ -930,35 +930,6 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
       }
     }
 
-    // Strategy 2: Firecrawl web search fallback
-    console.log(`Trying PRC web search fallback...`);
-    const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: `"${houseNum}" "${matchedStreet}" "${town}" CT property record card site:propertyrecordcards.com`, limit: 5 }),
-    });
-    if (searchResp.ok) {
-      const sData = await searchResp.json();
-      const results = sData.data || [];
-      for (const result of results) {
-        const url = result.url || '';
-        const uidMatch = url.match(/uniqueid=(\d+)/i);
-        if (uidMatch && url.includes('propertyrecordcards.com')) {
-          const detailUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${uidMatch[1]}`;
-          const detailMd = await firecrawlScrape(apiKey, detailUrl);
-          if (detailMd) {
-            const extracted = extractPRCData(detailMd, address, town);
-            if (extracted) {
-              extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uidMatch[1]}`;
-              if (extracted.isLLC) {
-                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
-              }
-              return json({ success: true, property: extracted });
-            }
-          }
-        }
-      }
-    }
   } catch (e) { console.error("PRC error:", e); }
 
   return json({ success: false, error: `Could not find property in ${town}. Try the Property Record Cards database directly.`, searchUrl: baseUrl });
