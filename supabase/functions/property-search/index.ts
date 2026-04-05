@@ -640,7 +640,7 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
   const uniqueSearchQueries = [...searchQueries].slice(0, 4);
 
   // Fire both searches in parallel
-  const allSearchResults = await Promise.all(searchQueries.map(async (query) => {
+  const allSearchResults = await Promise.all(uniqueSearchQueries.map(async (query) => {
     try {
       console.log(`Universal search: ${query}`);
       const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
