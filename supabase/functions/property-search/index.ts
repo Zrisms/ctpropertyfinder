@@ -1152,7 +1152,7 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
     matchedStreet = streets.find(s => s === streetPart) || '';
     // Try without suffix abbreviation
     if (!matchedStreet) {
-      const streetBase = streetPart.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, '').trim();
+      const streetBase = streetPart.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK)\.?$/i, '').trim();
       matchedStreet = streets.find(s => s.startsWith(streetBase)) || '';
     }
     // Try contains match
