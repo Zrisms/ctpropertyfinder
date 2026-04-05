@@ -1684,21 +1684,26 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
     const viewStateGen = (pageHtml.match(/id="__VIEWSTATEGENERATOR"\s+value="([^"]*)"/) || [])[1] || "";
     const eventValidation = (pageHtml.match(/id="__EVENTVALIDATION"\s+value="([^"]*)"/) || [])[1] || "";
 
-    // Build form data for POST submission
+    // Build form data for ASYNC POST submission (PRC uses Telerik UpdatePanel)
     const formData = new URLSearchParams();
+    formData.set("ctl00$MainContent$ScriptManager1", "ctl00$MainContent$UpdatePanel1|ctl00$MainContent$btnPropertySearch");
     formData.set("__VIEWSTATE", viewState);
     formData.set("__VIEWSTATEGENERATOR", viewStateGen);
     formData.set("__EVENTVALIDATION", eventValidation);
+    formData.set("__ASYNCPOST", "true");
+    formData.set("__EVENTTARGET", "ctl00$MainContent$btnPropertySearch");
+    formData.set("__EVENTARGUMENT", "");
     formData.set("ctl00$MainContent$tbPropertySearchStreetNumber", houseNum);
     formData.set("ctl00$MainContent$cbPropertySearchStreetName", matchedStreet);
-    formData.set("ctl00$MainContent$btnPropertySearch", "Search");
 
-    console.log(`Submitting PRC form: num=${houseNum}, street=${matchedStreet}`);
+    console.log(`Submitting PRC async form: num=${houseNum}, street=${matchedStreet}`);
     const postResp = await fetch(baseUrl, {
       method: "POST",
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Content-Type": "application/x-www-form-urlencoded",
+        "X-MicrosoftAjax": "Delta=true",
+        "X-Requested-With": "XMLHttpRequest",
         Referer: baseUrl,
       },
       body: formData.toString(),
@@ -1707,12 +1712,34 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
 
     if (postResp.ok) {
       const resultHtml = await postResp.text();
-      console.log(`PRC POST response length: ${resultHtml.length}`);
+      console.log(`PRC async response length: ${resultHtml.length}`);
 
-      // Look for uniqueid in the results — PRC uses alphanumeric IDs like R04533
+      // Look for uniqueid in the async response
       const allIds = [...resultHtml.matchAll(/uniqueid=([A-Za-z0-9]+)/gi)].map((m) => m[1]);
       const uniqueIds = [...new Set(allIds)];
-      console.log(`PRC POST: found ${uniqueIds.length} unique IDs`);
+      console.log(`PRC async: found ${uniqueIds.length} unique IDs`);
+
+      // Also look for onclick window.open patterns with PrintPage URLs
+      if (uniqueIds.length === 0) {
+        const printPageIds = [...resultHtml.matchAll(/PrintPage\.aspx\?towncode=\d+&(?:amp;)?uniqueid=([A-Za-z0-9]+)/gi)].map((m) => m[1]);
+        uniqueIds.push(...[...new Set(printPageIds)]);
+        console.log(`PRC PrintPage pattern: found ${uniqueIds.length} IDs`);
+      }
+      
+      // Also look for PropertyResults links
+      if (uniqueIds.length === 0) {
+        const resultIds = [...resultHtml.matchAll(/PropertyResults\.aspx\?towncode=\d+&(?:amp;)?uniqueid=([A-Za-z0-9]+)/gi)].map((m) => m[1]);
+        uniqueIds.push(...[...new Set(resultIds)]);
+        console.log(`PRC PropertyResults pattern: found ${uniqueIds.length} IDs`);
+      }
+
+      // Try extracting from grid row data - PRC often has address in onclick handlers
+      if (uniqueIds.length === 0) {
+        // Pattern: onclick="window.open('PropertyResults.aspx?towncode=025&uniqueid=R12345'
+        const onclickIds = [...resultHtml.matchAll(/window\.open\(['"](PropertyResults|PrintPage)[^'"]*uniqueid=([A-Za-z0-9]+)/gi)].map((m) => m[2]);
+        uniqueIds.push(...[...new Set(onclickIds)]);
+        console.log(`PRC onclick pattern: found ${uniqueIds.length} IDs`);
+      }
 
       for (const uid of uniqueIds.slice(0, 3)) {
         const detailUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${uid}`;
@@ -1722,7 +1749,6 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
           const extracted = extractPRCData(detailMd, address, town);
           if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
             extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uid}`;
-// LLC lookup removed - handled separately by frontend
             return json({ success: true, property: extracted });
           }
         }
