@@ -813,7 +813,17 @@ async function scrapeGrotonGIS(address: string, town: string): Promise<Response>
   const addrParts = searchTerm.match(/^(\d+)\s+(.+)$/);
   const houseNum = addrParts?.[1] || "";
   const streetPart = addrParts?.[2] || searchTerm;
-  const queryUrl = `${GROTON_ARCGIS_BASE}/query?where=PROPERTY_LOCATION+LIKE+'%25${encodeURIComponent(streetPart)}%25'&outFields=*&f=json&resultRecordCount=50`;
+  // First try exact match with house number, then fallback to street-only
+  const exactQuery = `${GROTON_ARCGIS_BASE}/query?where=PROPERTY_LOCATION+LIKE+'${encodeURIComponent(searchTerm)}%25'&outFields=*&f=json&resultRecordCount=10`;
+  let arcRes = await fetch(exactQuery);
+  let arcData = arcRes.ok ? await arcRes.json() : { features: [] };
+  if (!arcData.features?.length && houseNum) {
+    // Fallback: broader query filtered client-side
+    const broadQuery = `${GROTON_ARCGIS_BASE}/query?where=PROPERTY_LOCATION+LIKE+'%25${encodeURIComponent(streetPart)}%25'&outFields=*&f=json&resultRecordCount=50`;
+    arcRes = await fetch(broadQuery);
+    arcData = arcRes.ok ? await arcRes.json() : { features: [] };
+  }
+  // Remove redundant fetch below
   const arcRes = await fetch(queryUrl);
   if (!arcRes.ok) {
     return json({ success: false, error: 'Failed to query Groton GIS service' });
