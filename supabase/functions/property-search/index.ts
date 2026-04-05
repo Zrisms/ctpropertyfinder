@@ -1598,7 +1598,6 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
   try {
     console.log(`Scraping PRC for ${town} (code=${townCode})`);
 
-    // Parse address into number + street name
     const addrMatch = address.match(/^(\d+)\s+(.+)$/i);
     if (!addrMatch) {
       return json({ success: false, error: `Could not parse address: ${address}`, searchUrl: baseUrl });
@@ -1606,13 +1605,12 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
     const houseNum = addrMatch[1];
     const streetPart = addrMatch[2].toUpperCase().trim();
 
-    // Step 1: Fetch the search page HTML to get the street name options
+    // Step 1: Fetch the search page HTML to get the street name options + form fields
     console.log(`Fetching PRC page to find street names...`);
     const pageResp = await fetch(baseUrl, {
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
     });
     if (!pageResp.ok) {
-      console.error(`PRC page fetch failed: ${pageResp.status}`);
       return json({ success: false, error: `Could not load ${town} property records.`, searchUrl: baseUrl });
     }
     const pageHtml = await pageResp.text();
@@ -1622,30 +1620,7 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
     const streets: string[] = [];
     let sm;
     while ((sm = streetRegex.exec(pageHtml)) !== null) {
-      if (
-        sm[1] &&
-        sm[1].length > 1 &&
-        ![
-          "Apartment",
-          "Automotive",
-          "Church",
-          "Condos",
-          "Elderly",
-          "Entertainment",
-          "Farms/Barns",
-          "Industrial",
-          "Lodging",
-          "Marina",
-          "Office",
-          "Public Use",
-          "Residential",
-          "Restaurant",
-          "Retail",
-          "School",
-          "Special Use",
-          "Vacant Land",
-        ].includes(sm[1])
-      ) {
+      if (sm[1] && sm[1].length > 1 && !["Apartment","Automotive","Church","Condos","Elderly","Entertainment","Farms/Barns","Industrial","Lodging","Marina","Office","Public Use","Residential","Restaurant","Retail","School","Special Use","Vacant Land"].includes(sm[1])) {
         streets.push(sm[1]);
       }
     }
@@ -1653,16 +1628,18 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
 
     // Match user's street against the dropdown options
     let matchedStreet = "";
-    // Try exact match first
     matchedStreet = streets.find((s) => s === streetPart) || "";
-    // Try without suffix abbreviation
     if (!matchedStreet) {
-      const streetBase = streetPart
-        .replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK)\.?$/i, "")
-        .trim();
+      const streetBase = streetPart.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK|LA|LANE)\.?$/i, "").trim();
       matchedStreet = streets.find((s) => s.startsWith(streetBase)) || "";
     }
-    // Try contains match
+    if (!matchedStreet) {
+      // Try all suffix variants
+      for (const variant of getAddressVariants(streetPart)) {
+        matchedStreet = streets.find((s) => s === variant) || "";
+        if (matchedStreet) break;
+      }
+    }
     if (!matchedStreet) {
       const streetWords = streetPart.split(/\s+/);
       const mainWord = streetWords[0];
@@ -1671,39 +1648,31 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
 
     if (!matchedStreet) {
       console.log(`Street "${streetPart}" not found in ${town} PRC database`);
-      return json({
-        success: false,
-        error: `Street "${streetPart}" not found in ${town}. Try the Property Record Cards database directly.`,
-        searchUrl: baseUrl,
-      });
+      return json({ success: false, error: `Street "${streetPart}" not found in ${town}.`, searchUrl: baseUrl });
     }
     console.log(`Matched street: "${matchedStreet}"`);
 
-    // Step 2: Extract ASP.NET form fields for direct POST submission
+    // Step 2: Regular POST (NOT async) — this is the key fix
     const viewState = (pageHtml.match(/id="__VIEWSTATE"\s+value="([^"]*)"/) || [])[1] || "";
     const viewStateGen = (pageHtml.match(/id="__VIEWSTATEGENERATOR"\s+value="([^"]*)"/) || [])[1] || "";
     const eventValidation = (pageHtml.match(/id="__EVENTVALIDATION"\s+value="([^"]*)"/) || [])[1] || "";
 
-    // Build form data for ASYNC POST submission (PRC uses Telerik UpdatePanel)
     const formData = new URLSearchParams();
-    formData.set("ctl00$MainContent$ScriptManager1", "ctl00$MainContent$UpdatePanel1|ctl00$MainContent$btnPropertySearch");
     formData.set("__VIEWSTATE", viewState);
     formData.set("__VIEWSTATEGENERATOR", viewStateGen);
     formData.set("__EVENTVALIDATION", eventValidation);
-    formData.set("__ASYNCPOST", "true");
-    formData.set("__EVENTTARGET", "ctl00$MainContent$btnPropertySearch");
+    formData.set("__EVENTTARGET", "");
     formData.set("__EVENTARGUMENT", "");
     formData.set("ctl00$MainContent$tbPropertySearchStreetNumber", houseNum);
     formData.set("ctl00$MainContent$cbPropertySearchStreetName", matchedStreet);
+    formData.set("ctl00$MainContent$btnPropertySearch", "Search");
 
-    console.log(`Submitting PRC async form: num=${houseNum}, street=${matchedStreet}`);
+    console.log(`Submitting PRC regular POST: num=${houseNum}, street=${matchedStreet}`);
     const postResp = await fetch(baseUrl, {
       method: "POST",
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Content-Type": "application/x-www-form-urlencoded",
-        "X-MicrosoftAjax": "Delta=true",
-        "X-Requested-With": "XMLHttpRequest",
         Referer: baseUrl,
       },
       body: formData.toString(),
@@ -1712,99 +1681,92 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
 
     if (postResp.ok) {
       const resultHtml = await postResp.text();
-      console.log(`PRC async response length: ${resultHtml.length}`);
+      console.log(`PRC POST response length: ${resultHtml.length}`);
 
-      // Look for uniqueid in the async response
-      const allIds = [...resultHtml.matchAll(/uniqueid=([A-Za-z0-9]+)/gi)].map((m) => m[1]);
-      const uniqueIds = [...new Set(allIds)];
-      console.log(`PRC async: found ${uniqueIds.length} unique IDs`);
+      // Extract data from the search results TABLE directly
+      // Table columns: Street | House# | Unit | Owner | UniqueID | MBL | PropertyUse | Acres | Zone | Buildings | CondoComplex
+      const tableMatch = resultHtml.match(/<tbody>([\s\S]*?)<\/tbody>/i);
+      if (tableMatch) {
+        const rows = [...tableMatch[1].matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+        console.log(`PRC: found ${rows.length} result rows`);
 
-      // Also look for onclick window.open patterns with PrintPage URLs
-      if (uniqueIds.length === 0) {
-        const printPageIds = [...resultHtml.matchAll(/PrintPage\.aspx\?towncode=\d+&(?:amp;)?uniqueid=([A-Za-z0-9]+)/gi)].map((m) => m[1]);
-        uniqueIds.push(...[...new Set(printPageIds)]);
-        console.log(`PRC PrintPage pattern: found ${uniqueIds.length} IDs`);
-      }
-      
-      // Also look for PropertyResults links
-      if (uniqueIds.length === 0) {
-        const resultIds = [...resultHtml.matchAll(/PropertyResults\.aspx\?towncode=\d+&(?:amp;)?uniqueid=([A-Za-z0-9]+)/gi)].map((m) => m[1]);
-        uniqueIds.push(...[...new Set(resultIds)]);
-        console.log(`PRC PropertyResults pattern: found ${uniqueIds.length} IDs`);
-      }
+        for (const row of rows.slice(0, 5)) {
+          const cells = [...row[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map(c => c[1].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim());
+          if (cells.length < 7) continue;
 
-      // Try extracting from grid row data - PRC often has address in onclick handlers
-      if (uniqueIds.length === 0) {
-        // Pattern: onclick="window.open('PropertyResults.aspx?towncode=025&uniqueid=R12345'
-        const onclickIds = [...resultHtml.matchAll(/window\.open\(['"](PropertyResults|PrintPage)[^'"]*uniqueid=([A-Za-z0-9]+)/gi)].map((m) => m[2]);
-        uniqueIds.push(...[...new Set(onclickIds)]);
-        console.log(`PRC onclick pattern: found ${uniqueIds.length} IDs`);
-      }
+          const rowStreet = cells[0] || "";
+          const rowHouseNum = cells[1]?.trim() || "";
+          const rowUnit = cells[2]?.trim() || "";
+          const rowOwner = cells[3]?.trim() || "";
+          const rowUniqueId = cells[4]?.trim() || "";
+          const rowMBL = cells[5]?.trim() || "";
+          const rowUse = cells[6]?.trim() || "";
+          const rowAcres = cells[7]?.trim() || "";
+          const rowZone = cells[8]?.trim() || "";
+          const rowBuildings = cells[9]?.trim() || "";
 
-      for (const uid of uniqueIds.slice(0, 3)) {
-        const detailUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${uid}`;
-        console.log(`Checking PRC detail: ${detailUrl}`);
-        const detailMd = await firecrawlScrape(apiKey, detailUrl);
-        if (detailMd) {
-          const extracted = extractPRCData(detailMd, address, town);
-          if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
-            extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uid}`;
-            return json({ success: true, property: extracted });
-          }
-        }
-      }
-    }
+          // Check house number matches
+          if (rowHouseNum.replace(/\s/g, '') !== houseNum && rowHouseNum.trim() !== houseNum) continue;
 
-    // Fallback: Try Firecrawl actions with JavaScript to set dropdown value directly
-    console.log(`PRC POST failed, trying Firecrawl actions with JS...`);
-    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        url: baseUrl,
-        formats: ["html", "links"],
-        waitFor: 2000,
-        actions: [
-          { type: "wait", milliseconds: 1000 },
-          {
-            type: "execute_javascript",
-            code: `
-            document.getElementById('MainContent_tbPropertySearchStreetNumber').value = '${houseNum}';
-            var sel = document.getElementById('MainContent_cbPropertySearchStreetName');
-            for (var i = 0; i < sel.options.length; i++) {
-              if (sel.options[i].value === '${matchedStreet.replace(/'/g, "\\'")}') {
-                sel.selectedIndex = i;
-                sel.dispatchEvent(new Event('change'));
-                break;
+          console.log(`PRC match: ${rowHouseNum} ${rowStreet}, owner=${rowOwner}, uid=${rowUniqueId}`);
+          const fullAddress = `${rowHouseNum.trim()} ${rowStreet}`.trim();
+          const owner = rowOwner;
+          if (!owner || owner.length < 2) continue;
+
+          const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b|\bLP\b|\bL\.P\b/i.test(owner);
+
+          // Extract uniqueId from link href (may contain spaces)
+          const linkMatch = row[1].match(/uniqueid=([^"'&]+)/i);
+          const uniqueId = linkMatch ? linkMatch[1].trim() : rowUniqueId;
+
+          // Try to fetch detail page via Firecrawl for full data
+          const encodedUid = encodeURIComponent(uniqueId);
+          const printUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${encodedUid}`;
+          try {
+            const detailMd = await firecrawlScrape(apiKey, printUrl);
+            if (detailMd && detailMd.length > 300 && !detailMd.includes("Runtime Error")) {
+              const extracted = extractPRCData(detailMd, address, town);
+              if (extracted) {
+                extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${encodedUid}`;
+                return json({ success: true, property: extracted });
               }
             }
-          `,
-          },
-          { type: "wait", milliseconds: 500 },
-          { type: "click", selector: "#MainContent_btnPropertySearch" },
-          { type: "wait", milliseconds: 3000 },
-        ],
-      }),
-    });
+          } catch { /* detail page failed */ }
 
-    if (resp.ok) {
-      const data = await resp.json();
-      const html = data.data?.html || data.html || "";
-      const links = data.data?.links || data.links || [];
-      const combined = html + JSON.stringify(links);
+          // Return basic data from search results table
+          return json({ success: true, property: {
+            address: fullAddress || address, town, owner, coOwner: "", ownerAddress: "", isLLC,
+            parcelId: uniqueId, mblu: rowMBL, accountNumber: "",
+            buildingCount: rowBuildings, bookPage: "", certificate: "", instrument: "",
+            assessedValue: "", totalAppraisal: "", totalMarketValue: "", improvementsValue: "", landValue: "",
+            assessImprovements: "", assessLand: "", assessTotal: "", salePrice: "", saleDate: "",
+            lotSize: rowAcres ? `${rowAcres} acres` : "", frontage: "", depth: "",
+            useCode: "", useDescription: rowUse, zoning: rowZone, neighborhood: "",
+            totalMarketLand: "", landAppraisedValue: "", yearBuilt: "", buildingStyle: "", model: "", stories: "",
+            livingArea: "", replacementCost: "", buildingPercentGood: "", occupancy: "", totalRooms: "", bedrooms: "",
+            totalBaths: "", halfBaths: "", totalXtraFixtures: "", bathStyle: "", kitchenStyle: "", interiorCondition: "",
+            finBsmntArea: "", finBsmntQual: "", grade: "", exteriorWall: "", roofStructure: "", roofCover: "",
+            interiorWall: "", flooring: "", heating: "", heatingFuel: "", cooling: "", buildingPhoto: "",
+            garage: "", pool: "", fireplace: "", foundation: "", taxAmount: "",
+            ownershipHistory: [], subAreas: [], valuationHistory: [],
+            propertyCardUrl: baseUrl, llcDetails: undefined as any,
+          }});
+        }
+      }
 
-      const allIds2 = [...combined.matchAll(/uniqueid=([A-Za-z0-9]+)/gi)].map((m) => m[1]);
-      const uniqueIds2 = [...new Set(allIds2)];
-      console.log(`PRC actions: found ${uniqueIds2.length} unique IDs`);
+      // Fallback: try uniqueid regex patterns (handle spaces in IDs)
+      const allIds = [...resultHtml.matchAll(/uniqueid=([^"'&<>]+)/gi)].map((m) => m[1].trim());
+      const uniqueIds = [...new Set(allIds)];
+      console.log(`PRC fallback: found ${uniqueIds.length} unique IDs from regex`);
 
-      for (const uid of uniqueIds2.slice(0, 3)) {
-        const detailUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${uid}`;
+      for (const uid of uniqueIds.slice(0, 3)) {
+        const encodedUid = encodeURIComponent(uid);
+        const detailUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${encodedUid}`;
         const detailMd = await firecrawlScrape(apiKey, detailUrl);
-        if (detailMd) {
+        if (detailMd && !detailMd.includes("Runtime Error")) {
           const extracted = extractPRCData(detailMd, address, town);
           if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
-            extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uid}`;
-// LLC lookup removed - handled separately by frontend
+            extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${encodedUid}`;
             return json({ success: true, property: extracted });
           }
         }
