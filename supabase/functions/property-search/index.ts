@@ -47,6 +47,20 @@ function getAddressVariants(address: string): string[] {
   return [...new Set(variants)];
 }
 
+// Verify extracted address matches the searched address (prevent wrong-property results)
+function isAddressMatch(extractedAddr: string, searchAddr: string, houseNum: string): boolean {
+  if (!extractedAddr) return true; // No address to check = assume ok
+  const e = extractedAddr.toUpperCase().replace(/[^A-Z0-9\s]/g, ' ').trim();
+  const s = searchAddr.toUpperCase().replace(/[^A-Z0-9\s]/g, ' ').trim();
+  // Must contain the house number
+  if (houseNum && !e.includes(houseNum)) return false;
+  // Check if the street base name overlaps
+  const searchWords = s.split(/\s+/).filter(w => w.length > 2 && !/^(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY)$/.test(w));
+  const matchCount = searchWords.filter(w => e.includes(w)).length;
+  return matchCount >= Math.min(2, searchWords.length);
+}
+
+
 // ========== PLATFORM TYPES ==========
 type Platform = 'vgs' | 'mapxpress' | 'qds' | 'act' | 'ias' | 'equality' | 'prc' | 'custom';
 
@@ -274,6 +288,12 @@ Deno.serve(async (req) => {
       return await universalPropertySearch(apiKey, normalizedAddress, town);
     }
 
+    // For 'custom' platform towns (no real scraper), skip directly to smart extract
+    if (config.platform === 'custom') {
+      console.log(`Custom platform for ${town}, going straight to smart extract`);
+      return await smartExtractProperty(apiKey, normalizedAddress, town, config.url);
+    }
+
     // Try platform-specific scraper first
     let result: Response;
     try {
@@ -299,9 +319,8 @@ Deno.serve(async (req) => {
         case 'equality':
           result = await scrapeEqualityCama(apiKey, config.url!, normalizedAddress, town);
           break;
-        case 'custom':
         default:
-          result = await scrapeGenericWithFallback(apiKey, config.url!, normalizedAddress, town, config.label || `${town} Assessor`);
+          result = json({ success: false });
           break;
       }
     } catch (e) {
@@ -326,6 +345,89 @@ Deno.serve(async (req) => {
   }
 });
 
+// ========== SMART EXTRACT (for towns without dedicated scrapers) ==========
+async function smartExtractProperty(apiKey: string, address: string, town: string, fallbackUrl?: string) {
+  const addrParts = address.match(/^(\d+)\s+(.+)$/i);
+  const houseNum = addrParts?.[1] || '';
+  const streetFull = addrParts?.[2] || address;
+  const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, '').trim();
+
+  console.log(`Smart extract: ${address}, ${town}`);
+  const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: `"${houseNum} ${streetBase}" "${town}" CT property owner assessment`,
+      limit: 3,
+    }),
+  });
+  if (!searchResp.ok) return json({ success: false, error: 'Search failed', searchUrl: fallbackUrl });
+  const results = (await searchResp.json()).data || [];
+  const skip = /zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch|neighborwho|blockshopper/i;
+
+  for (const r of results) {
+    const url = r.url || '';
+    if (skip.test(url)) continue;
+    console.log(`Smart extract from: ${url}`);
+    try {
+      const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url, formats: ['extract'],
+          extract: {
+            prompt: `Extract ALL property data for ${address}, ${town}, CT. For insurance. If unavailable return "".`,
+            schema: { type: 'object', properties: {
+              owner:{type:'string'},coOwner:{type:'string'},ownerAddress:{type:'string'},
+              assessedValue:{type:'string'},totalAppraisal:{type:'string'},landValue:{type:'string'},
+              improvementsValue:{type:'string'},yearBuilt:{type:'string'},sqft:{type:'string'},
+              lotSize:{type:'string'},bedrooms:{type:'string'},bathrooms:{type:'string'},
+              halfBaths:{type:'string'},totalRooms:{type:'string'},stories:{type:'string'},
+              zoning:{type:'string'},salePrice:{type:'string'},saleDate:{type:'string'},
+              buildingStyle:{type:'string'},exteriorWall:{type:'string'},roofCover:{type:'string'},
+              roofStructure:{type:'string'},foundation:{type:'string'},heating:{type:'string'},
+              heatingFuel:{type:'string'},cooling:{type:'string'},flooring:{type:'string'},
+              garage:{type:'string'},pool:{type:'string'},fireplace:{type:'string'},
+              basement:{type:'string'},parcelId:{type:'string'},propertyType:{type:'string'},
+              neighborhood:{type:'string'},taxAmount:{type:'string'},buildingPhoto:{type:'string'},
+            }},
+          },
+        }),
+      });
+      if (!resp.ok) continue;
+      const ex = (await resp.json())?.data?.extract;
+      if (!ex?.owner || ex.owner.length < 4) continue;
+      if (/^(Sold|For Sale|Pending|N\/A|Unknown|Street View|Not Available)$/i.test(ex.owner)) continue;
+
+      console.log(`Smart extract success: owner=${ex.owner}`);
+      const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(ex.owner);
+      const prop: any = {
+        address, town, owner: ex.owner, coOwner: ex.coOwner||'', ownerAddress: ex.ownerAddress||'', isLLC,
+        parcelId: ex.parcelId||'', mblu:'', accountNumber:'', buildingCount:'', bookPage:'', certificate:'', instrument:'',
+        assessedValue: ex.assessedValue||'', totalAppraisal: ex.totalAppraisal||'',
+        totalMarketValue: ex.totalAppraisal||'', improvementsValue: ex.improvementsValue||'', landValue: ex.landValue||'',
+        assessImprovements:'', assessLand:'', assessTotal: ex.assessedValue||'',
+        salePrice: ex.salePrice||'', saleDate: ex.saleDate||'', lotSize: ex.lotSize||'', frontage:'', depth:'',
+        useCode:'', useDescription: ex.propertyType||'', zoning: ex.zoning||'', neighborhood: ex.neighborhood||'',
+        totalMarketLand:'', landAppraisedValue:'',
+        yearBuilt: ex.yearBuilt||'', buildingStyle: ex.buildingStyle||'', model:'', stories: ex.stories||'',
+        livingArea: ex.sqft||'', replacementCost:'', buildingPercentGood:'',
+        occupancy:'', totalRooms: ex.totalRooms||'', bedrooms: ex.bedrooms||'', totalBaths: ex.bathrooms||'', halfBaths: ex.halfBaths||'',
+        totalXtraFixtures:'', bathStyle:'', kitchenStyle:'',
+        interiorCondition:'', finBsmntArea: ex.basement||'', finBsmntQual:'', grade:'',
+        exteriorWall: ex.exteriorWall||'', roofStructure: ex.roofStructure||'', roofCover: ex.roofCover||'',
+        interiorWall:'', flooring: ex.flooring||'', heating: ex.heating||'', heatingFuel: ex.heatingFuel||'', cooling: ex.cooling||'',
+        buildingPhoto: ex.buildingPhoto||'',
+        garage: ex.garage||'', pool: ex.pool||'', fireplace: ex.fireplace||'', foundation: ex.foundation||'', taxAmount: ex.taxAmount||'',
+        ownershipHistory:[], subAreas:[], valuationHistory:[], propertyCardUrl: url, llcDetails: undefined as any,
+      };
+      if (isLLC) { try { prop.llcDetails = await searchCTBusiness(apiKey, prop.owner); } catch(e) { console.error("LLC:",e); } }
+      return json({ success: true, property: prop });
+    } catch (e) { console.error(`Smart extract error:`, e); }
+  }
+  return json({ success: false, error: `Could not find property data for ${address} in ${town}.`, searchUrl: fallbackUrl || '' });
+}
+
 // ========== UNIVERSAL FALLBACK SEARCH ==========
 // Tries multiple web search strategies to find any CT property data
 async function universalPropertySearch(apiKey: string, address: string, town: string, fallbackUrl?: string) {
@@ -336,12 +438,10 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
   const streetFull = addrParts?.[2] || address;
   const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, '').trim();
 
-  // Strategy 1: Search official assessor sources
+  // Strategy 1: Search official assessor sources (limit to 2 queries to save time)
   const searchQueries = [
-    `"${houseNum} ${streetBase}" "${town}" CT property vgsi.com`,
-    `"${houseNum} ${streetBase}" "${town}" CT assessor property owner`,
-    `"${address}" "${town}" Connecticut property record card`,
-    `${houseNum} ${streetBase} ${town} CT property tax assessment owner`,
+    `"${houseNum} ${streetBase}" "${town}" CT property vgsi.com OR propertyrecordcards.com`,
+    `"${houseNum} ${streetBase}" "${town}" CT assessor property owner assessment`,
   ];
 
   for (const query of searchQueries) {
@@ -374,7 +474,7 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
           const md = await firecrawlScrape(apiKey, url);
           if (md) {
             const extracted = extractPRCData(md, address, town) || extractGenericPropertyData(md, address, town);
-            if (extracted) {
+            if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
               extracted.propertyCardUrl = url;
               if (extracted.isLLC) {
                 try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
@@ -394,7 +494,7 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
                               extractQDSCardData(md, address, town) ||
                               extractPRCData(md, address, town) ||
                               extractGenericPropertyData(md, address, town);
-            if (extracted) {
+            if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
               extracted.propertyCardUrl = url;
               if (extracted.isLLC) {
                 try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
@@ -407,25 +507,27 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
     } catch (e) { console.error("Universal search error:", e); }
   }
 
-  // Strategy 2: Use Firecrawl search with scrape, then use LLM JSON extraction on the best result
+  // Strategy 2: LLM-powered extraction from any property data source
   try {
-    console.log(`Strategy 2: search+extract for ${address}, ${town}`);
+    console.log(`Strategy 2: smart extract for ${address}, ${town}`);
     const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        query: `"${houseNum} ${streetBase}" "${town}" CT property owner assessed value`,
+        query: `"${houseNum} ${streetBase}" "${town}" CT property owner year built square feet assessment`,
         limit: 5,
       }),
     });
+
     if (searchResp.ok) {
       const searchData = await searchResp.json();
       const results = searchData.data || [];
-      // Find the best URL to scrape with JSON extraction
+      const skipSites = /zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch|neighborwho|blockshopper/i;
+
       for (const result of results) {
         const url = result.url || '';
-        if (/zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch/i.test(url)) continue;
-        console.log(`Strategy 2: JSON scrape from ${url}`);
+        if (skipSites.test(url)) continue;
+        console.log(`Strategy 2: extracting from ${url}`);
         try {
           const scrapeResp = await fetch('https://api.firecrawl.dev/v1/scrape', {
             method: 'POST',
@@ -434,62 +536,77 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
               url,
               formats: ['extract'],
               extract: {
-                prompt: `Extract property record data for the property at ${address}, ${town}, CT. I need the property owner's full legal name (not "sold" or status words), tax assessed value, year built, total square footage, lot size in acres, number of bedrooms, number of bathrooms, zoning code, last sale price, and last sale date.`,
+                prompt: `Extract ALL property record data for ${address}, ${town}, CT. This is for insurance underwriting. Be thorough. If not available, return "".`,
                 schema: {
                   type: 'object',
                   properties: {
-                    owner: { type: 'string', description: 'Full legal name of the current property owner' },
-                    assessedValue: { type: 'string' },
-                    yearBuilt: { type: 'string' },
-                    sqft: { type: 'string' },
-                    lotSize: { type: 'string' },
-                    bedrooms: { type: 'string' },
-                    bathrooms: { type: 'string' },
-                    zoning: { type: 'string' },
-                    salePrice: { type: 'string' },
-                    saleDate: { type: 'string' },
+                    owner: { type: 'string', description: 'Full legal name of current property owner' },
+                    coOwner: { type: 'string' }, ownerAddress: { type: 'string' },
+                    assessedValue: { type: 'string' }, totalAppraisal: { type: 'string' },
+                    landValue: { type: 'string' }, improvementsValue: { type: 'string' },
+                    yearBuilt: { type: 'string' }, sqft: { type: 'string' }, lotSize: { type: 'string' },
+                    bedrooms: { type: 'string' }, bathrooms: { type: 'string' }, halfBaths: { type: 'string' },
+                    totalRooms: { type: 'string' }, stories: { type: 'string' }, zoning: { type: 'string' },
+                    salePrice: { type: 'string' }, saleDate: { type: 'string' },
+                    buildingStyle: { type: 'string' }, exteriorWall: { type: 'string' },
+                    roofCover: { type: 'string' }, roofStructure: { type: 'string' },
+                    foundation: { type: 'string' }, heating: { type: 'string' },
+                    heatingFuel: { type: 'string' }, cooling: { type: 'string' },
+                    flooring: { type: 'string' }, garage: { type: 'string' },
+                    pool: { type: 'string' }, fireplace: { type: 'string' },
+                    basement: { type: 'string' }, parcelId: { type: 'string' },
+                    propertyType: { type: 'string' }, neighborhood: { type: 'string' },
+                    taxAmount: { type: 'string' }, buildingPhoto: { type: 'string' },
                   },
                 },
               },
             }),
           });
-          if (!scrapeResp.ok) { console.log(`Scrape failed: ${scrapeResp.status}`); continue; }
+          if (!scrapeResp.ok) continue;
           const scrapeData = await scrapeResp.json();
-          const extracted = scrapeData?.data?.extract || scrapeData?.extract;
-          if (extracted?.owner && extracted.owner.length >= 4 &&
-              !/^(Sold|For Sale|Pending|N\/A|Unknown|Street View|Not Available)$/i.test(extracted.owner)) {
-            console.log(`Strategy 2 success from ${url}: owner=${extracted.owner}`);
-            const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(extracted.owner);
-            const prop = {
-              address, town, owner: extracted.owner, coOwner: '', ownerAddress: '', isLLC,
-              parcelId: '', mblu: '', accountNumber: '', buildingCount: '', bookPage: '', certificate: '', instrument: '',
-              assessedValue: extracted.assessedValue || '', totalAppraisal: '', totalMarketValue: '',
-              improvementsValue: '', landValue: '',
-              assessImprovements: '', assessLand: '', assessTotal: extracted.assessedValue || '',
-              salePrice: extracted.salePrice || '', saleDate: extracted.saleDate || '',
-              lotSize: extracted.lotSize || '', frontage: '', depth: '',
-              useCode: '', useDescription: '', zoning: extracted.zoning || '', neighborhood: '',
-              totalMarketLand: '', landAppraisedValue: '',
-              yearBuilt: extracted.yearBuilt || '', buildingStyle: '', model: '', stories: '',
-              livingArea: extracted.sqft || '', replacementCost: '', buildingPercentGood: '',
-              occupancy: '', totalRooms: '', bedrooms: extracted.bedrooms || '', totalBaths: extracted.bathrooms || '', halfBaths: '',
-              totalXtraFixtures: '', bathStyle: '', kitchenStyle: '',
-              interiorCondition: '', finBsmntArea: '', finBsmntQual: '', grade: '',
-              exteriorWall: '', roofStructure: '', roofCover: '',
-              interiorWall: '', flooring: '',
-              heating: '', heatingFuel: '', cooling: '',
-              buildingPhoto: '',
-              ownershipHistory: [] as { owner: string; salePrice: string; bookPage: string; saleDate: string }[],
-              subAreas: [] as { code: string; description: string; grossArea: string; livingArea: string }[],
-              valuationHistory: [] as { year: string; improvements: string; land: string; total: string }[],
-              propertyCardUrl: url, llcDetails: undefined as any,
-            };
-            if (isLLC) {
-              try { prop.llcDetails = await searchCTBusiness(apiKey, prop.owner); } catch (e) { console.error("LLC:", e); }
-            }
-            return json({ success: true, property: prop });
+          const ex = scrapeData?.data?.extract || scrapeData?.extract;
+          if (!ex?.owner || ex.owner.length < 4) continue;
+          if (/^(Sold|For Sale|Pending|N\/A|Unknown|Street View|Not Available)$/i.test(ex.owner)) continue;
+
+          console.log(`Strategy 2 success: owner=${ex.owner}, fields=${Object.keys(ex).filter(k => ex[k]).length}`);
+          const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(ex.owner);
+          const prop = {
+            address, town, owner: ex.owner, coOwner: ex.coOwner || '', ownerAddress: ex.ownerAddress || '', isLLC,
+            parcelId: ex.parcelId || '', mblu: '', accountNumber: '', buildingCount: '',
+            bookPage: '', certificate: '', instrument: '',
+            assessedValue: ex.assessedValue || '', totalAppraisal: ex.totalAppraisal || '',
+            totalMarketValue: ex.totalAppraisal || '',
+            improvementsValue: ex.improvementsValue || '', landValue: ex.landValue || '',
+            assessImprovements: '', assessLand: '', assessTotal: ex.assessedValue || '',
+            salePrice: ex.salePrice || '', saleDate: ex.saleDate || '',
+            lotSize: ex.lotSize || '', frontage: '', depth: '',
+            useCode: '', useDescription: ex.propertyType || '', zoning: ex.zoning || '',
+            neighborhood: ex.neighborhood || '',
+            totalMarketLand: '', landAppraisedValue: '',
+            yearBuilt: ex.yearBuilt || '', buildingStyle: ex.buildingStyle || '', model: '',
+            stories: ex.stories || '',
+            livingArea: ex.sqft || '', replacementCost: '', buildingPercentGood: '',
+            occupancy: '', totalRooms: ex.totalRooms || '',
+            bedrooms: ex.bedrooms || '', totalBaths: ex.bathrooms || '', halfBaths: ex.halfBaths || '',
+            totalXtraFixtures: '', bathStyle: '', kitchenStyle: '',
+            interiorCondition: '', finBsmntArea: ex.basement || '', finBsmntQual: '', grade: '',
+            exteriorWall: ex.exteriorWall || '', roofStructure: ex.roofStructure || '',
+            roofCover: ex.roofCover || '',
+            interiorWall: '', flooring: ex.flooring || '',
+            heating: ex.heating || '', heatingFuel: ex.heatingFuel || '', cooling: ex.cooling || '',
+            buildingPhoto: ex.buildingPhoto || '',
+            garage: ex.garage || '', pool: ex.pool || '', fireplace: ex.fireplace || '',
+            foundation: ex.foundation || '', taxAmount: ex.taxAmount || '',
+            ownershipHistory: [] as { owner: string; salePrice: string; bookPage: string; saleDate: string }[],
+            subAreas: [] as { code: string; description: string; grossArea: string; livingArea: string }[],
+            valuationHistory: [] as { year: string; improvements: string; land: string; total: string }[],
+            propertyCardUrl: url, llcDetails: undefined as any,
+          };
+          if (isLLC) {
+            try { prop.llcDetails = await searchCTBusiness(apiKey, prop.owner); } catch (e) { console.error("LLC:", e); }
           }
-        } catch (e) { console.error(`Strategy 2 scrape error for ${url}:`, e); }
+          return json({ success: true, property: prop });
+        } catch (e) { console.error(`Strategy 2 scrape error:`, e); }
       }
     }
   } catch (e) { console.error("Strategy 2 error:", e); }

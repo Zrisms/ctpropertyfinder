@@ -16,6 +16,7 @@ export interface PropertyData {
   kitchenStyle?: string; interiorCondition?: string; finBsmntArea?: string; finBsmntQual?: string;
   grade?: string; exteriorWall?: string; roofStructure?: string; roofCover?: string; interiorWall?: string;
   flooring?: string; heating?: string; heatingFuel?: string; cooling?: string; buildingPhoto?: string;
+  garage?: string; pool?: string; fireplace?: string; foundation?: string; taxAmount?: string;
   ownershipHistory?: { owner: string; salePrice: string; bookPage: string; saleDate: string }[];
   subAreas?: { code: string; description: string; grossArea: string; livingArea: string }[];
   valuationHistory?: { year: string; improvements: string; land: string; total: string }[];
@@ -113,8 +114,9 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
           {data.grade && <Row l="Grade" v={data.grade} />}
         </Section>
 
-        <Section title="Construction">
+        <Section title="Construction & Systems">
           {data.exteriorWall && <Row l="Exterior" v={data.exteriorWall} />}
+          {data.foundation && <Row l="Foundation" v={data.foundation} />}
           {data.roofStructure && <Row l="Roof" v={data.roofStructure} />}
           {data.roofCover && <Row l="Roof Cover" v={data.roofCover} />}
           {data.interiorWall && <Row l="Interior" v={data.interiorWall} />}
@@ -122,9 +124,19 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
           {data.heating && <Row l="Heating" v={data.heating} />}
           {data.heatingFuel && <Row l="Fuel" v={data.heatingFuel} />}
           {data.cooling && <Row l="Cooling" v={data.cooling} />}
+          {data.garage && <Row l="Garage" v={data.garage} />}
+          {data.fireplace && <Row l="Fireplace" v={data.fireplace} />}
+          {data.pool && <Row l="Pool" v={data.pool} />}
+          {data.finBsmntArea && <Row l="Basement" v={data.finBsmntArea} />}
           {data.kitchenStyle && <Row l="Kitchen" v={data.kitchenStyle} />}
           {data.bathStyle && <Row l="Bath Style" v={data.bathStyle} />}
         </Section>
+
+        {data.taxAmount && (
+          <Section title="Tax">
+            <Row l="Annual Tax" v={data.taxAmount} accent />
+          </Section>
+        )}
       </div>
 
       {/* Tables */}
