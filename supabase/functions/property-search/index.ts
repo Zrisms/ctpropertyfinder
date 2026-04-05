@@ -300,11 +300,11 @@ const TOWN_DB: Record<string, TownConfig> = {
   woodbridge: { platform: "prc", townCode: "167" },
   woodbury: { platform: "prc", townCode: "168" },
 
-  // === Avon GIS (Tighebond ArcGIS REST API) ===
+  // === Avon (town assessor website) ===
   avon: {
-    platform: "avon_gis",
-    url: "https://hostingdata4.tighebond.com/arcgis/rest/services/AvonCT/AvonDynamic_Public/MapServer/0",
-    label: "Town of Avon GIS",
+    platform: "custom",
+    url: "https://www.avonct.gov/departments/assessor/index.php",
+    label: "Town of Avon Assessor",
   },
 
   // === IAS-CLT Towns ===
