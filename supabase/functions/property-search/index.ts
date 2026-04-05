@@ -953,7 +953,7 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
       const links = data.data?.links || data.links || [];
       const combined = html + JSON.stringify(links);
 
-      const allIds2 = [...combined.matchAll(/uniqueid=(\d+)/gi)].map(m => m[1]);
+      const allIds2 = [...combined.matchAll(/uniqueid=([A-Za-z0-9]+)/gi)].map(m => m[1]);
       const uniqueIds2 = [...new Set(allIds2)];
       console.log(`PRC actions: found ${uniqueIds2.length} unique IDs`);
 
