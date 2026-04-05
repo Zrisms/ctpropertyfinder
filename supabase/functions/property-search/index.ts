@@ -964,10 +964,133 @@ function extractMapXpressData(markdown: string, address: string, town: string) {
   return extractGenericPropertyData(markdown, address, town);
 }
 
-// ========== QDS DATA EXTRACTOR ==========
+// ========== QDS CARD DATA EXTRACTOR (Avon-style) ==========
+function extractQDSCardData(markdown: string, address: string, town: string) {
+  const text = markdown;
+
+  // Extract owner from "Owner name: NAME" format
+  const ownerMatch = text.match(/Owner\s*name:\s*(.+)/i);
+  let owner = ownerMatch?.[1]?.trim() || '';
+
+  // Second name (co-owner)
+  const secondMatch = text.match(/Second\s*name:\s*(.+)/i);
+  const coOwner = secondMatch?.[1]?.trim() || '';
+
+  // Mailing address
+  const addrMatch = text.match(/Address:\s*(.+)/i);
+  const cityMatch = text.match(/City\/state:\s*(.+?)(?:Zip:|$)/i);
+  const zipMatch = text.match(/Zip:\s*(\S+)/i);
+  const ownerAddress = [addrMatch?.[1]?.trim(), cityMatch?.[1]?.trim(), zipMatch?.[1]?.trim()].filter(Boolean).join(', ');
+
+  // Location info
+  const mapMatch = text.match(/Map:\s*(\S+)/i);
+  const lotMatch = text.match(/Lot:\s*(\S+)/i);
+  const neighMatch = text.match(/Neigh\.?:\s*(\S*)/i);
+  const zoneMatch = text.match(/Zone:\s*(\S+)/i);
+  const volMatch = text.match(/Vol:\s*(\S+)/i);
+  const pageMatch = text.match(/Page:\s*(\S+)/i);
+  const bookPage = volMatch?.[1] && pageMatch?.[1] ? `${volMatch[1]}/${pageMatch[1]}` : '';
+
+  // Assessments
+  const assessments: { category: string; qty: string; amount: string }[] = [];
+  const assessRegex = /\|([\w\s]+?)\s+([\d.]+)\s+([\d,]+)\|/g;
+  let am;
+  while ((am = assessRegex.exec(text)) !== null) {
+    if (!am[1].includes('Exempt') && !am[1].includes('Total') && !am[1].includes('Net')) {
+      assessments.push({ category: am[1].trim(), qty: am[2], amount: am[3] });
+    }
+  }
+
+  // Total assessment
+  const totalAssessMatch = text.match(/Total\s*assessments\s+([\d,]+)/i);
+  const totalAssessment = totalAssessMatch?.[1] || '';
+
+  // Net assessment
+  const netAssessMatch = text.match(/Net\s*assessment\s+([\d,]+)/i);
+  const netAssessment = netAssessMatch?.[1] || '';
+
+  // Sale info
+  const saleDateMatch = text.match(/Sale\s*date:\s*([\w\-]+)/i);
+  const salePriceMatch = text.match(/Sale\s*price:\s*([\d,]+)/i);
+  const saleDate = saleDateMatch?.[1] || '';
+  const salePrice = salePriceMatch?.[1] ? `$${salePriceMatch[1]}` : '';
+
+  // Values
+  const mktValueMatch = text.match(/Mkt\s*value\s*:\s*([\d,]+)/i);
+  const costValueMatch = text.match(/Cost\s*value:\s*([\d,]+)/i);
+  const mktValue = mktValueMatch?.[1] || '';
+  const costValue = costValueMatch?.[1] || '';
+
+  // Utilities
+  const waterMatch = text.match(/Water\s+([\w\s]+?)(?:\||\n)/i);
+  const sewerMatch = text.match(/Sewer\s+([\w\s]+?)(?:\||\n)/i);
+  const gasMatch = text.match(/Gas\s+([\w\s]+?)(?:\||\n)/i);
+
+  // Property ID from title
+  const pidMatch = text.match(/Prop\s*ID\s*(\d+)/i);
+  const parcelId = pidMatch?.[1] || lotMatch?.[1] || '';
+
+  // PDF field card link
+  const pdfMatch = text.match(/\[Street Card\]\((https?:\/\/[^\)]+\.pdf)\)/i);
+
+  // Land vs building values from assessments
+  let landValue = '', improvementsValue = '';
+  for (const a of assessments) {
+    if (a.category.toLowerCase().includes('land')) landValue = a.amount;
+    if (a.category.toLowerCase().includes('building')) improvementsValue = a.amount;
+  }
+
+  owner = owner.replace(/[*#\[\]]/g, '').trim();
+  if (!owner || owner.length < 2) return null;
+
+  const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b|\bLP\b|\bL\.P\b/i.test(owner);
+  const fmt$ = (v: string) => v ? `$${v}` : '';
+
+  return {
+    address, town, owner, coOwner, ownerAddress, isLLC,
+    parcelId, mblu: mapMatch?.[1] ? `${mapMatch[1]}/${lotMatch?.[1] || ''}` : '',
+    accountNumber: '', buildingCount: String(assessments.filter(a => a.category.toLowerCase().includes('building')).length || ''),
+    bookPage, certificate: '', instrument: '',
+    assessedValue: fmt$(netAssessment || totalAssessment),
+    totalAppraisal: fmt$(costValue || mktValue),
+    totalMarketValue: fmt$(mktValue),
+    improvementsValue: fmt$(improvementsValue),
+    landValue: fmt$(landValue),
+    assessImprovements: '', assessLand: '',
+    assessTotal: fmt$(netAssessment || totalAssessment),
+    salePrice, saleDate,
+    lotSize: assessments.find(a => a.category.toLowerCase().includes('land'))?.qty
+      ? `${assessments.find(a => a.category.toLowerCase().includes('land'))!.qty} acres` : '',
+    frontage: '', depth: '',
+    useCode: '', useDescription: assessments.map(a => a.category).join(', '),
+    zoning: zoneMatch?.[1] || '', neighborhood: neighMatch?.[1] || '',
+    totalMarketLand: '', landAppraisedValue: '',
+    yearBuilt: '', buildingStyle: '', model: '', stories: '',
+    livingArea: '', replacementCost: '', buildingPercentGood: '',
+    occupancy: '', totalRooms: '', bedrooms: '', totalBaths: '',
+    halfBaths: '', totalXtraFixtures: '', bathStyle: '', kitchenStyle: '',
+    interiorCondition: '', finBsmntArea: '', finBsmntQual: '', grade: '',
+    exteriorWall: '', roofStructure: '', roofCover: '',
+    interiorWall: '', flooring: '',
+    heating: '', heatingFuel: gasMatch?.[1]?.trim() || '',
+    cooling: '',
+    buildingPhoto: '',
+    ownershipHistory: [] as { owner: string; salePrice: string; bookPage: string; saleDate: string }[],
+    subAreas: assessments.map(a => ({ code: a.category, description: a.category, grossArea: '', livingArea: a.amount })),
+    valuationHistory: [] as { year: string; improvements: string; land: string; total: string }[],
+    utilities: {
+      water: waterMatch?.[1]?.trim() || '',
+      sewer: sewerMatch?.[1]?.trim() || '',
+      gas: gasMatch?.[1]?.trim() || '',
+    },
+    propertyCardUrl: '', fieldCardPdfUrl: pdfMatch?.[1] || '',
+    llcDetails: undefined as any,
+  };
+}
+
+// ========== QDS DATA EXTRACTOR (fallback) ==========
 function extractQDSData(markdown: string, address: string, town: string) {
-  // QDS sites have owner, address, assessment values in a structured format
-  return extractGenericPropertyData(markdown, address, town);
+  return extractQDSCardData(markdown, address, town) || extractGenericPropertyData(markdown, address, town);
 }
 
 // ========== GENERIC PROPERTY DATA EXTRACTOR ==========
