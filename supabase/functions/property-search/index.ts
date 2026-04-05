@@ -1134,7 +1134,7 @@ async function scrapeGenericWithFallback(apiKey: string, baseUrl: string, addres
       for (const result of results) {
         const url = result.url || '';
         // Skip generic listing sites
-        if (url.includes('zillow') || url.includes('realtor') || url.includes('trulia') || url.includes('redfin')) continue;
+        if (/zillow|realtor|trulia|redfin|homes\.com|movoto|homesnap|countyoffice|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch/i.test(url)) continue;
         if (url.includes(town.toLowerCase().replace(/\s+/g, '')) || url.includes('assessor') || url.includes('property')) {
           const md = await firecrawlScrape(apiKey, url);
           if (md && md.length > 300) {
