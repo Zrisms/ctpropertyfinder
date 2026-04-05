@@ -1190,7 +1190,7 @@ async function scrapeMapXpress(apiKey: string, baseUrl: string, address: string,
         formats: ["html"],
         onlyMainContent: false,
         waitFor: 3000,
-        timeout: 20000,
+        timeout: 15000,
         actions: [
           { type: "wait", milliseconds: 1500 },
           // Click accept/enter disclaimer link
