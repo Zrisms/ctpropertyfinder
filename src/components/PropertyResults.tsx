@@ -251,6 +251,16 @@ function Btn({ children, onClick, disabled, primary }: { children: React.ReactNo
   );
 }
 
+function CopyNameBtn({ name }: { name: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button onClick={() => { navigator.clipboard.writeText(name); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+      className="text-xs text-primary hover:underline inline-flex items-center gap-1">
+      {copied ? <><Check className="h-3 w-3" /> Copied!</> : <><Copy className="h-3 w-3" /> Copy Name</>}
+    </button>
+  );
+}
+
 function Table({ heads, rows, rightAlign = [], boldCol }: { heads: string[]; rows: string[][]; rightAlign?: number[]; boldCol?: number }) {
   return (
     <div className="overflow-x-auto">
