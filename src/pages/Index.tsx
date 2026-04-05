@@ -68,7 +68,7 @@ const Index = () => {
           )}
           {propertyData && (
             <h1 className="text-2xl font-semibold tracking-tight">
-              <span className="text-shimmer">Property Lookup</span>
+              <span className="text-shimmer">Foyr</span>
             </h1>
           )}
         </div>
