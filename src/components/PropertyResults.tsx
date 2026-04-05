@@ -1,4 +1,4 @@
-import { FileDown, FileSpreadsheet, Loader2, Eye, ExternalLink } from "lucide-react";
+import { FileDown, FileSpreadsheet, Loader2, Eye, ExternalLink, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
@@ -156,10 +156,11 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
               <span className="text-xs text-muted-foreground/60">CT Secretary of State</span>
+              <CopyNameBtn name={data.owner} />
               {data.llcDetails.businessProfileUrl && (
                 <a href={data.llcDetails.businessProfileUrl} target="_blank" rel="noopener noreferrer"
                   className="text-xs text-primary hover:underline inline-flex items-center gap-1">
-                  <ExternalLink className="h-3 w-3" /> View CT Profile
+                  <ExternalLink className="h-3 w-3" /> Search CT SOS
                 </a>
               )}
             </div>
@@ -247,6 +248,16 @@ function Btn({ children, onClick, disabled, primary }: { children: React.ReactNo
       className={`rounded-full h-8 px-4 text-xs font-medium transition-all active:scale-[0.97] ${primary ? 'bg-primary text-primary-foreground hover:brightness-110 border-0' : 'glass hover:bg-secondary/60 text-foreground border-0'}`}>
       {disabled ? <Loader2 className="h-3 w-3 animate-spin" /> : children}
     </Button>
+  );
+}
+
+function CopyNameBtn({ name }: { name: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button onClick={() => { navigator.clipboard.writeText(name); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+      className="text-xs text-primary hover:underline inline-flex items-center gap-1">
+      {copied ? <><Check className="h-3 w-3" /> Copied!</> : <><Copy className="h-3 w-3" /> Copy Name</>}
+    </button>
   );
 }
 
