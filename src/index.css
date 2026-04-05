@@ -65,12 +65,6 @@
   .glow-blue {
     box-shadow: 0 0 60px -15px hsl(217 91% 60% / 0.25), 0 0 20px -5px hsl(217 91% 60% / 0.15);
   }
-  .glow-green {
-    box-shadow: 0 0 40px -10px hsl(160 84% 50% / 0.2);
-  }
-  .gradient-shine {
-    background: linear-gradient(135deg, hsl(217 91% 60%) 0%, hsl(260 80% 65%) 50%, hsl(160 84% 50%) 100%);
-  }
   .text-gradient {
     background: linear-gradient(135deg, hsl(217 91% 65%) 0%, hsl(260 80% 70%) 40%, hsl(160 84% 55%) 100%);
     -webkit-background-clip: text;
@@ -80,4 +74,111 @@
   .apple-section-title {
     @apply text-[11px] font-semibold text-muted-foreground uppercase tracking-[0.08em];
   }
+}
+
+/* ── Animated ambient orbs ── */
+@keyframes float-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(60px, -40px) scale(1.1); }
+  66% { transform: translate(-30px, 30px) scale(0.95); }
+}
+@keyframes float-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-50px, 50px) scale(1.15); }
+  66% { transform: translate(40px, -20px) scale(0.9); }
+}
+@keyframes float-3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(30px, 60px) scale(1.08); }
+}
+.orb-1 { animation: float-1 20s ease-in-out infinite; }
+.orb-2 { animation: float-2 25s ease-in-out infinite; }
+.orb-3 { animation: float-3 18s ease-in-out infinite; }
+
+/* ── Color-cycling gradient border ── */
+@keyframes border-rotate {
+  0% { --angle: 0deg; }
+  100% { --angle: 360deg; }
+}
+@property --angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+.rainbow-border {
+  position: relative;
+  border: none !important;
+}
+.rainbow-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(from var(--angle), hsl(217 91% 60%), hsl(260 80% 65%), hsl(160 84% 50%), hsl(40 90% 60%), hsl(217 91% 60%));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: border-rotate 4s linear infinite;
+  pointer-events: none;
+}
+
+/* ── Shimmer on text ── */
+@keyframes shimmer-text {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.text-shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(217 91% 65%) 0%,
+    hsl(260 80% 75%) 25%,
+    hsl(160 84% 60%) 50%,
+    hsl(260 80% 75%) 75%,
+    hsl(217 91% 65%) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer-text 6s linear infinite;
+}
+
+/* ── Pulse ring on search card ── */
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.3; }
+  50% { transform: scale(1.02); opacity: 0.15; }
+  100% { transform: scale(1); opacity: 0.3; }
+}
+.pulse-glow {
+  animation: pulse-ring 3s ease-in-out infinite;
+}
+
+/* ── Stagger children fade-in ── */
+@keyframes stagger-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.stagger-children > * {
+  opacity: 0;
+  animation: stagger-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0.05s; }
+.stagger-children > *:nth-child(2) { animation-delay: 0.1s; }
+.stagger-children > *:nth-child(3) { animation-delay: 0.15s; }
+.stagger-children > *:nth-child(4) { animation-delay: 0.2s; }
+.stagger-children > *:nth-child(5) { animation-delay: 0.25s; }
+.stagger-children > *:nth-child(6) { animation-delay: 0.3s; }
+.stagger-children > *:nth-child(7) { animation-delay: 0.35s; }
+.stagger-children > *:nth-child(8) { animation-delay: 0.4s; }
+.stagger-children > *:nth-child(9) { animation-delay: 0.45s; }
+.stagger-children > *:nth-child(10) { animation-delay: 0.5s; }
+
+/* ── Hover lift on cards ── */
+.hover-lift {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px -12px rgb(0 0 0 / 0.4), 0 0 0 0.5px hsl(225 12% 24% / 0.4);
 }

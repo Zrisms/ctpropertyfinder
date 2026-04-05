@@ -64,7 +64,7 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
       </div>
 
       {/* Main grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 stagger-children">
         <Section title="Owner">
           <Row l="Owner" v={data.owner} />
           {data.coOwner && <Row l="Co-Owner" v={data.coOwner} />}
@@ -213,7 +213,7 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
 
 function Section({ title, children, full }: { title: string; children: React.ReactNode; full?: boolean }) {
   return (
-    <div className={`glass rounded-2xl p-5 ${full ? 'col-span-full' : ''}`}>
+    <div className={`glass rounded-2xl p-5 hover-lift ${full ? 'col-span-full' : ''}`}>
       <h3 className="apple-section-title mb-3">{title}</h3>
       <div>{children}</div>
     </div>
