@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { ExternalLink, Sparkles } from "lucide-react";
+import { ExternalLink, Sparkles, Loader2 } from "lucide-react";
 import { AddressSearch } from "@/components/AddressSearch";
 import { PropertyResults, type PropertyData } from "@/components/PropertyResults";
 import { useToast } from "@/hooks/use-toast";
@@ -27,18 +27,16 @@ function SearchProgress({ isLoading }: { isLoading: boolean }) {
       tick++;
       setProgress(p => {
         const remaining = 97 - p;
-        // Aggressive early, gentle cruise — never stalls
         const speed = tick < 3
-          ? Math.random() * 15 + 10  // early: 10-25%
+          ? Math.random() * 15 + 10
           : tick < 6
-            ? Math.random() * 6 + 3  // mid: 3-9%
-            : Math.random() * 2 + 0.5; // late: 0.5-2.5%
+            ? Math.random() * 6 + 3
+            : Math.random() * 2 + 0.5;
         const next = p + Math.min(speed, remaining * 0.5);
         if (next >= 97) { clearInterval(intervalRef.current!); return 97; }
         return next;
       });
       setStepIndex(i => {
-        // Advance steps quickly — "Compiling" only shows briefly
         if (tick <= 1) return 1;
         if (tick <= 3) return Math.min(2, SEARCH_STEPS.length - 1);
         if (tick <= 5) return Math.min(3, SEARCH_STEPS.length - 1);
@@ -95,19 +93,67 @@ function PropertySkeleton() {
   );
 }
 
+function LLCLoadingSkeleton() {
+  return (
+    <div className="glass rounded-2xl p-6 col-span-full animate-fade-in">
+      <div className="flex items-center gap-3 mb-4">
+        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+        <h3 className="apple-section-title">Loading business details…</h3>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="space-y-2">
+            <div className="h-3 w-1/3 rounded bg-muted/60 animate-pulse" />
+            <div className="h-3 w-2/3 rounded bg-muted/40 animate-pulse" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isLoadingLLC, setIsLoadingLLC] = useState(false);
   const [propertyData, setPropertyData] = useState<PropertyData | null>(null);
   const [searchUrl, setSearchUrl] = useState<string | null>(null);
   const { toast } = useToast();
 
+  const fetchLLCDetails = async (ownerName: string) => {
+    setIsLoadingLLC(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("llc-search", {
+        body: { businessName: ownerName },
+      });
+      if (error) throw error;
+      if (data?.success && data.llcDetails) {
+        setPropertyData(prev => prev ? { ...prev, llcDetails: data.llcDetails } : prev);
+      }
+    } catch (e) {
+      console.error("LLC lookup failed:", e);
+    } finally {
+      setIsLoadingLLC(false);
+    }
+  };
+
   const handleSearch = async (address: string, town: string) => {
-    setIsLoading(true); setPropertyData(null); setSearchUrl(null);
+    setIsLoading(true); setPropertyData(null); setSearchUrl(null); setIsLoadingLLC(false);
     try {
       const { data, error } = await supabase.functions.invoke("property-search", { body: { address, town } });
       if (error) throw error;
-      if (data?.success) { setPropertyData(data.property); toast({ title: "Property Found", description: `Found data for ${data.property.address}` }); return; }
+      if (data?.success) {
+        // Show property data immediately
+        setPropertyData(data.property);
+        setIsLoading(false);
+        toast({ title: "Property Found", description: `Found data for ${data.property.address}` });
+        
+        // If LLC, fetch business details in background
+        if (data.property.isLLC && data.property.owner) {
+          fetchLLCDetails(data.property.owner);
+        }
+        return;
+      }
       if (data?.searchUrl) setSearchUrl(data.searchUrl);
       toast({ title: "Not Found", description: data?.error || "Could not find property data.", variant: "destructive" });
     } catch { toast({ title: "Error", description: "Search failed. Try again.", variant: "destructive" }); }
@@ -191,6 +237,8 @@ const Index = () => {
           <div className="mt-14 pb-20 animate-fade-in" style={{ animationDelay: '0.1s', opacity: 0 }}>
             <PropertyResults data={propertyData} onDownloadPdf={handleDownloadPdf} onDownloadExcel={handleDownloadExcel}
               onDownloadLLCPdf={propertyData.isLLC && propertyData.llcDetails ? handleDownloadLLCPdf : undefined} isExporting={isExporting} />
+            {/* LLC loading skeleton shown while fetching business details */}
+            {isLoadingLLC && <LLCLoadingSkeleton />}
           </div>
         )}
 
