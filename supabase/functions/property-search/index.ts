@@ -1667,6 +1667,99 @@ function extractGenericPropertyData(markdown: string, address: string, town: str
   };
 }
 
+// ========== AGGREGATOR DATA EXTRACTOR ==========
+function extractAggregatorData(markdown: string, address: string, town: string) {
+  const text = markdown;
+
+  const grab = (patterns: RegExp[]): string => {
+    for (const re of patterns) {
+      const m = text.match(re);
+      if (m?.[1]?.trim()) return m[1].trim();
+    }
+    return '';
+  };
+
+  // Try to find owner
+  let owner = grab([
+    /(?:Owner|Owned\s+by|Property\s+Owner)[:\s]*\**\s*([A-Z][A-Za-z\s\-\.',&]+?)(?:\n|\||\*)/i,
+    /(?:owner)\s*[:\|]\s*([^\n|*]+)/i,
+  ]);
+
+  // From realtor.com style: "Owner: NAME"
+  if (!owner) {
+    const ownerMatch = text.match(/owner[:\s]+([A-Z][A-Za-z\s\-']+(?:LLC|Trust|Inc)?)/i);
+    if (ownerMatch) owner = ownerMatch[1].trim();
+  }
+
+  owner = owner.replace(/[*#\[\]]/g, '').trim();
+  if (!owner || owner.length < 2 || owner.length > 100) return null;
+  if (/https?:\/\/|\.com|\.org/.test(owner)) return null;
+
+  const dollarMatch = (labels: string[]): string => {
+    for (const label of labels) {
+      const re = new RegExp(`${label}[:\\s]*\\$?([\\d,]+)`, 'i');
+      const m = text.match(re);
+      if (m?.[1]) return m[1].trim();
+    }
+    return '';
+  };
+
+  const grabText = (labels: string[]): string => {
+    for (const label of labels) {
+      const re = new RegExp(`${label}[:\\s|]+([^\\n|]+)`, 'i');
+      const m = text.match(re);
+      if (m?.[1]?.trim()) return m[1].trim();
+    }
+    return '';
+  };
+
+  const assessedValue = dollarMatch(['Assessed Value', 'Tax Assessment', 'Assessment']);
+  const totalAppraisal = dollarMatch(['Market Value', 'Appraised Value', 'Estimated Value', 'Est\\. Value']);
+  const landValue = dollarMatch(['Land Value', 'Land']);
+  const improvementsValue = dollarMatch(['Improvement', 'Building Value', 'Structure Value']);
+  const yearBuilt = grabText(['Year Built', 'Built']);
+  const livingArea = grabText(['Living Area', 'Square Feet', 'Sq Ft', 'Size', 'Total Area']);
+  const lotSize = grabText(['Lot Size', 'Lot Area', 'Acreage', 'Acres']);
+  const bedrooms = grabText(['Bedrooms', 'Beds']);
+  const totalBaths = grabText(['Bathrooms', 'Baths', 'Full Bath']);
+  const salePrice = grabText(['Last Sold', 'Sale Price', 'Last Sale']);
+  const saleDate = grabText(['Sale Date', 'Sold On', 'Last Sale Date']);
+  const zoning = grabText(['Zoning', 'Zone']);
+  const buildingStyle = grabText(['Style', 'Type', 'Property Type']);
+  const parcelId = grabText(['Parcel', 'APN', 'PID', 'Tax Map']);
+
+  const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner);
+  const fmt$ = (v: string) => v ? `$${v}` : '';
+
+  return {
+    address: address || town, town, owner, coOwner: '', ownerAddress: '', isLLC,
+    parcelId, mblu: '', accountNumber: '', buildingCount: '', bookPage: '', certificate: '', instrument: '',
+    assessedValue: fmt$(assessedValue),
+    totalAppraisal: fmt$(totalAppraisal),
+    totalMarketValue: fmt$(totalAppraisal),
+    improvementsValue: fmt$(improvementsValue),
+    landValue: fmt$(landValue),
+    assessImprovements: '', assessLand: '', assessTotal: fmt$(assessedValue),
+    salePrice, saleDate,
+    lotSize, frontage: '', depth: '',
+    useCode: '', useDescription: buildingStyle, zoning, neighborhood: '',
+    totalMarketLand: '', landAppraisedValue: '',
+    yearBuilt, buildingStyle, model: '', stories: '',
+    livingArea, replacementCost: '', buildingPercentGood: '',
+    occupancy: '', totalRooms: '', bedrooms, totalBaths, halfBaths: '',
+    totalXtraFixtures: '', bathStyle: '', kitchenStyle: '',
+    interiorCondition: '', finBsmntArea: '', finBsmntQual: '', grade: '',
+    exteriorWall: '', roofStructure: '', roofCover: '',
+    interiorWall: '', flooring: '',
+    heating: '', heatingFuel: '', cooling: '',
+    buildingPhoto: '',
+    ownershipHistory: [] as { owner: string; salePrice: string; bookPage: string; saleDate: string }[],
+    subAreas: [] as { code: string; description: string; grossArea: string; livingArea: string }[],
+    valuationHistory: [] as { year: string; improvements: string; land: string; total: string }[],
+    propertyCardUrl: '', llcDetails: undefined as any,
+  };
+}
+
 // ========== LLC LOOKUP ==========
 async function searchCTBusiness(_apiKey: string, businessName: string) {
   const CT_BUSINESS_API = 'https://data.ct.gov/resource/n7gp-d28j.json';
