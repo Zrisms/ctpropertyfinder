@@ -312,12 +312,12 @@ const TOWN_DB: Record<string, TownConfig> = {
   "east hartford": { platform: "ias", url: "https://easthartford.ias-clt.com/", label: "East Hartford Assessor" },
   hartford: { platform: "ias", url: "https://hartford.ias-clt.com/", label: "Hartford Assessor" },
 
-  // === MapXpress Towns (only those confirmed working) ===
-  bloomfield: { platform: "mapxpress", slug: "bloomfieldct", url: "https://bloomfield.mapxpress.net/" },
-  darien: { platform: "mapxpress", slug: "darien", url: "https://darien.mapxpress.net/" },
-  groton: { platform: "mapxpress", slug: "groton", url: "https://groton.mapxpress.net/" },
-  wethersfield: { platform: "mapxpress", slug: "wethersfield", url: "https://wethersfield.mapxpress.net/" },
-  windsor: { platform: "mapxpress", slug: "windsor", url: "https://windsor.mapxpress.net/" },
+  // === Towns with custom/dedicated assessment sites ===
+  bloomfield: { platform: "custom", url: "https://bloomfield.mapxpress.net/", label: "Bloomfield GIS & Property Info" },
+  darien: { platform: "custom", url: "https://assessment.darienct.gov/Search/commonsearch.aspx?mode=address", label: "Darien Assessor" },
+  groton: { platform: "custom", url: "https://www.groton-ct.gov/departments/gis/index.php", label: "Groton GIS Portal" },
+  wethersfield: { platform: "custom", url: "https://wethersfieldct.gov/171/Real-Estate", label: "Wethersfield Assessor" },
+  windsor: { platform: "custom", url: "https://www.windsorct.gov/541/Property-Cards", label: "Windsor Property Cards" },
 
   // === Remaining custom towns ===
   barkhamsted: { platform: "custom", url: "https://www.barkhamsted.us/", label: "Barkhamsted Assessor" },
