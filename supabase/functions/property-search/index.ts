@@ -363,7 +363,7 @@ async function smartExtractProperty(apiKey: string, address: string, town: strin
   });
   if (!searchResp.ok) return json({ success: false, error: 'Search failed', searchUrl: fallbackUrl });
   const results = (await searchResp.json()).data || [];
-  const skip = /zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch|neighborwho|blockshopper/i;
+  const skip = /zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch|neighborwho|blockshopper|realtor\.com|redfin|homes\.com|movoto|propertyshark|loopnet|realtyhop|coldwellbanker|century21|berkshirehathaway|sothebysrealty|compass\.com|opendoor|offerpad|homelight|homeadvisor|homesforsale|apartmentguide|apartments\.com|rent\.com|hotpads|padmapper|streeteasy|curbed|countyoffice\.org|landwatch|landandfarm|housecanary|estately|homefacts|city-data|niche\.com|greatschools|yelp|yellowpages|angi\.com|thumbtack|houzz|porch\.com/i;
 
   for (const r of results) {
     const url = r.url || '';
