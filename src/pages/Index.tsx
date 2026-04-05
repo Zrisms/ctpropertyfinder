@@ -115,7 +115,7 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen" style={{ backgroundImage: 'url(/images/bg-tile.png)', backgroundRepeat: 'repeat', backgroundSize: '150px' }}>
       <header className="bg-navy text-primary-foreground py-16 px-4">
         <div className="max-w-3xl mx-auto text-center space-y-4">
           <div className="flex items-center justify-center gap-3 mb-2">
