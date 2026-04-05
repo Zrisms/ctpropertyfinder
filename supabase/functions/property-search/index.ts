@@ -1345,13 +1345,13 @@ async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: stri
       body: JSON.stringify({
         url: baseUrl,
         formats: ['markdown', 'html'],
-        waitFor: 3000,
+        waitFor: 1500,
         actions: [
-          { type: 'wait', milliseconds: 2000 },
+          { type: 'wait', milliseconds: 1000 },
           { type: 'click', selector: 'input[name*="street"], input[name*="addr"], input[placeholder*="Address"], input[type="text"]' },
           { type: 'write', text: address },
           { type: 'click', selector: 'button[type="submit"], input[type="submit"], button:contains("Search")' },
-          { type: 'wait', milliseconds: 5000 },
+          { type: 'wait', milliseconds: 3000 },
         ],
       }),
     });
