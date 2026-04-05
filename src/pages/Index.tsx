@@ -67,6 +67,7 @@ const Index = () => {
           )}
           {propertyData && (
             <img src={foyrLogo} alt="Foyr" className="h-10 mx-auto" />
+          )}
         </div>
       </header>
 
