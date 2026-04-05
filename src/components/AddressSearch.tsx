@@ -128,8 +128,24 @@ export function AddressSearch({ onSearch, isLoading }: AddressSearchProps) {
             <X className="h-4 w-4" />
           </button>
         )}
-        <Input ref={addressInputRef} type="text" placeholder="Street address" value={address}
-          onChange={e => { setAddress(e.target.value); setTown(""); setShowAddressSuggestions(true); setActiveAddressIndex(-1); }}
+        <Input ref={addressInputRef} type="text" placeholder="Street address (or paste full address)" value={address}
+          onChange={e => {
+            const val = e.target.value;
+            const parsed = parseFullAddress(val);
+            if (parsed && val.includes(',')) {
+              setAddress(parsed.street); setTown(parsed.town); setShowAddressSuggestions(false);
+            } else {
+              setAddress(val); setTown(""); setShowAddressSuggestions(true); setActiveAddressIndex(-1);
+            }
+          }}
+          onPaste={e => {
+            const pasted = e.clipboardData.getData('text');
+            const parsed = parseFullAddress(pasted);
+            if (parsed) {
+              e.preventDefault();
+              setAddress(parsed.street); setTown(parsed.town); setShowAddressSuggestions(false);
+            }
+          }}
           onFocus={() => setShowAddressSuggestions(true)}
           onBlur={() => setTimeout(() => setShowAddressSuggestions(false), 200)}
           onKeyDown={handleAddressKeyDown} className={`${inputCls} pr-9`} />
