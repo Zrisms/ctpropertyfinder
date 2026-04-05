@@ -82,10 +82,22 @@ function cacheProperty(address: string, town: string, propertyData: unknown) {
     sb.from('property_cache')
       .upsert(
         { address: address.toLowerCase(), town: town.toLowerCase(), property_data: propertyData, searched_at: new Date().toISOString() },
-        { onConflict: 'lower(address),lower(town)' }
+        { onConflict: 'address,town' }
       )
       .then(({ error }) => { if (error) console.error('Cache write error:', error); else console.log(`Cached: ${address}, ${town}`); });
   } catch (e) { console.error('Cache write setup error:', e); }
+}
+
+// Wrapper: run a search function, cache if successful, return the response
+async function withCache(normalizedAddress: string, lookupTown: string, fn: () => Promise<Response>): Promise<Response> {
+  const result = await fn();
+  try {
+    const body = await result.clone().json();
+    if (body.success && body.property) {
+      cacheProperty(normalizedAddress, lookupTown, body.property);
+    }
+  } catch {}
+  return result;
 }
 
 function normalizeAddress(address: string): string {
