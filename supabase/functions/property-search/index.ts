@@ -460,7 +460,7 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
       for (const result of results) {
         const url = result.url || '';
         // Skip pure listing sites
-        if (/zillow|realtor\.com|trulia|redfin|homes\.com|movoto|homesnap|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch|loopnet|realtyhop/i.test(url)) continue;
+        if (/zillow|realtor\.com|trulia|redfin|homes\.com|movoto|homesnap|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch|loopnet|realtyhop|coldwellbanker|century21|berkshirehathaway|sothebysrealty|compass\.com|opendoor|offerpad|homelight|apartmentguide|apartments\.com|rent\.com|hotpads|streeteasy|countyoffice\.org|landwatch|landandfarm|housecanary|estately|homefacts|city-data|niche\.com|yelp|yellowpages|angi\.com|houzz|porch\.com/i.test(url)) continue;
 
         // VGS parcel page
         if (url.includes('vgsi.com') && url.includes('Parcel.aspx')) {
