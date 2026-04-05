@@ -1123,35 +1123,18 @@ async function scrapeIASCLT(apiKey: string, baseUrl: string, address: string, to
 async function scrapeEqualityCama(apiKey: string, baseUrl: string, address: string, town: string) {
   try {
     console.log(`Scraping eQuality for ${town}: ${baseUrl}`);
-
-    const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: `"${address}" "${town}" CT property equalitycama.com`, limit: 5 }),
-    });
-
-    if (searchResp.ok) {
-      const data = await searchResp.json();
-      const results = data.data || [];
-      for (const result of results) {
-        const url = result.url || '';
-        if (url.includes('equalitycama') || url.includes(town.toLowerCase())) {
-          const md = await firecrawlScrape(apiKey, url);
-          if (md) {
-            const extracted = extractGenericPropertyData(md, address, town);
-            if (extracted) {
-              extracted.propertyCardUrl = url;
-              if (extracted.isLLC) {
-                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
-              }
-              return json({ success: true, property: extracted });
-            }
-          }
+    const md = await firecrawlScrape(apiKey, baseUrl);
+    if (md) {
+      const extracted = extractGenericPropertyData(md, address, town);
+      if (extracted) {
+        extracted.propertyCardUrl = baseUrl;
+        if (extracted.isLLC) {
+          try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
         }
+        return json({ success: true, property: extracted });
       }
     }
   } catch (e) { console.error("eQuality error:", e); }
-
   return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
 }
 
