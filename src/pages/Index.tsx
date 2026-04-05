@@ -1,9 +1,57 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ExternalLink, Sparkles } from "lucide-react";
 import { AddressSearch } from "@/components/AddressSearch";
 import { PropertyResults, type PropertyData } from "@/components/PropertyResults";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+
+const SEARCH_STEPS = [
+  "Connecting to assessor database…",
+  "Locating property records…",
+  "Scraping property details…",
+  "Checking ownership & LLC status…",
+  "Compiling results…",
+];
+
+function SearchProgress({ isLoading }: { isLoading: boolean }) {
+  const [progress, setProgress] = useState(0);
+  const [stepIndex, setStepIndex] = useState(0);
+  const intervalRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!isLoading) { setProgress(0); setStepIndex(0); return; }
+    setProgress(5);
+    setStepIndex(0);
+    intervalRef.current = window.setInterval(() => {
+      setProgress(p => {
+        const next = p + (Math.random() * 6 + 2);
+        if (next >= 92) { clearInterval(intervalRef.current!); return 92; }
+        return next;
+      });
+      setStepIndex(i => {
+        const next = i + (Math.random() > 0.5 ? 1 : 0);
+        return Math.min(next, SEARCH_STEPS.length - 1);
+      });
+    }, 1200);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [isLoading]);
+
+  if (!isLoading) return null;
+
+  return (
+    <div className="mt-6 space-y-3 animate-fade-in">
+      <div className="h-1.5 w-full rounded-full bg-secondary/60 overflow-hidden">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-primary via-primary/80 to-accent transition-all duration-700 ease-out"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground/70 text-center font-medium tracking-wide">
+        {SEARCH_STEPS[stepIndex]}
+      </p>
+    </div>
+  );
+}
 
 const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
