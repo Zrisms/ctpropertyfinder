@@ -2397,11 +2397,7 @@ function extractVGSData(markdown: string, address: string, town: string) {
   };
 }
 
-// ========== MAPXPRESS DATA EXTRACTOR ==========
-function extractMapXpressData(markdown: string, address: string, town: string) {
-  // MapXpress uses a similar table format
-  return extractGenericPropertyData(markdown, address, town);
-}
+// extractMapXpressData is now replaced by extractMapXpressDetailData above
 
 // ========== QDS CARD DATA EXTRACTOR (Avon-style) ==========
 function extractQDSCardData(markdown: string, address: string, town: string) {
