@@ -609,7 +609,7 @@ async function smartExtractProperty(apiKey: string, address: string, lookupTown:
   });
   if (!searchResp.ok) return json({ success: false, error: 'Search failed', searchUrl: fallbackUrl });
   const results = (await searchResp.json()).data || [];
-  const skip = /zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch|neighborwho|blockshopper/i;
+  const skip = BLOCKED_SITES;
 
   for (const r of results) {
     const url = r.url || '';
