@@ -407,56 +407,92 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
     } catch (e) { console.error("Universal search error:", e); }
   }
 
-  // Strategy 2: Try countyoffice.org which has structured assessment data
+  // Strategy 2: Use Firecrawl search with scrape, then use LLM JSON extraction on the best result
   try {
-    const coUrl = `https://www.countyoffice.org/property-records-search/?q=${encodeURIComponent(`${address}, ${town}, CT`)}`;
-    console.log(`Trying countyoffice.org: ${coUrl}`);
-    const md = await firecrawlScrape(apiKey, coUrl);
-    if (md && md.length > 300) {
-      const extracted = extractGenericPropertyData(md, address, town);
-      if (extracted) {
-        extracted.propertyCardUrl = coUrl;
-        if (extracted.isLLC) {
-          try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
-        }
-        return json({ success: true, property: extracted });
-      }
-    }
-  } catch (e) { console.error("Countyoffice fallback error:", e); }
-
-  // Strategy 3: Use Firecrawl search with scrape to get content from any property data source
-  try {
-    console.log(`Strategy 3: broad search with scrape for ${address}, ${town}`);
+    console.log(`Strategy 2: search+extract for ${address}, ${town}`);
     const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        query: `${address} ${town} CT property owner assessed value year built`,
+        query: `"${houseNum} ${streetBase}" "${town}" CT property owner assessed value`,
         limit: 5,
-        scrapeOptions: { formats: ['markdown'] },
       }),
     });
     if (searchResp.ok) {
       const searchData = await searchResp.json();
       const results = searchData.data || [];
+      // Find the best URL to scrape with JSON extraction
       for (const result of results) {
         const url = result.url || '';
-        const md = result.markdown || '';
-        if (md.length < 200) continue;
-        // Skip sites that never have useful owner data
         if (/zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch/i.test(url)) continue;
-        console.log(`Strategy 3: trying content from ${url} (${md.length} chars)`);
-        const extracted = extractGenericPropertyData(md, address, town);
-        if (extracted) {
-          extracted.propertyCardUrl = url;
-          if (extracted.isLLC) {
-            try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+        console.log(`Strategy 2: JSON scrape from ${url}`);
+        try {
+          const scrapeResp = await fetch('https://api.firecrawl.dev/v1/scrape', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              url,
+              formats: ['extract'],
+              extract: {
+                prompt: `Extract property record data for the property at ${address}, ${town}, CT. I need the property owner's full legal name (not "sold" or status words), tax assessed value, year built, total square footage, lot size in acres, number of bedrooms, number of bathrooms, zoning code, last sale price, and last sale date.`,
+                schema: {
+                  type: 'object',
+                  properties: {
+                    owner: { type: 'string', description: 'Full legal name of the current property owner' },
+                    assessedValue: { type: 'string' },
+                    yearBuilt: { type: 'string' },
+                    sqft: { type: 'string' },
+                    lotSize: { type: 'string' },
+                    bedrooms: { type: 'string' },
+                    bathrooms: { type: 'string' },
+                    zoning: { type: 'string' },
+                    salePrice: { type: 'string' },
+                    saleDate: { type: 'string' },
+                  },
+                },
+              },
+            }),
+          });
+          if (!scrapeResp.ok) { console.log(`Scrape failed: ${scrapeResp.status}`); continue; }
+          const scrapeData = await scrapeResp.json();
+          const extracted = scrapeData?.data?.extract || scrapeData?.extract;
+          if (extracted?.owner && extracted.owner.length >= 4 &&
+              !/^(Sold|For Sale|Pending|N\/A|Unknown|Street View|Not Available)$/i.test(extracted.owner)) {
+            console.log(`Strategy 2 success from ${url}: owner=${extracted.owner}`);
+            const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(extracted.owner);
+            const prop = {
+              address, town, owner: extracted.owner, coOwner: '', ownerAddress: '', isLLC,
+              parcelId: '', mblu: '', accountNumber: '', buildingCount: '', bookPage: '', certificate: '', instrument: '',
+              assessedValue: extracted.assessedValue || '', totalAppraisal: '', totalMarketValue: '',
+              improvementsValue: '', landValue: '',
+              assessImprovements: '', assessLand: '', assessTotal: extracted.assessedValue || '',
+              salePrice: extracted.salePrice || '', saleDate: extracted.saleDate || '',
+              lotSize: extracted.lotSize || '', frontage: '', depth: '',
+              useCode: '', useDescription: '', zoning: extracted.zoning || '', neighborhood: '',
+              totalMarketLand: '', landAppraisedValue: '',
+              yearBuilt: extracted.yearBuilt || '', buildingStyle: '', model: '', stories: '',
+              livingArea: extracted.sqft || '', replacementCost: '', buildingPercentGood: '',
+              occupancy: '', totalRooms: '', bedrooms: extracted.bedrooms || '', totalBaths: extracted.bathrooms || '', halfBaths: '',
+              totalXtraFixtures: '', bathStyle: '', kitchenStyle: '',
+              interiorCondition: '', finBsmntArea: '', finBsmntQual: '', grade: '',
+              exteriorWall: '', roofStructure: '', roofCover: '',
+              interiorWall: '', flooring: '',
+              heating: '', heatingFuel: '', cooling: '',
+              buildingPhoto: '',
+              ownershipHistory: [] as { owner: string; salePrice: string; bookPage: string; saleDate: string }[],
+              subAreas: [] as { code: string; description: string; grossArea: string; livingArea: string }[],
+              valuationHistory: [] as { year: string; improvements: string; land: string; total: string }[],
+              propertyCardUrl: url, llcDetails: undefined as any,
+            };
+            if (isLLC) {
+              try { prop.llcDetails = await searchCTBusiness(apiKey, prop.owner); } catch (e) { console.error("LLC:", e); }
+            }
+            return json({ success: true, property: prop });
           }
-          return json({ success: true, property: extracted });
-        }
+        } catch (e) { console.error(`Strategy 2 scrape error for ${url}:`, e); }
       }
     }
-  } catch (e) { console.error("Strategy 3 error:", e); }
+  } catch (e) { console.error("Strategy 2 error:", e); }
 
   // Final fallback URL
   const searchUrl = fallbackUrl || `https://www.google.com/search?q=${encodeURIComponent(`${address} ${town} CT property assessor`)}`;
