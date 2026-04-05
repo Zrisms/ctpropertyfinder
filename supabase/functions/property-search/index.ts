@@ -21,11 +21,12 @@ function normalizeAddress(address: string): string {
 }
 
 // ========== PLATFORM TYPES ==========
-type Platform = 'vgs' | 'mapxpress' | 'qds' | 'act' | 'ias' | 'equality' | 'patriot' | 'custom';
+type Platform = 'vgs' | 'mapxpress' | 'qds' | 'act' | 'ias' | 'equality' | 'prc' | 'custom';
 
 interface TownConfig {
   platform: Platform;
   slug?: string;       // VGS slug or MapXpress subdomain
+  townCode?: string;   // PropertyRecordCards.com town code
   url?: string;        // Direct URL for custom/other platforms
   label?: string;      // Human-readable platform name
 }
@@ -125,97 +126,95 @@ const TOWN_DB: Record<string, TownConfig> = {
   "norwalk":        { platform: 'act', slug: 'Norwalk', url: 'https://www.actdatascout.com/RealProperty/Connecticut/Norwalk' },
   "sharon":         { platform: 'act', slug: 'Sharon', url: 'https://www.actdatascout.com/RealProperty/Connecticut/Sharon' },
 
-  // === MapXpress Towns (New England GeoSystems / Tighe & Bond) ===
-  "bloomfield":     { platform: 'mapxpress', slug: 'bloomfieldct', url: 'https://bloomfieldct.mapxpress.net/' },
-  "cheshire":       { platform: 'mapxpress', slug: 'cheshire', url: 'https://cheshire.mapxpress.net/' },
-  "darien":         { platform: 'mapxpress', slug: 'darien', url: 'https://darien.mapxpress.net/' },
-  "groton":         { platform: 'mapxpress', slug: 'groton', url: 'https://groton.mapxpress.net/' },
-  "guilford":       { platform: 'mapxpress', slug: 'guilford', url: 'https://guilford.mapxpress.net/' },
-  "newington":      { platform: 'mapxpress', slug: 'newington', url: 'https://newington.mapxpress.net/' },
-  "oxford":         { platform: 'mapxpress', slug: 'oxford', url: 'https://oxford.mapxpress.net/' },
-  "plainville":     { platform: 'mapxpress', slug: 'plainville', url: 'https://plainville.mapxpress.net/' },
-  "rocky hill":     { platform: 'mapxpress', slug: 'rockyhill', url: 'https://rockyhill.mapxpress.net/' },
-  "shelton":        { platform: 'mapxpress', slug: 'shelton', url: 'https://shelton.mapxpress.net/' },
-  "simsbury":       { platform: 'mapxpress', slug: 'simsbury', url: 'https://simsbury.mapxpress.net/' },
-  "wethersfield":   { platform: 'mapxpress', slug: 'wethersfield', url: 'https://wethersfield.mapxpress.net/' },
-  "windsor":        { platform: 'mapxpress', slug: 'windsor', url: 'https://windsor.mapxpress.net/' },
-  "windsor locks":  { platform: 'mapxpress', slug: 'windsorlocks', url: 'https://windsorlocks.mapxpress.net/' },
+  // === PropertyRecordCards.com Towns (QDS/PRC platform) ===
+  "ansonia":        { platform: 'prc', townCode: '002' },
+  "ashford":        { platform: 'prc', townCode: '003' },
+  "bethany":        { platform: 'prc', townCode: '008' },
+  "bozrah":         { platform: 'prc', townCode: '013' },
+  "canaan":         { platform: 'prc', townCode: '021' },
+  "cheshire":       { platform: 'prc', townCode: '025' },
+  "chester":        { platform: 'prc', townCode: '026' },
+  "colebrook":      { platform: 'prc', townCode: '029' },
+  "columbia":       { platform: 'prc', townCode: '030' },
+  "danbury":        { platform: 'prc', townCode: '034' },
+  "derby":          { platform: 'prc', townCode: '037' },
+  "durham":         { platform: 'prc', townCode: '038' },
+  "east hampton":   { platform: 'prc', townCode: '042' },
+  "east haven":     { platform: 'prc', townCode: '044' },
+  "eastford":       { platform: 'prc', townCode: '039' },
+  "easton":         { platform: 'prc', townCode: '046' },
+  "ellington":      { platform: 'prc', townCode: '048' },
+  "farmington":     { platform: 'prc', townCode: '052' },
+  "franklin":       { platform: 'prc', townCode: '053' },
+  "guilford":       { platform: 'prc', townCode: '060' },
+  "haddam":         { platform: 'prc', townCode: '061' },
+  "hebron":         { platform: 'prc', townCode: '067' },
+  "killingly":      { platform: 'prc', townCode: '069' },
+  "killingworth":   { platform: 'prc', townCode: '070' },
+  "marlborough":    { platform: 'prc', townCode: '079' },
+  "montville":      { platform: 'prc', townCode: '086' },
+  "naugatuck":      { platform: 'prc', townCode: '088' },
+  "new canaan":     { platform: 'prc', townCode: '090' },
+  "newington":      { platform: 'prc', townCode: '094' },
+  "norfolk":        { platform: 'prc', townCode: '098' },
+  "north canaan":   { platform: 'prc', townCode: '100' },
+  "north haven":    { platform: 'prc', townCode: '101' },
+  "north stonington": { platform: 'prc', townCode: '102' },
+  "oxford":         { platform: 'prc', townCode: '108' },
+  "plainville":     { platform: 'prc', townCode: '110' },
+  "plymouth":       { platform: 'prc', townCode: '111' },
+  "prospect":       { platform: 'prc', townCode: '115' },
+  "ridgefield":     { platform: 'prc', townCode: '118' },
+  "rocky hill":     { platform: 'prc', townCode: '119' },
+  "roxbury":        { platform: 'prc', townCode: '120' },
+  "scotland":       { platform: 'prc', townCode: '123' },
+  "seymour":        { platform: 'prc', townCode: '124' },
+  "shelton":        { platform: 'prc', townCode: '126' },
+  "sherman":        { platform: 'prc', townCode: '127' },
+  "simsbury":       { platform: 'prc', townCode: '128' },
+  "suffield":       { platform: 'prc', townCode: '139' },
+  "torrington":     { platform: 'prc', townCode: '143' },
+  "voluntown":      { platform: 'prc', townCode: '147' },
+  "warren":         { platform: 'prc', townCode: '149' },
+  "washington":     { platform: 'prc', townCode: '150' },
+  "waterbury":      { platform: 'prc', townCode: '151' },
+  "watertown":      { platform: 'prc', townCode: '153' },
+  "weston":         { platform: 'prc', townCode: '157' },
+  "wilton":         { platform: 'prc', townCode: '161' },
+  "windsor locks":  { platform: 'prc', townCode: '165' },
+  "woodbridge":     { platform: 'prc', townCode: '167' },
+  "woodbury":       { platform: 'prc', townCode: '168' },
 
-  // === QDS Towns (Quality Data Service - assessor.townct.gov) ===
+  // === QDS Towns (custom assessor sites) ===
   "avon":           { platform: 'qds', url: 'http://assessor.avonct.gov/', label: 'Town of Avon Assessor' },
 
   // === IAS-CLT Towns ===
   "bethel":         { platform: 'ias', url: 'http://bethel.ias-clt.com/', label: 'Bethel Assessor' },
+  "east hartford":  { platform: 'ias', url: 'https://easthartford.ias-clt.com/', label: 'East Hartford Assessor' },
+  "hartford":       { platform: 'ias', url: 'https://hartford.ias-clt.com/', label: 'Hartford Assessor' },
 
-  // === eQuality Towns ===
-  "waterbury":      { platform: 'equality', url: 'https://waterbury.equalitycama.com/', label: 'Waterbury Assessor' },
+  // === MapXpress Towns (only those confirmed working) ===
+  "bloomfield":     { platform: 'mapxpress', slug: 'bloomfieldct', url: 'https://bloomfieldct.mapxpress.net/' },
+  "darien":         { platform: 'mapxpress', slug: 'darien', url: 'https://darien.mapxpress.net/' },
+  "groton":         { platform: 'mapxpress', slug: 'groton', url: 'https://groton.mapxpress.net/' },
+  "wethersfield":   { platform: 'mapxpress', slug: 'wethersfield', url: 'https://wethersfield.mapxpress.net/' },
+  "windsor":        { platform: 'mapxpress', slug: 'windsor', url: 'https://windsor.mapxpress.net/' },
 
-  // === Custom / Patriot Properties / Town-specific platforms ===
-  "danbury":        { platform: 'custom', url: 'https://assessor.danbury-ct.gov/', label: 'Danbury Assessor' },
-  "east hartford":  { platform: 'custom', url: 'https://easthartford.ias-clt.com/', label: 'East Hartford Assessor' },
-  "greenwich":      { platform: 'custom', url: 'https://www.greenwichct.gov/349/Assessment', label: 'Greenwich Assessor' },
-  "hartford":       { platform: 'custom', url: 'https://hartford.ias-clt.com/', label: 'Hartford Assessor' },
-  "new canaan":     { platform: 'custom', url: 'https://newcanaan.mapxpress.net/', label: 'New Canaan Assessor' },
-  "farmington":     { platform: 'custom', url: 'https://farmington.ias-clt.com/', label: 'Farmington Assessor' },
-  "torrington":     { platform: 'custom', url: 'https://torrington.ias-clt.com/', label: 'Torrington Assessor' },
-
-  // === Remaining towns - mapped to their best available assessor URL ===
-  "ansonia":        { platform: 'custom', url: 'https://ansonia.ias-clt.com/', label: 'Ansonia Assessor' },
-  "ashford":        { platform: 'custom', url: 'https://www.ashfordtownhall.org/', label: 'Ashford Assessor' },
+  // === Remaining custom towns ===
   "barkhamsted":    { platform: 'custom', url: 'https://www.barkhamsted.us/', label: 'Barkhamsted Assessor' },
   "beacon falls":   { platform: 'custom', url: 'https://www.beaconfalls-ct.org/', label: 'Beacon Falls Assessor' },
-  "bethany":        { platform: 'custom', url: 'https://www.bethany-ct.com/', label: 'Bethany Assessor' },
-  "bozrah":         { platform: 'custom', url: 'https://www.bozrahct.gov/', label: 'Bozrah Assessor' },
-  "canaan":         { platform: 'custom', url: 'https://www.canaanfallsvillage.org/', label: 'Canaan Assessor' },
-  "chester":        { platform: 'custom', url: 'https://www.chesterct.org/', label: 'Chester Assessor' },
   "colchester":     { platform: 'custom', url: 'https://colchesterct.gov/', label: 'Colchester Assessor' },
-  "colebrook":      { platform: 'custom', url: 'https://www.colebrookconnecticut.org/', label: 'Colebrook Assessor' },
-  "columbia":       { platform: 'custom', url: 'https://www.columbiact.org/', label: 'Columbia Assessor' },
   "cromwell":       { platform: 'custom', url: 'https://www.cromwellct.com/', label: 'Cromwell Assessor' },
-  "derby":          { platform: 'custom', url: 'https://www.cityofderby.org/', label: 'Derby Assessor' },
-  "durham":         { platform: 'custom', url: 'https://www.townofdurhamct.org/', label: 'Durham Assessor' },
-  "east hampton":   { platform: 'custom', url: 'https://www.easthamptonct.gov/', label: 'East Hampton Assessor' },
-  "east haven":     { platform: 'custom', url: 'https://www.townofeasthaven.com/', label: 'East Haven Assessor' },
-  "eastford":       { platform: 'custom', url: 'https://www.townofeastford.com/', label: 'Eastford Assessor' },
-  "easton":         { platform: 'custom', url: 'https://www.eastonct.gov/', label: 'Easton Assessor' },
-  "ellington":      { platform: 'custom', url: 'https://www.ellington-ct.gov/', label: 'Ellington Assessor' },
-  "franklin":       { platform: 'custom', url: 'https://www.franklinct.com/', label: 'Franklin Assessor' },
   "goshen":         { platform: 'custom', url: 'https://www.goshenct.gov/', label: 'Goshen Assessor' },
-  "haddam":         { platform: 'custom', url: 'https://www.haddam.org/', label: 'Haddam Assessor' },
+  "greenwich":      { platform: 'custom', url: 'https://www.greenwichct.gov/349/Assessment', label: 'Greenwich Assessor' },
   "hartland":       { platform: 'custom', url: 'https://www.hartlandct.org/', label: 'Hartland Assessor' },
-  "hebron":         { platform: 'custom', url: 'https://www.hebronct.com/', label: 'Hebron Assessor' },
-  "killingly":      { platform: 'custom', url: 'https://www.killingly.org/', label: 'Killingly Assessor' },
-  "killingworth":   { platform: 'custom', url: 'https://www.townofkillingworth.com/', label: 'Killingworth Assessor' },
   "litchfield":     { platform: 'custom', url: 'https://www.townoflitchfield.org/', label: 'Litchfield Assessor' },
-  "marlborough":    { platform: 'custom', url: 'https://www.marlboroughct.net/', label: 'Marlborough Assessor' },
-  "montville":      { platform: 'custom', url: 'https://www.townofmontville.org/', label: 'Montville Assessor' },
   "morris":         { platform: 'custom', url: 'https://www.townofmorrisct.com/', label: 'Morris Assessor' },
-  "naugatuck":      { platform: 'custom', url: 'https://www.naugatuck-ct.gov/', label: 'Naugatuck Assessor' },
-  "norfolk":        { platform: 'custom', url: 'https://www.norfolkct.org/', label: 'Norfolk Assessor' },
-  "north canaan":   { platform: 'custom', url: 'https://www.northcanaan.org/', label: 'North Canaan Assessor' },
-  "north haven":    { platform: 'custom', url: 'https://www.northhaven-ct.gov/', label: 'North Haven Assessor' },
-  "north stonington": { platform: 'custom', url: 'https://www.northstoningtonct.gov/', label: 'North Stonington Assessor' },
-  "plymouth":       { platform: 'custom', url: 'https://www.plymouthct.us/', label: 'Plymouth Assessor' },
-  "prospect":       { platform: 'custom', url: 'https://www.town.prospect.ct.us/', label: 'Prospect Assessor' },
   "portland":       { platform: 'custom', url: 'https://www.portlandct.org/', label: 'Portland Assessor' },
   "putnam":         { platform: 'custom', url: 'https://www.putnamct.us/', label: 'Putnam Assessor' },
-  "ridgefield":     { platform: 'custom', url: 'https://ridgefieldct.org/', label: 'Ridgefield Assessor' },
-  "roxbury":        { platform: 'custom', url: 'https://www.roxburyct.com/', label: 'Roxbury Assessor' },
-  "scotland":       { platform: 'custom', url: 'https://www.scotlandct.org/', label: 'Scotland Assessor' },
-  "seymour":        { platform: 'custom', url: 'https://www.seymourct.org/', label: 'Seymour Assessor' },
-  "sherman":        { platform: 'custom', url: 'https://www.townofshermanct.org/', label: 'Sherman Assessor' },
-  "suffield":       { platform: 'custom', url: 'https://www.suffieldtownhall.com/', label: 'Suffield Assessor' },
   "thomaston":      { platform: 'custom', url: 'https://www.thomastonct.org/', label: 'Thomaston Assessor' },
   "vernon":         { platform: 'custom', url: 'https://www.vernon-ct.gov/', label: 'Vernon Assessor' },
-  "voluntown":      { platform: 'custom', url: 'https://www.voluntownct.gov/', label: 'Voluntown Assessor' },
-  "warren":         { platform: 'custom', url: 'https://www.warrenct.org/', label: 'Warren Assessor' },
-  "washington":     { platform: 'custom', url: 'https://www.washingtonct.org/', label: 'Washington Assessor' },
-  "watertown":      { platform: 'custom', url: 'https://www.watertownct.org/', label: 'Watertown Assessor' },
-  "weston":         { platform: 'custom', url: 'https://www.westonct.gov/', label: 'Weston Assessor' },
-  "wilton":         { platform: 'custom', url: 'https://www.wiltonct.org/', label: 'Wilton Assessor' },
   "wolcott":        { platform: 'custom', url: 'https://www.wolcottct.org/', label: 'Wolcott Assessor' },
-  "woodbridge":     { platform: 'custom', url: 'https://www.woodbridgect.org/', label: 'Woodbridge Assessor' },
-  "woodbury":       { platform: 'custom', url: 'https://www.woodburyct.org/', label: 'Woodbury Assessor' },
   "woodstock":      { platform: 'custom', url: 'https://www.woodstockct.gov/', label: 'Woodstock Assessor' },
 };
 
@@ -265,6 +264,9 @@ Deno.serve(async (req) => {
 
       case 'ias':
         return await scrapeIASCLT(apiKey, config.url!, normalizedAddress, town);
+
+      case 'prc':
+        return await scrapePRC(apiKey, config.townCode!, normalizedAddress, town);
 
       case 'equality':
         return await scrapeEqualityCama(apiKey, config.url!, normalizedAddress, town);
@@ -549,7 +551,203 @@ async function scrapeQDSViaSearch(apiKey: string, baseUrl: string, address: stri
   return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
 }
 
-// ========== ACT DATA SCOUT SCRAPING ==========
+// ========== PROPERTY RECORD CARDS (PRC) SCRAPING ==========
+async function scrapePRC(apiKey: string, townCode: string, address: string, town: string) {
+  const baseUrl = `https://www.propertyrecordcards.com/SearchMaster.aspx?towncode=${townCode}`;
+  try {
+    console.log(`Scraping PRC for ${town} (code=${townCode})`);
+
+    // Strategy 1: Firecrawl web search (most reliable for ASP.NET sites)
+    const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: `"${address}" "${town}" CT property record card site:propertyrecordcards.com`, limit: 5 }),
+    });
+    if (searchResp.ok) {
+      const sData = await searchResp.json();
+      const results = sData.data || [];
+      console.log(`PRC search returned ${results.length} results`);
+      for (const result of results) {
+        const url = result.url || '';
+        const uidMatch = url.match(/uniqueid=(\d+)/i);
+        if (uidMatch && url.includes('propertyrecordcards.com')) {
+          const detailUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${uidMatch[1]}`;
+          console.log(`Found PRC detail: ${detailUrl}`);
+          const detailMd = await firecrawlScrape(apiKey, detailUrl);
+          if (detailMd) {
+            const extracted = extractPRCData(detailMd, address, town);
+            if (extracted) {
+              extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uidMatch[1]}`;
+              if (extracted.isLLC) {
+                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+              }
+              return json({ success: true, property: extracted });
+            }
+          }
+        }
+      }
+    }
+
+    // Strategy 2: Firecrawl actions on PRC search form
+    console.log(`Trying PRC actions fallback`);
+    const resp = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: baseUrl,
+        formats: ['markdown', 'html', 'links'],
+        waitFor: 3000,
+        actions: [
+          { type: 'wait', milliseconds: 2000 },
+          { type: 'click', selector: '#ContentPlaceHolder1_txtLocation' },
+          { type: 'write', text: address.replace(/\b(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL)\b/gi, '').trim() },
+          { type: 'click', selector: '#ContentPlaceHolder1_btnSearch' },
+          { type: 'wait', milliseconds: 5000 },
+        ],
+      }),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      const markdown = data.data?.markdown || data.markdown || '';
+      const html = data.data?.html || data.html || '';
+      const links = data.data?.links || data.links || [];
+      const combined = html + markdown + JSON.stringify(links);
+
+      const uniqueIdMatch = combined.match(/PropertyResults\.aspx\?towncode=\d+&(?:amp;)?uniqueid=(\d+)/i)
+        || combined.match(/PrintPage\.aspx\?towncode=\d+&(?:amp;)?uniqueid=(\d+)/i)
+        || combined.match(/uniqueid=(\d+)/i);
+
+      if (uniqueIdMatch) {
+        const detailUrl = `https://www.propertyrecordcards.com/PrintPage.aspx?towncode=${townCode}&uniqueid=${uniqueIdMatch[1]}`;
+        console.log(`Found PRC via actions: ${detailUrl}`);
+        const detailMd = await firecrawlScrape(apiKey, detailUrl);
+        if (detailMd) {
+          const extracted = extractPRCData(detailMd, address, town);
+          if (extracted) {
+            extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uniqueIdMatch[1]}`;
+            if (extracted.isLLC) {
+              try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+            }
+            return json({ success: true, property: extracted });
+          }
+        }
+      }
+
+      if (markdown.includes('Parcel Information') || markdown.includes('Owner')) {
+        const extracted = extractPRCData(markdown, address, town);
+        if (extracted) {
+          extracted.propertyCardUrl = baseUrl;
+          if (extracted.isLLC) {
+            try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+          }
+          return json({ success: true, property: extracted });
+        }
+      }
+    }
+  } catch (e) { console.error("PRC error:", e); }
+
+  return json({ success: false, error: `Could not find property in ${town}. Try the Property Record Cards database directly.`, searchUrl: baseUrl });
+}
+
+function extractPRCData(markdown: string, address: string, town: string) {
+  const text = markdown;
+
+  const tableGrab = (label: string): string => {
+    const re = new RegExp(`\\|\\s*${label}:?\\s*\\|\\s*([^|]*?)\\s*\\|`, 'i');
+    const m = text.match(re);
+    return m?.[1]?.trim() || '';
+  };
+
+  let propertyAddress = tableGrab('Location') || address;
+  const propertyUse = tableGrab('Property Use');
+  const primaryUse = tableGrab('Primary Use');
+  const uniqueId = tableGrab('Unique ID');
+  const mapBlockLot = tableGrab('Map Block Lot');
+  const acres = tableGrab('Acres');
+  const zone = tableGrab('Zone');
+  const volPage = tableGrab('Volume / Page') || tableGrab('Volume\\/Page');
+
+  // Value Information
+  let landAppraised = '', landAssessed = '', bldgAppraised = '', bldgAssessed = '', totalAppraised = '', totalAssessed = '';
+  const landRow = text.match(/\|\s*Land\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*\|/i);
+  if (landRow) { landAppraised = landRow[1]; landAssessed = landRow[2]; }
+  const bldgRow = text.match(/\|\s*Buildings?\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*\|/i);
+  if (bldgRow) { bldgAppraised = bldgRow[1]; bldgAssessed = bldgRow[2]; }
+  const totalRow = text.match(/\|\s*Total\s*\|\s*([\d,]+)\s*\|\s*([\d,]+)\s*\|/i);
+  if (totalRow) { totalAppraised = totalRow[1]; totalAssessed = totalRow[2]; }
+
+  // Owner from "Owner's Data" cell (uses <br> separators)
+  let owner = '', coOwner = '', ownerAddress = '';
+  const ownerMatch = text.match(/Owner'?s?\s*Data[\s|]*\n?\|?\s*([^|]+)\|/i);
+  if (ownerMatch) {
+    const parts = ownerMatch[1].replace(/<br\/?>/gi, '\n').split('\n').map(s => s.trim()).filter(Boolean);
+    owner = parts[0] || '';
+    if (parts.length > 2) {
+      coOwner = parts[1] || '';
+      ownerAddress = parts.slice(2).join(', ');
+    } else {
+      ownerAddress = parts.slice(1).join(', ');
+    }
+  }
+
+  // Building info
+  const yearBuilt = tableGrab('Year Built');
+  const livingArea = tableGrab('Living Area') || tableGrab('Total Living Area');
+  const buildingStyle = tableGrab('Style') || tableGrab('Building Style');
+  const stories = tableGrab('Stories');
+  const totalRooms = tableGrab('Total Rooms') || tableGrab('Rooms');
+  const bedrooms = tableGrab('Bedrooms') || tableGrab('Total Bedrooms');
+  const totalBaths = tableGrab('Full Baths') || tableGrab('Total Baths');
+  const halfBaths = tableGrab('Half Baths');
+  const exteriorWall = tableGrab('Exterior Wall') || tableGrab('Ext Wall');
+  const roofCover = tableGrab('Roof Cover') || tableGrab('Roof');
+  const heating = tableGrab('Heat Type') || tableGrab('Heating');
+  const heatingFuel = tableGrab('Heat Fuel') || tableGrab('Fuel');
+  const cooling = tableGrab('AC Type') || tableGrab('Air Conditioning');
+  const grade = tableGrab('Grade');
+  const condition = tableGrab('Condition') || tableGrab('Overall Condition');
+
+  // Sales
+  const salePrice = tableGrab('Sale Price');
+  const saleDate = tableGrab('Sale Date');
+
+  owner = owner.replace(/[*#\[\]|]/g, '').replace(/\s+/g, ' ').trim();
+  if (!owner || owner.length < 2) return null;
+
+  const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b|\bLP\b|\bL\.P\b/i.test(owner);
+  const fmt$ = (v: string) => v ? `$${v}` : '';
+
+  return {
+    address: propertyAddress, town, owner, coOwner, ownerAddress, isLLC,
+    parcelId: uniqueId, mblu: mapBlockLot, accountNumber: '', buildingCount: '',
+    bookPage: volPage, certificate: '', instrument: '',
+    assessedValue: fmt$(totalAssessed), totalAppraisal: fmt$(totalAppraised),
+    totalMarketValue: fmt$(totalAppraised), improvementsValue: fmt$(bldgAppraised),
+    landValue: fmt$(landAppraised), assessImprovements: fmt$(bldgAssessed),
+    assessLand: fmt$(landAssessed), assessTotal: fmt$(totalAssessed),
+    salePrice, saleDate,
+    lotSize: acres ? `${acres} acres` : '', frontage: '', depth: '',
+    useCode: '', useDescription: propertyUse || primaryUse, zoning: zone, neighborhood: '',
+    totalMarketLand: '', landAppraisedValue: fmt$(landAppraised),
+    yearBuilt, buildingStyle, model: '', stories,
+    livingArea: livingArea ? `${livingArea} sq ft` : '',
+    replacementCost: '', buildingPercentGood: '',
+    occupancy: '', totalRooms, bedrooms, totalBaths, halfBaths,
+    totalXtraFixtures: '', bathStyle: '', kitchenStyle: '',
+    interiorCondition: condition, finBsmntArea: '', finBsmntQual: '', grade,
+    exteriorWall, roofStructure: '', roofCover,
+    interiorWall: '', flooring: '',
+    heating, heatingFuel, cooling,
+    buildingPhoto: '',
+    ownershipHistory: [] as { owner: string; salePrice: string; bookPage: string; saleDate: string }[],
+    subAreas: [] as { code: string; description: string; grossArea: string; livingArea: string }[],
+    valuationHistory: [] as { year: string; improvements: string; land: string; total: string }[],
+    propertyCardUrl: '', llcDetails: undefined as any,
+  };
+}
+
+
 async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: string, town: string) {
   try {
     console.log(`Scraping ACT Data Scout for ${town}: ${baseUrl}`);
