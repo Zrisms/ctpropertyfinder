@@ -573,13 +573,14 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
   const streetFull = addrParts?.[2] || address;
   const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, '').trim();
 
-  // Strategy 1: Search official assessor sources (limit to 2 queries to save time)
+  // Strategy 1: Search official assessor sources (parallel queries)
   const searchQueries = [
     `"${houseNum} ${streetBase}" "${town}" CT property vgsi.com OR propertyrecordcards.com`,
     `"${houseNum} ${streetBase}" "${town}" CT assessor property owner assessment`,
   ];
 
-  for (const query of searchQueries) {
+  // Fire both searches in parallel
+  const allSearchResults = await Promise.all(searchQueries.map(async (query) => {
     try {
       console.log(`Universal search: ${query}`);
       const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
@@ -587,59 +588,56 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, limit: 5 }),
       });
-
-      if (!searchResp.ok) continue;
+      if (!searchResp.ok) return [];
       const searchData = await searchResp.json();
-      const results = searchData.data || [];
+      return searchData.data || [];
+    } catch { return []; }
+  }));
 
-      for (const result of results) {
-        const url = result.url || '';
-        // Skip pure listing sites
-        if (/zillow|realtor\.com|trulia|redfin|homes\.com|movoto|homesnap|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch|loopnet|realtyhop/i.test(url)) continue;
+  for (const results of allSearchResults) {
+    for (const result of results) {
+      const url = result.url || '';
+      if (/zillow|realtor\.com|trulia|redfin|homes\.com|movoto|homesnap|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch|loopnet|realtyhop/i.test(url)) continue;
 
-        // VGS parcel page
-        if (url.includes('vgsi.com') && url.includes('Parcel.aspx')) {
-          console.log(`Universal: found VGS parcel: ${url}`);
-          return await scrapePropertyDetail(apiKey, url, address, town);
-        }
+      if (url.includes('vgsi.com') && url.includes('Parcel.aspx')) {
+        console.log(`Universal: found VGS parcel: ${url}`);
+        return await scrapePropertyDetail(apiKey, url, address, town);
+      }
 
-        // PRC page
-        if (url.includes('propertyrecordcards.com') && url.includes('uniqueid=')) {
-          console.log(`Universal: found PRC page: ${url}`);
-          const md = await firecrawlScrape(apiKey, url);
-          if (md) {
-            const extracted = extractPRCData(md, address, town) || extractGenericPropertyData(md, address, town);
-            if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
-              extracted.propertyCardUrl = url;
-              if (extracted.isLLC) {
-                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
-              }
-              return json({ success: true, property: extracted });
+      if (url.includes('propertyrecordcards.com') && url.includes('uniqueid=')) {
+        console.log(`Universal: found PRC page: ${url}`);
+        const md = await firecrawlScrape(apiKey, url);
+        if (md) {
+          const extracted = extractPRCData(md, address, town) || extractGenericPropertyData(md, address, town);
+          if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
+            extracted.propertyCardUrl = url;
+            if (extracted.isLLC) {
+              try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
             }
-          }
-        }
-
-        // Any assessor/property page
-        if (/assessor|propcard|property.*record|gis\.|cama|revaluation/i.test(url) ||
-            url.toLowerCase().includes(town.toLowerCase().replace(/\s+/g, ''))) {
-          console.log(`Universal: trying page: ${url}`);
-          const md = await firecrawlScrape(apiKey, url);
-          if (md && md.length > 300) {
-            const extracted = extractVGSData(md, address, town) ||
-                              extractQDSCardData(md, address, town) ||
-                              extractPRCData(md, address, town) ||
-                              extractGenericPropertyData(md, address, town);
-            if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
-              extracted.propertyCardUrl = url;
-              if (extracted.isLLC) {
-                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
-              }
-              return json({ success: true, property: extracted });
-            }
+            return json({ success: true, property: extracted });
           }
         }
       }
-    } catch (e) { console.error("Universal search error:", e); }
+
+      if (/assessor|propcard|property.*record|gis\.|cama|revaluation/i.test(url) ||
+          url.toLowerCase().includes(town.toLowerCase().replace(/\s+/g, ''))) {
+        console.log(`Universal: trying page: ${url}`);
+        const md = await firecrawlScrape(apiKey, url);
+        if (md && md.length > 300) {
+          const extracted = extractVGSData(md, address, town) ||
+                            extractQDSCardData(md, address, town) ||
+                            extractPRCData(md, address, town) ||
+                            extractGenericPropertyData(md, address, town);
+          if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
+            extracted.propertyCardUrl = url;
+            if (extracted.isLLC) {
+              try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+            }
+            return json({ success: true, property: extracted });
+          }
+        }
+      }
+    }
   }
 
   // Strategy 2: LLM-powered extraction from any property data source
