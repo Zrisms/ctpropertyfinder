@@ -407,39 +407,88 @@ async function universalPropertySearch(apiKey: string, address: string, town: st
     } catch (e) { console.error("Universal search error:", e); }
   }
 
-  // Strategy 2: Try public aggregator sites as last resort
-  const aggregatorQueries = [
-    `"${address}" "${town}" CT property owner site:realtor.com`,
-    `"${houseNum} ${streetBase}" "${town}" CT property site:countyoffice.org`,
-  ];
+  // Strategy 2: Try countyoffice.org which has structured assessment data
+  try {
+    const coUrl = `https://www.countyoffice.org/property-records-search/?q=${encodeURIComponent(`${address}, ${town}, CT`)}`;
+    console.log(`Trying countyoffice.org: ${coUrl}`);
+    const md = await firecrawlScrape(apiKey, coUrl);
+    if (md && md.length > 300) {
+      const extracted = extractGenericPropertyData(md, address, town);
+      if (extracted) {
+        extracted.propertyCardUrl = coUrl;
+        if (extracted.isLLC) {
+          try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+        }
+        return json({ success: true, property: extracted });
+      }
+    }
+  } catch (e) { console.error("Countyoffice fallback error:", e); }
 
-  for (const query of aggregatorQueries) {
-    try {
-      console.log(`Aggregator search: ${query}`);
-      const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, limit: 3, scrapeOptions: { formats: ['markdown'] } }),
-      });
-      if (!searchResp.ok) continue;
+  // Strategy 3: Use Firecrawl JSON extraction from realtor.com
+  try {
+    const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: `"${address}" "${town}" CT property owner assessment`,
+        limit: 3,
+      }),
+    });
+    if (searchResp.ok) {
       const searchData = await searchResp.json();
       const results = searchData.data || [];
-
       for (const result of results) {
-        const md = result.markdown || result.content || '';
-        if (md.length < 200) continue;
-        console.log(`Aggregator: trying ${result.url}`);
-        const extracted = extractAggregatorData(md, address, town);
-        if (extracted) {
-          extracted.propertyCardUrl = result.url;
-          if (extracted.isLLC) {
-            try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+        const url = result.url || '';
+        if (/zillow|trulia|redfin|homesnap|spokeo|whitepages|fastpeoplesearch/i.test(url)) continue;
+        // Try scraping with JSON extraction
+        console.log(`JSON extract attempt: ${url}`);
+        const scrapeResp = await fetch('https://api.firecrawl.dev/v1/scrape', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url,
+            formats: [{ type: 'json', prompt: `Extract property data for ${address}, ${town}, CT: owner full name, assessed value, year built, square feet, lot size, bedrooms, bathrooms, zoning, sale price, sale date. Return as JSON with keys: owner, assessedValue, yearBuilt, sqft, lotSize, bedrooms, bathrooms, zoning, salePrice, saleDate` }],
+          }),
+        });
+        if (!scrapeResp.ok) continue;
+        const scrapeData = await scrapeResp.json();
+        const jsonData = scrapeData?.data?.json || scrapeData?.json;
+        if (jsonData?.owner && jsonData.owner.length >= 4 &&
+            !/^(Sold|For Sale|Pending|N\/A|Unknown|Street View)$/i.test(jsonData.owner)) {
+          console.log(`JSON extract success from ${url}: owner=${jsonData.owner}`);
+          const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(jsonData.owner);
+          const prop = {
+            address, town, owner: jsonData.owner, coOwner: '', ownerAddress: '', isLLC,
+            parcelId: '', mblu: '', accountNumber: '', buildingCount: '', bookPage: '', certificate: '', instrument: '',
+            assessedValue: jsonData.assessedValue || '', totalAppraisal: '', totalMarketValue: '',
+            improvementsValue: '', landValue: '',
+            assessImprovements: '', assessLand: '', assessTotal: jsonData.assessedValue || '',
+            salePrice: jsonData.salePrice || '', saleDate: jsonData.saleDate || '',
+            lotSize: jsonData.lotSize || '', frontage: '', depth: '',
+            useCode: '', useDescription: '', zoning: jsonData.zoning || '', neighborhood: '',
+            totalMarketLand: '', landAppraisedValue: '',
+            yearBuilt: jsonData.yearBuilt || '', buildingStyle: '', model: '', stories: '',
+            livingArea: jsonData.sqft || '', replacementCost: '', buildingPercentGood: '',
+            occupancy: '', totalRooms: '', bedrooms: jsonData.bedrooms || '', totalBaths: jsonData.bathrooms || '', halfBaths: '',
+            totalXtraFixtures: '', bathStyle: '', kitchenStyle: '',
+            interiorCondition: '', finBsmntArea: '', finBsmntQual: '', grade: '',
+            exteriorWall: '', roofStructure: '', roofCover: '',
+            interiorWall: '', flooring: '',
+            heating: '', heatingFuel: '', cooling: '',
+            buildingPhoto: '',
+            ownershipHistory: [] as { owner: string; salePrice: string; bookPage: string; saleDate: string }[],
+            subAreas: [] as { code: string; description: string; grossArea: string; livingArea: string }[],
+            valuationHistory: [] as { year: string; improvements: string; land: string; total: string }[],
+            propertyCardUrl: url, llcDetails: undefined as any,
+          };
+          if (isLLC) {
+            try { prop.llcDetails = await searchCTBusiness(apiKey, prop.owner); } catch (e) { console.error("LLC:", e); }
           }
-          return json({ success: true, property: extracted });
+          return json({ success: true, property: prop });
         }
       }
-    } catch (e) { console.error("Aggregator search error:", e); }
-  }
+    }
+  } catch (e) { console.error("JSON extract fallback error:", e); }
 
   // Final fallback URL
   const searchUrl = fallbackUrl || `https://www.google.com/search?q=${encodeURIComponent(`${address} ${town} CT property assessor`)}`;
