@@ -1629,9 +1629,9 @@ function extractGenericPropertyData(markdown: string, address: string, town: str
 
   owner = owner.replace(/[*#\[\]]/g, '').replace(/<br\/?>/gi, ' ').trim();
   // Reject if owner looks like garbage (too long = scraped paragraph, or too short)
-  if (!owner || owner.length < 2 || owner.length > 100) return null;
-  // Reject if owner contains URLs or markdown artifacts
+  if (!owner || owner.length < 4 || owner.length > 100) return null;
   if (/https?:\/\/|\.com|\.org|\.net|\[.*\]\(/.test(owner)) return null;
+  if (/^(Sold|For Sale|Pending|Active|Price|View|Details|Home|House|Property|Contact|Agent|N\/A|Unknown)$/i.test(owner)) return null;
 
   const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner);
   const fmt$ = (v: string) => v ? `$${v}` : '';
