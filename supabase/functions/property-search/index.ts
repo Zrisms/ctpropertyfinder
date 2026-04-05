@@ -1044,31 +1044,21 @@ function extractPRCData(markdown: string, address: string, town: string) {
 async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: string, town: string) {
   try {
     console.log(`Scraping ACT Data Scout for ${town}: ${baseUrl}`);
-
-    // ACT Data Scout has a structured search
-    const searchResp = await fetch('https://api.firecrawl.dev/v1/search', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: `"${address}" "${town}" CT property actdatascout.com`, limit: 5 }),
-    });
-
-    if (searchResp.ok) {
-      const data = await searchResp.json();
-      const results = data.data || [];
-      for (const result of results) {
-        const url = result.url || '';
-        if (url.includes('actdatascout.com')) {
-          const md = await firecrawlScrape(apiKey, url);
-          if (md) {
-            const extracted = extractGenericPropertyData(md, address, town);
-            if (extracted) {
-              extracted.propertyCardUrl = url;
-              if (extracted.isLLC) {
-                try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
-              }
-              return json({ success: true, property: extracted });
-            }
-          }
+    // Scrape the base URL directly
+    const md = await firecrawlScrape(apiKey, baseUrl);
+    if (md) {
+      const extracted = extractGenericPropertyData(md, address, town);
+      if (extracted) {
+        extracted.propertyCardUrl = baseUrl;
+        if (extracted.isLLC) {
+          try { extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner); } catch (e) { console.error("LLC:", e); }
+        }
+        return json({ success: true, property: extracted });
+      }
+    }
+  } catch (e) { console.error("ACT error:", e); }
+  return json({ success: false, error: `Could not find property in ${town}. Try the assessor database directly.`, searchUrl: baseUrl });
+}
         }
       }
     }
