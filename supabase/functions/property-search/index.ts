@@ -986,12 +986,13 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
         body: JSON.stringify({
           url: searchUrl,
           formats: ["markdown", "links", "html"],
-          waitFor: 1500,
+          waitFor: 1000,
+          timeout: 15000,
           actions: [
-            { type: "wait", milliseconds: 500 },
+            { type: "wait", milliseconds: 300 },
             { type: "click", selector: 'input[id*="TextBox_Search"], input[id*="txtSearch"], input[type="text"]' },
             { type: "write", text: searchText },
-            { type: "wait", milliseconds: 2500 },
+            { type: "wait", milliseconds: 1500 },
             {
               type: "click",
               selector:
