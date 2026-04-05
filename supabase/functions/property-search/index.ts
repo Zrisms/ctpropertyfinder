@@ -1588,9 +1588,14 @@ async function buildLLCDetails(businesses: Record<string, unknown>[], searchName
     '', `Source: CT Open Data Portal (data.ct.gov)`, `Retrieved: ${new Date().toLocaleDateString('en-US')}`,
   ].filter(l => l !== undefined);
 
+  const businessProfileUrl = bizKey
+    ? `https://service.ct.gov/business/s/onlinebusinesssearch?language=en_US&businessNameEng=${encodeURIComponent(bizName)}`
+    : '';
+
   return {
     mailingAddress, dateFormed, businessType, status: fullStatus,
     accountNumber, citizenship, formationPlace, email, naicsCode,
+    businessProfileUrl,
     principals: principals.length > 0
       ? principals.map(p => ({ name: p.name, title: p.title, address: p.address, residentialAddress: p.residentialAddress }))
       : [{ name: 'No agents found in public records', title: '', address: '', residentialAddress: '' }],
