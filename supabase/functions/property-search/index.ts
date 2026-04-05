@@ -549,7 +549,7 @@ function extractVGSData(markdown: string, address: string, town: string) {
     model,
     stories,
     livingArea: livingArea ? `${livingArea} sq ft` : '',
-    replacementCost: fmt$(replacementCost.replace(/[$,]/g, '')),
+    replacementCost: replacementCost ? `$${replacementCost.replace(/[$]/g, '')}` : '',
     buildingPercentGood: buildingPercentGood ? `${buildingPercentGood}%` : '',
     occupancy,
     totalRooms,
