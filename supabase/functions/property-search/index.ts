@@ -771,12 +771,7 @@ async function scrapeVGS(apiKey: string, slug: string, address: string, town: st
           const extracted = extractVGSData(markdown, address, town);
           if (extracted && extracted.owner && !extracted.owner.includes("Enter an")) {
             extracted.propertyCardUrl = finalUrl;
-            if (extracted.isLLC) {
-              try {
-                extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
-              } catch (e) {
-                console.error("LLC:", e);
-              }
+// LLC lookup removed - handled separately by frontend
             }
             return json({ success: true, property: extracted });
           }
@@ -832,12 +827,7 @@ async function scrapeMapXpress(apiKey: string, baseUrl: string, address: string,
         const extracted = extractMapXpressData(markdown, address, town);
         if (extracted) {
           extracted.propertyCardUrl = data.data?.metadata?.url || baseUrl;
-          if (extracted.isLLC) {
-            try {
-              extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
-            } catch (e) {
-              console.error("LLC:", e);
-            }
+// LLC lookup removed - handled separately by frontend
           }
           return json({ success: true, property: extracted });
         }
@@ -944,12 +934,7 @@ async function scrapeQDS(apiKey: string, baseUrl: string, address: string, town:
         extracted.fieldCardPdfUrl = pdfMatch[1];
       }
 
-      if (extracted.isLLC) {
-        try {
-          extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
-        } catch (e) {
-          console.error("LLC:", e);
-        }
+// LLC lookup removed - handled separately by frontend
       }
       return json({ success: true, property: extracted });
     }
@@ -1097,12 +1082,7 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
           const extracted = extractPRCData(detailMd, address, town);
           if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
             extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uid}`;
-            if (extracted.isLLC) {
-              try {
-                extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
-              } catch (e) {
-                console.error("LLC:", e);
-              }
+// LLC lookup removed - handled separately by frontend
             }
             return json({ success: true, property: extracted });
           }
@@ -1159,12 +1139,7 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
           const extracted = extractPRCData(detailMd, address, town);
           if (extracted && isAddressMatch(extracted.address, address, houseNum)) {
             extracted.propertyCardUrl = `https://www.propertyrecordcards.com/PropertyResults.aspx?towncode=${townCode}&uniqueid=${uid}`;
-            if (extracted.isLLC) {
-              try {
-                extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
-              } catch (e) {
-                console.error("LLC:", e);
-              }
+// LLC lookup removed - handled separately by frontend
             }
             return json({ success: true, property: extracted });
           }
@@ -1358,12 +1333,7 @@ async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: stri
       const extracted = extractGenericPropertyData(md, address, town);
       if (extracted) {
         extracted.propertyCardUrl = baseUrl;
-        if (extracted.isLLC) {
-          try {
-            extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
-          } catch (e) {
-            console.error("LLC:", e);
-          }
+// LLC lookup removed - handled separately by frontend
         }
         return json({ success: true, property: extracted });
       }
@@ -1387,12 +1357,7 @@ async function scrapeIASCLT(apiKey: string, baseUrl: string, address: string, to
       const extracted = extractGenericPropertyData(md, address, town);
       if (extracted) {
         extracted.propertyCardUrl = baseUrl;
-        if (extracted.isLLC) {
-          try {
-            extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
-          } catch (e) {
-            console.error("LLC:", e);
-          }
+// LLC lookup removed - handled separately by frontend
         }
         return json({ success: true, property: extracted });
       }
@@ -1416,12 +1381,7 @@ async function scrapeEqualityCama(apiKey: string, baseUrl: string, address: stri
       const extracted = extractGenericPropertyData(md, address, town);
       if (extracted) {
         extracted.propertyCardUrl = baseUrl;
-        if (extracted.isLLC) {
-          try {
-            extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
-          } catch (e) {
-            console.error("LLC:", e);
-          }
+// LLC lookup removed - handled separately by frontend
         }
         return json({ success: true, property: extracted });
       }
@@ -1451,12 +1411,7 @@ async function scrapeGenericWithFallback(
       const extracted = extractGenericPropertyData(md, address, town);
       if (extracted) {
         extracted.propertyCardUrl = baseUrl;
-        if (extracted.isLLC) {
-          try {
-            extracted.llcDetails = await searchCTBusiness(apiKey, extracted.owner);
-          } catch (e) {
-            console.error("LLC:", e);
-          }
+// LLC lookup removed - handled separately by frontend
         }
         return json({ success: true, property: extracted });
       }
