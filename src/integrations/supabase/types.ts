@@ -14,7 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      property_cache: {
+        Row: {
+          address: string
+          id: string
+          property_data: Json
+          searched_at: string
+          town: string
+        }
+        Insert: {
+          address: string
+          id?: string
+          property_data: Json
+          searched_at?: string
+          town: string
+        }
+        Update: {
+          address?: string
+          id?: string
+          property_data?: Json
+          searched_at?: string
+          town?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
