@@ -63,6 +63,10 @@ const EXTRA_SUFFIX_VARIANTS: Record<string, string[]> = {
   'RUN':       ['RN'],
 };
 
+// Comprehensive blocklist: only government/assessor sites allowed
+const BLOCKED_SITES = /zillow|realtor\.com|realtor\b|trulia|redfin|homes\.com|compass\.com|movoto|homesnap|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch|loopnet|realtyhop|apartments\.com|rent\.com|hotpads|streeteasy|greatschools|niche\.com|yelp|nextdoor|facebook|instagram|twitter|linkedin|youtube|pinterest|tiktok|reddit|wikipedia|patch\.com|areavibes|city-data|nerdwallet|bankrate|lendingtree|rocket|homelight|opendoor|offerpad|homeadvisor|angi\.com|thumbtack|bing\.com|yahoo\.com/i;
+
+
 function normalizeAddress(address: string): string {
   let normalized = address.trim();
   for (const [full, abbr] of Object.entries(ABBREVIATIONS)) {
@@ -599,13 +603,13 @@ async function smartExtractProperty(apiKey: string, address: string, lookupTown:
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      query: `"${houseNum} ${streetBase}" "${lookupTown}" CT property owner assessment`,
+      query: `"${houseNum} ${streetBase}" "${lookupTown}" CT assessor property record card site:.gov OR site:vgsi.com OR site:propertyrecordcards.com`,
       limit: 3,
     }),
   });
   if (!searchResp.ok) return json({ success: false, error: 'Search failed', searchUrl: fallbackUrl });
   const results = (await searchResp.json()).data || [];
-  const skip = /zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch|neighborwho|blockshopper/i;
+  const skip = BLOCKED_SITES;
 
   for (const r of results) {
     const url = r.url || '';
@@ -709,7 +713,7 @@ async function universalPropertySearch(apiKey: string, address: string, lookupTo
   for (const results of allSearchResults) {
     for (const result of results) {
       const url = result.url || '';
-      if (/zillow|realtor\.com|trulia|redfin|homes\.com|movoto|homesnap|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch|loopnet|realtyhop/i.test(url)) continue;
+      if (BLOCKED_SITES.test(url)) continue;
 
       if (url.includes('vgsi.com') && url.includes('Parcel.aspx')) {
         console.log(`Universal: found VGS parcel: ${url}`);
@@ -758,7 +762,7 @@ async function universalPropertySearch(apiKey: string, address: string, lookupTo
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        query: `"${houseNum} ${streetBase}" "${lookupTown}" CT property owner year built square feet assessment`,
+        query: `"${houseNum} ${streetBase}" "${lookupTown}" CT assessor property record card owner`,
         limit: 4,
       }),
     });
@@ -766,7 +770,7 @@ async function universalPropertySearch(apiKey: string, address: string, lookupTo
     if (searchResp.ok) {
       const searchData = await searchResp.json();
       const results = searchData.data || [];
-      const skipSites = /zillow|trulia|homesnap|spokeo|whitepages|fastpeoplesearch|neighborwho|blockshopper/i;
+      const skipSites = BLOCKED_SITES;
 
       for (const result of results) {
         const url = result.url || '';
@@ -1595,7 +1599,7 @@ async function scrapeGenericWithFallback(apiKey: string, baseUrl: string, addres
       for (const result of results) {
         const url = result.url || '';
         // Skip generic listing sites
-        if (/zillow|realtor|trulia|redfin|homes\.com|movoto|homesnap|countyoffice|propertyshark|blockshopper|neighborwho|spokeo|whitepages|fastpeoplesearch/i.test(url)) continue;
+        if (BLOCKED_SITES.test(url)) continue;
         if (url.includes(town.toLowerCase().replace(/\s+/g, '')) || url.includes('assessor') || url.includes('property')) {
           const md = await firecrawlScrape(apiKey, url);
           if (md && md.length > 300) {
