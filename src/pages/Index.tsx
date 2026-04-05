@@ -20,32 +20,31 @@ function SearchProgress({ isLoading }: { isLoading: boolean }) {
 
   useEffect(() => {
     if (!isLoading) { setProgress(0); setStepIndex(0); return; }
-    // Psychology: jump to ~28% instantly (anchoring bias — feels like work already done)
-    setProgress(28);
+    setProgress(35);
     setStepIndex(0);
     let tick = 0;
     intervalRef.current = window.setInterval(() => {
       tick++;
       setProgress(p => {
-        // Fast start, logarithmic slowdown (power bias — early speed creates momentum feeling)
-        // First 60% flies by, last 30% crawls = perceived speed increase
-        const remaining = 95 - p;
-        const speed = tick < 4
-          ? Math.random() * 12 + 8   // early: big jumps (8-20%)
-          : tick < 8
-            ? Math.random() * 5 + 2  // mid: moderate (2-7%)
-            : Math.random() * 1.5 + 0.3; // late: tiny crawl (0.3-1.8%)
-        const next = p + Math.min(speed, remaining * 0.4);
-        if (next >= 95) { clearInterval(intervalRef.current!); return 95; }
+        const remaining = 97 - p;
+        // Aggressive early, gentle cruise — never stalls
+        const speed = tick < 3
+          ? Math.random() * 15 + 10  // early: 10-25%
+          : tick < 6
+            ? Math.random() * 6 + 3  // mid: 3-9%
+            : Math.random() * 2 + 0.5; // late: 0.5-2.5%
+        const next = p + Math.min(speed, remaining * 0.5);
+        if (next >= 97) { clearInterval(intervalRef.current!); return 97; }
         return next;
       });
       setStepIndex(i => {
-        // Steps advance faster early — gives sense of rapid progress
-        if (tick <= 2) return Math.min(i + 1, SEARCH_STEPS.length - 1);
-        if (Math.random() > 0.6) return Math.min(i + 1, SEARCH_STEPS.length - 1);
-        return i;
+        // Advance steps quickly — "Compiling" only shows briefly
+        if (tick <= 1) return 1;
+        if (tick <= 3) return Math.min(2, SEARCH_STEPS.length - 1);
+        if (tick <= 5) return Math.min(3, SEARCH_STEPS.length - 1);
+        return Math.min(i + 1, SEARCH_STEPS.length - 1);
       });
-    }, 800); // Faster tick rate (800ms vs 1200ms) — more frequent updates feel faster
+    }, 500);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [isLoading]);
 
@@ -55,13 +54,43 @@ function SearchProgress({ isLoading }: { isLoading: boolean }) {
     <div className="mt-6 space-y-3 animate-fade-in">
       <div className="h-1.5 w-full rounded-full bg-secondary/60 overflow-hidden">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-primary via-primary/80 to-accent transition-all duration-700 ease-out"
+          className="h-full rounded-full bg-gradient-to-r from-primary via-primary/80 to-accent transition-all duration-300 ease-out"
           style={{ width: `${progress}%` }}
         />
       </div>
       <p className="text-xs text-muted-foreground/70 text-center font-medium tracking-wide">
         {SEARCH_STEPS[stepIndex]}
       </p>
+    </div>
+  );
+}
+
+function PropertySkeleton() {
+  return (
+    <div className="mt-14 pb-20 max-w-4xl mx-auto animate-fade-in">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="glass rounded-2xl p-6 space-y-4">
+            <div className="h-4 w-1/3 rounded-md bg-muted animate-pulse" />
+            <div className="space-y-2.5">
+              <div className="h-3 w-full rounded bg-muted/60 animate-pulse" />
+              <div className="h-3 w-4/5 rounded bg-muted/60 animate-pulse" />
+              <div className="h-3 w-2/3 rounded bg-muted/60 animate-pulse" />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-6 glass rounded-2xl p-6 space-y-4">
+        <div className="h-4 w-1/4 rounded-md bg-muted animate-pulse" />
+        <div className="grid grid-cols-3 gap-4">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="space-y-2">
+              <div className="h-3 w-1/2 rounded bg-muted/60 animate-pulse" />
+              <div className="h-5 w-3/4 rounded bg-muted/40 animate-pulse" />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -155,6 +184,8 @@ const Index = () => {
             </div>
           </div>
         )}
+
+        {isLoading && !propertyData && <PropertySkeleton />}
 
         {propertyData && (
           <div className="mt-14 pb-20 animate-fade-in" style={{ animationDelay: '0.1s', opacity: 0 }}>
