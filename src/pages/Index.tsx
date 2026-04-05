@@ -42,11 +42,11 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
-      {/* Ambient glow orbs */}
+      {/* Animated ambient glow orbs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-40 -left-40 w-96 h-96 rounded-full bg-primary/8 blur-[120px]" />
-        <div className="absolute top-1/3 -right-32 w-80 h-80 rounded-full bg-accent/6 blur-[100px]" />
-        <div className="absolute -bottom-40 left-1/3 w-96 h-96 rounded-full bg-primary/5 blur-[140px]" />
+        <div className="orb-1 absolute -top-40 -left-40 w-[500px] h-[500px] rounded-full bg-primary/10 blur-[150px]" />
+        <div className="orb-2 absolute top-1/4 -right-32 w-[400px] h-[400px] rounded-full bg-[hsl(260_80%_65%/0.08)] blur-[120px]" />
+        <div className="orb-3 absolute -bottom-40 left-1/3 w-[450px] h-[450px] rounded-full bg-accent/6 blur-[140px]" />
       </div>
 
       {/* Header */}
@@ -57,7 +57,7 @@ const Index = () => {
             Connecticut Property Intelligence
           </div>
           <h1 className="text-5xl md:text-6xl lg:text-7xl font-semibold tracking-tight leading-[1.05] mb-6 animate-fade-in" style={{ animationDelay: '0.1s', opacity: 0 }}>
-            <span className="text-gradient">Property Lookup</span>
+            <span className="text-shimmer">Property Lookup</span>
           </h1>
           <p className="text-lg md:text-xl text-muted-foreground font-light leading-relaxed max-w-lg mx-auto animate-fade-in" style={{ animationDelay: '0.2s', opacity: 0 }}>
             Owners, valuations, building details, and LLC records — all in one search.
@@ -68,7 +68,7 @@ const Index = () => {
       {/* Search */}
       <main className="relative px-6 -mt-12 z-10">
         <div className="max-w-xl mx-auto animate-fade-in" style={{ animationDelay: '0.3s', opacity: 0 }}>
-          <div className="glass-elevated rounded-3xl p-8 glow-blue">
+          <div className="glass-elevated rainbow-border rounded-3xl p-8 glow-blue">
             <AddressSearch onSearch={handleSearch} isLoading={isLoading} />
           </div>
         </div>
