@@ -24,7 +24,7 @@ export interface PropertyData {
     mailingAddress: string; dateFormed: string; businessType: string; status?: string;
     principals: { name: string; title?: string; address: string; residentialAddress?: string }[];
     rawMarkdown?: string; accountNumber?: string; citizenship?: string; formationPlace?: string;
-    email?: string; naicsCode?: string;
+    email?: string; naicsCode?: string; businessProfileUrl?: string;
   };
 }
 
@@ -154,7 +154,15 @@ export function PropertyResults({ data, onDownloadPdf, onDownloadExcel, onDownlo
       {data.isLLC && data.llcDetails && (
         <Section title={`Business Details — ${data.owner}`} full>
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs text-muted-foreground/60">CT Secretary of State</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-muted-foreground/60">CT Secretary of State</span>
+              {data.llcDetails.businessProfileUrl && (
+                <a href={data.llcDetails.businessProfileUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-primary hover:underline inline-flex items-center gap-1">
+                  <ExternalLink className="h-3 w-3" /> View CT Profile
+                </a>
+              )}
+            </div>
             {data.llcDetails.rawMarkdown && (
               <button onClick={() => setShowRaw(!showRaw)} className="text-xs text-primary hover:underline inline-flex items-center gap-1">
                 <Eye className="h-3 w-3" /> {showRaw ? "Hide" : "Raw"}
