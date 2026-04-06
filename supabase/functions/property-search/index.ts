@@ -1957,61 +1957,81 @@ async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: stri
     const streetName = (addrParts?.[2] || address).trim();
     console.log(`ACT Data Scout: town=${town}, num=${houseNum}, street=${streetName}`);
 
-    // ACT Data Scout county IDs - Norwalk is 9103
-    const countyIds: Record<string, string> = {
-      norwalk: "9103",
-      kent: "9055",
-      sharon: "9069",
-    };
-    const countyId = countyIds[town.toLowerCase()] || "9103";
-
-    // Approach 1: Try direct search URL via Firecrawl (bypasses form, Firecrawl handles JS challenge)
-    const searchUrl = `https://www.actdatascout.com/RealProperty/Search?countyId=${countyId}&SearchType=address&StreetNumber=${encodeURIComponent(houseNum)}&StreetName=${encodeURIComponent(streetName)}&StreetNameMatchType=false`;
-    console.log(`ACT: Trying direct search URL: ${searchUrl}`);
-    
+    // Single Firecrawl call: search by address tab, then click "View" on first result
     const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        url: searchUrl,
-        formats: ["html", "links"],
+        url: baseUrl,
+        formats: ["markdown", "html"],
         onlyMainContent: false,
-        waitFor: 3000,
+        waitFor: 2000,
+        actions: [
+          { type: "wait", milliseconds: 1500 },
+          // Click "Physical Address" tab
+          { type: "click", selector: "#rpaddress-tab, a[href*='rpaddress']" },
+          { type: "wait", milliseconds: 500 },
+          // Fill street number
+          { type: "click", selector: "#StreetNumber" },
+          { type: "write", text: houseNum },
+          // Fill street name  
+          { type: "click", selector: "#StreetName" },
+          { type: "write", text: streetName },
+          // Click Search
+          { type: "click", selector: "#RPAddressSubmit" },
+          { type: "wait", milliseconds: 4000 },
+          // Click first "View" button in results to go to detail page
+          { type: "click", selector: ".publicGridButton, #RPResults button[type='submit'], #RealPropertyResultsTable button" },
+          { type: "wait", milliseconds: 3000 },
+        ],
       }),
     });
 
     if (!resp.ok) {
-      console.error(`ACT Firecrawl direct search failed: ${resp.status}`);
-      // Fallback: try actions-based approach
-      return await scrapeACTWithActions(apiKey, baseUrl, houseNum, streetName, address, town);
+      console.error(`ACT Firecrawl failed: ${resp.status}`);
+      const errBody = await resp.text();
+      console.error(`ACT error body: ${errBody.substring(0, 500)}`);
+      throw new Error(`Firecrawl returned ${resp.status}`);
     }
 
     const data = await resp.json();
     const html = data.data?.html || data.html || "";
-    const links = data.data?.links || data.links || [];
-    console.log(`ACT direct: HTML len=${html.length}, links=${links.length}`);
+    const md = data.data?.markdown || data.markdown || "";
+    const finalUrl = data.data?.metadata?.url || data.data?.metadata?.sourceURL || "";
+    console.log(`ACT: Final URL=${finalUrl}, md=${md.length}, html=${html.length}`);
 
-    // Look for PropertyDetail links
-    let detailLinks = extractACTDetailLinks(html, links);
-    console.log(`ACT direct: Found ${detailLinks.length} detail links`);
-
-    if (detailLinks.length === 0) {
-      // Maybe the page directly shows a single result - check if it's already a detail page
-      if (html.includes("Owner") && (html.includes("Assessment") || html.includes("Value"))) {
-        const md = data.data?.markdown || data.markdown || "";
-        const prop = extractACTPropertyDetail(html, md, address, town);
-        if (prop) {
-          prop.propertyCardUrl = searchUrl;
-          return json({ success: true, property: prop });
-        }
+    // Check if we landed on a ParcelView detail page
+    if (finalUrl.includes("ParcelView") || html.includes("ParcelView") || html.includes("parcel-detail") || html.includes("Owner Name")) {
+      console.log("ACT: On detail/ParcelView page, extracting data");
+      const prop = extractACTPropertyDetail(html, md, address, town);
+      if (prop) {
+        prop.propertyCardUrl = finalUrl || baseUrl;
+        return json({ success: true, property: prop });
       }
-      // Try actions-based fallback
-      console.log("ACT: No detail links from direct search, trying actions fallback");
-      return await scrapeACTWithActions(apiKey, baseUrl, houseNum, streetName, address, town);
+      // Fallback generic
+      const extracted = extractGenericPropertyData(md, address, town);
+      if (extracted) {
+        extracted.propertyCardUrl = finalUrl || baseUrl;
+        return json({ success: true, property: extracted });
+      }
     }
 
-    // Follow first detail link
-    return await scrapeACTDetailPage(apiKey, detailLinks[0], address, town);
+    // If still on search results, try to extract from table rows directly
+    console.log("ACT: Not on detail page, trying to extract from results table");
+    const rowData = extractACTFromResultsTable(html, address, town);
+    if (rowData) {
+      rowData.propertyCardUrl = baseUrl;
+      return json({ success: true, property: rowData });
+    }
+
+    // Last resort: generic extraction from whatever markdown we have
+    if (md.length > 200) {
+      const extracted = extractGenericPropertyData(md, address, town);
+      if (extracted) {
+        extracted.propertyCardUrl = finalUrl || baseUrl;
+        return json({ success: true, property: extracted });
+      }
+    }
   } catch (e) {
     console.error("ACT error:", e);
   }
@@ -2022,130 +2042,44 @@ async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: stri
   });
 }
 
-function extractACTDetailLinks(html: string, links: string[]): string[] {
-  const detailLinks: string[] = [];
-  // From HTML href attributes
-  const hrefMatches = html.match(/href="([^"]*PropertyDetail[^"]*)"/gi) || [];
-  for (const m of hrefMatches) {
-    const href = m.match(/href="([^"]+)"/)?.[1];
-    if (href) {
-      const full = href.startsWith("http") ? href : `https://www.actdatascout.com${href}`;
-      if (!detailLinks.includes(full)) detailLinks.push(full);
-    }
-  }
-  // From links array
-  for (const l of links) {
-    if (l.includes("PropertyDetail") && !detailLinks.includes(l)) {
-      detailLinks.push(l);
-    }
-  }
-  return detailLinks;
-}
+// Extract data directly from ACT search results table rows
+function extractACTFromResultsTable(html: string, address: string, town: string) {
+  // Match rows with class odd/even (DataTables)
+  const rowMatch = html.match(/<tr[^>]*class="(?:odd|even)"[^>]*>([\s\S]*?)<\/tr>/i);
+  if (!rowMatch) return null;
 
-async function scrapeACTDetailPage(apiKey: string, detailUrl: string, address: string, town: string) {
-  console.log(`ACT: Scraping detail page: ${detailUrl}`);
-  const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      url: detailUrl,
-      formats: ["markdown", "html"],
-      onlyMainContent: false,
-      waitFor: 2000,
-    }),
-  });
+  const cells = rowMatch[1].match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [];
+  const cellTexts = cells.map(c => c.replace(/<[^>]+>/g, "").trim());
+  // Typical columns: Actions, CRPID(hidden), PID, Parcel Address, Owner Name, Parcel, Assessor Map, Acres
+  // Index 0=Actions, 1=CRPID(hidden), 2=PID, 3=Address, 4=Owner, 5=Parcel, 6=Map, 7=Acres
+  if (cellTexts.length < 5) return null;
 
-  if (resp.ok) {
-    const data = await resp.json();
-    const html = data.data?.html || data.html || "";
-    const md = data.data?.markdown || data.markdown || "";
-    console.log(`ACT detail: md=${md.length}, html=${html.length}`);
+  const pid = cellTexts[2] || "";
+  const propAddr = cellTexts[3] || address;
+  const owner = cellTexts[4] || "";
+  const parcel = cellTexts[5] || "";
+  const acres = cellTexts[7] || "";
 
-    const prop = extractACTPropertyDetail(html, md, address, town);
-    if (prop) {
-      prop.propertyCardUrl = detailUrl;
-      return json({ success: true, property: prop });
-    }
-    // Generic fallback
-    const extracted = extractGenericPropertyData(md, address, town);
-    if (extracted) {
-      extracted.propertyCardUrl = detailUrl;
-      return json({ success: true, property: extracted });
-    }
-  }
-  return json({
-    success: false,
-    error: `Found property but could not extract details for ${town}.`,
-    searchUrl: detailUrl,
-  });
-}
+  if (!owner) return null;
 
-async function scrapeACTWithActions(apiKey: string, baseUrl: string, houseNum: string, streetName: string, address: string, town: string) {
-  console.log(`ACT: Using Firecrawl actions fallback`);
-  const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      url: baseUrl,
-      formats: ["html", "links"],
-      onlyMainContent: false,
-      waitFor: 2000,
-      actions: [
-        { type: "wait", milliseconds: 1500 },
-        { type: "click", selector: "#rpaddress-tab, a[href*='rpaddress']" },
-        { type: "wait", milliseconds: 500 },
-        { type: "click", selector: "#StreetNumber" },
-        { type: "write", text: houseNum },
-        { type: "click", selector: "#StreetName" },
-        { type: "write", text: streetName },
-        { type: "click", selector: "#RPAddressSubmit" },
-        { type: "wait", milliseconds: 4000 },
-      ],
-    }),
-  });
+  const isLLC = /\bLLC\b|\bL\.L\.C\b|\bINC\b|\bCORP\b|\bTRUST\b|\bLTD\b/i.test(owner);
 
-  if (!resp.ok) {
-    console.error(`ACT actions fallback failed: ${resp.status}`);
-    return json({ success: false, error: `Could not find property in ${town}.`, searchUrl: baseUrl });
-  }
-
-  const data = await resp.json();
-  const html = data.data?.html || data.html || "";
-  const links = data.data?.links || data.links || [];
-  console.log(`ACT actions: HTML len=${html.length}, links=${links.length}`);
-  // Debug: log some links to find the right pattern
-  const relevantLinks = links.filter((l: string) => l.includes("Property") || l.includes("Detail") || l.includes("parcel") || l.includes("account"));
-  console.log(`ACT actions relevant links: ${JSON.stringify(relevantLinks.slice(0, 10))}`);
-  // Find the RealPropertyResultsTable
-  const resultsTableMatch = html.match(/id="RealPropertyResultsTable"[^>]*>([\s\S]*?)<\/table>/i);
-  if (resultsTableMatch) {
-    console.log(`ACT results table (first 2000): ${resultsTableMatch[1].substring(0, 2000)}`);
-  }
-  // Also look for any anchor tags with data-accountnumber or similar
-  const dataAttrLinks = html.match(/<a[^>]*data-[^>]*>/gi) || [];
-  console.log(`ACT data-attr links: ${JSON.stringify(dataAttrLinks.slice(0, 5))}`);
-  // Look for any rows with class containing "result" or property data
-  const trMatches = html.match(/<tr[^>]*class="[^"]*(?:odd|even|result)[^"]*"[^>]*>[\s\S]*?<\/tr>/gi) || [];
-  console.log(`ACT result rows count: ${trMatches.length}`);
-  if (trMatches.length > 0) {
-    console.log(`ACT first result row: ${trMatches[0].substring(0, 1000)}`);
-  }
-
-  const detailLinks = extractACTDetailLinks(html, links);
-  if (detailLinks.length > 0) {
-    return await scrapeACTDetailPage(apiKey, detailLinks[0], address, town);
-  }
-
-  const md = data.data?.markdown || data.markdown || "";
-  if (md.length > 200) {
-    const extracted = extractGenericPropertyData(md, address, town);
-    if (extracted) {
-      extracted.propertyCardUrl = baseUrl;
-      return json({ success: true, property: extracted });
-    }
-  }
-
-  return json({ success: false, error: `Could not find property in ${town}.`, searchUrl: baseUrl });
+  return {
+    address: propAddr || address,
+    owner,
+    mailingAddress: "",
+    propertyType: "",
+    yearBuilt: "",
+    lotSize: acres ? `${acres} AC` : "",
+    assessedValue: "",
+    landValue: "",
+    buildingValue: "",
+    totalValue: "",
+    isLLC,
+    town: town.charAt(0).toUpperCase() + town.slice(1),
+    propertyCardUrl: "",
+    parcelId: parcel || pid,
+  };
 }
 
 // Extract property data from ACT Data Scout detail page HTML
