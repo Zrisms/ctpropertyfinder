@@ -2113,6 +2113,19 @@ async function scrapeACTWithActions(apiKey: string, baseUrl: string, houseNum: s
   const html = data.data?.html || data.html || "";
   const links = data.data?.links || data.links || [];
   console.log(`ACT actions: HTML len=${html.length}, links=${links.length}`);
+  // Debug: log some links to find the right pattern
+  const relevantLinks = links.filter((l: string) => l.includes("Property") || l.includes("Detail") || l.includes("parcel") || l.includes("account"));
+  console.log(`ACT actions relevant links: ${JSON.stringify(relevantLinks.slice(0, 10))}`);
+  // Debug: search HTML for common result patterns
+  const rpResultsMatch = html.match(/<div[^>]*id="RPResults"[^>]*>([\s\S]{0,2000})/i);
+  if (rpResultsMatch) {
+    console.log(`ACT RPResults content (first 500): ${rpResultsMatch[1].substring(0, 500)}`);
+  } else {
+    console.log("ACT: No #RPResults div found in HTML");
+    // Check for any table with results
+    const tableCount = (html.match(/<table/gi) || []).length;
+    console.log(`ACT: Found ${tableCount} tables in HTML`);
+  }
 
   const detailLinks = extractACTDetailLinks(html, links);
   if (detailLinks.length > 0) {
