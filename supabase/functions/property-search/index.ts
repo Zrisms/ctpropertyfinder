@@ -1952,10 +1952,10 @@ function extractPRCData(markdown: string, address: string, town: string) {
 
 async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: string, town: string) {
   try {
-    console.log(`Scraping ACT Data Scout for ${town}: ${baseUrl}`);
     const addrParts = address.match(/^(\d+)\s+(.+)$/i);
     const houseNum = addrParts?.[1] || "";
     const streetName = (addrParts?.[2] || address).trim();
+    console.log(`ACT Data Scout: town=${town}, num=${houseNum}, street=${streetName}`);
 
     // Step 1: Use Firecrawl actions to click the Physical Address tab, fill form, and submit
     const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
