@@ -2085,7 +2085,6 @@ function extractACTFromResultsTable(html: string, address: string, town: string)
 // Extract property data from ACT Data Scout detail page
 function extractACTPropertyDetail(html: string, markdown: string, address: string, town: string) {
   const md = markdown;
-  console.log(`ACT extractDetail: md len=${md.length}, has $=${md.includes("$")}, snippet near end: ${md.substring(md.length - 300)}`);
   const text = html.replace(/&nbsp;/g, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 
   // Owner: look for "Name:" label in the detail page
