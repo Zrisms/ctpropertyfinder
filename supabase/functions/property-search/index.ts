@@ -2132,6 +2132,7 @@ async function scrapeACTWithActions(apiKey: string, baseUrl: string, houseNum: s
     // Search for href patterns within the results
     const allHrefs = html.match(/href="[^"]*(?:Detail|account|parcel)[^"]*"/gi) || [];
     console.log(`ACT detail-ish hrefs: ${JSON.stringify(allHrefs.slice(0, 5))}`);
+  }
 
   const detailLinks = extractACTDetailLinks(html, links);
   if (detailLinks.length > 0) {
