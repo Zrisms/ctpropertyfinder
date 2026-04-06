@@ -2119,7 +2119,7 @@ async function scrapeACTWithActions(apiKey: string, baseUrl: string, houseNum: s
   // Debug: search HTML for common result patterns
   const rpResultsMatch = html.match(/<div[^>]*id="RPResults"[^>]*>([\s\S]{0,2000})/i);
   if (rpResultsMatch) {
-    console.log(`ACT RPResults content (first 500): ${rpResultsMatch[1].substring(0, 500)}`);
+    console.log(`ACT RPResults content (first 1500): ${rpResultsMatch[1].substring(0, 1500)}`);
   } else {
     console.log("ACT: No #RPResults div found in HTML");
     // Check for any table with results
