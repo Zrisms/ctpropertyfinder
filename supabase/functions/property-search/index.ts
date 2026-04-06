@@ -2119,13 +2119,19 @@ async function scrapeACTWithActions(apiKey: string, baseUrl: string, houseNum: s
   // Debug: search HTML for common result patterns
   const rpResultsMatch = html.match(/<div[^>]*id="RPResults"[^>]*>([\s\S]{0,2000})/i);
   if (rpResultsMatch) {
-    console.log(`ACT RPResults content (first 3000): ${rpResultsMatch[1].substring(0, 3000)}`);
-  } else {
-    console.log("ACT: No #RPResults div found in HTML");
-    // Check for any table with results
-    const tableCount = (html.match(/<table/gi) || []).length;
-    console.log(`ACT: Found ${tableCount} tables in HTML`);
-  }
+    // Find table body rows which contain the actual property data
+    const tbodyMatch = html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
+    if (tbodyMatch) {
+      console.log(`ACT tbody content (first 2000): ${tbodyMatch[1].substring(0, 2000)}`);
+    } else {
+      console.log("ACT: No tbody found in RPResults");
+    }
+    // Also search for any onclick or data attributes
+    const onclickMatches = html.match(/onclick="[^"]*(?:Detail|detail|account|parcel)[^"]*"/gi) || [];
+    console.log(`ACT onclick matches: ${JSON.stringify(onclickMatches.slice(0, 3))}`);
+    // Search for href patterns within the results
+    const allHrefs = html.match(/href="[^"]*(?:Detail|account|parcel)[^"]*"/gi) || [];
+    console.log(`ACT detail-ish hrefs: ${JSON.stringify(allHrefs.slice(0, 5))}`);
 
   const detailLinks = extractACTDetailLinks(html, links);
   if (detailLinks.length > 0) {
