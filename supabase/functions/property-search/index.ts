@@ -1952,58 +1952,84 @@ function extractPRCData(markdown: string, address: string, town: string) {
 
 async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: string, town: string) {
   try {
-    console.log(`Scraping ACT Data Scout for ${town}: ${baseUrl}`);
     const addrParts = address.match(/^(\d+)\s+(.+)$/i);
     const houseNum = addrParts?.[1] || "";
-    const streetBase = (addrParts?.[2] || address)
-      .replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY)\.?$/i, "").trim();
+    const streetName = (addrParts?.[2] || address).trim();
+    console.log(`ACT Data Scout: town=${town}, num=${houseNum}, street=${streetName}`);
 
-    // ACT Data Scout: use Firecrawl actions to search
+    // Single Firecrawl call: search by address tab, then click "View" on first result
     const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         url: baseUrl,
-        formats: ["markdown", "html", "links"],
+        formats: ["markdown", "html"],
         onlyMainContent: false,
         waitFor: 2000,
         actions: [
-          { type: "wait", milliseconds: 1000 },
-          { type: "click", selector: 'input[name*="StreetNumber"], input[name*="streetNumber"], input[id*="StreetNumber"], input[placeholder*="Number"], input[placeholder*="number"]' },
+          { type: "wait", milliseconds: 1500 },
+          // Click "Physical Address" tab
+          { type: "click", selector: "#rpaddress-tab, a[href*='rpaddress']" },
+          { type: "wait", milliseconds: 500 },
+          // Fill street number
+          { type: "click", selector: "#StreetNumber" },
           { type: "write", text: houseNum },
-          { type: "click", selector: 'input[name*="StreetName"], input[name*="streetName"], input[id*="StreetName"], input[placeholder*="Street"], input[placeholder*="street"]' },
-          { type: "write", text: streetBase },
-          { type: "click", selector: 'button[type="submit"], input[type="submit"], button:has-text("Search"), a:has-text("Search"), input[value="Search"]' },
+          // Fill street name  
+          { type: "click", selector: "#StreetName" },
+          { type: "write", text: streetName },
+          // Click Search
+          { type: "click", selector: "#RPAddressSubmit" },
+          { type: "wait", milliseconds: 4000 },
+          // Click first "View" button in results to go to detail page
+          { type: "click", selector: ".publicGridButton, #RPResults button[type='submit'], #RealPropertyResultsTable button" },
           { type: "wait", milliseconds: 3000 },
         ],
       }),
     });
 
-    if (resp.ok) {
-      const data = await resp.json();
-      const markdown = data.data?.markdown || data.markdown || "";
-      const html = data.data?.html || data.html || "";
-      const links = data.data?.links || data.links || [];
+    if (!resp.ok) {
+      console.error(`ACT Firecrawl failed: ${resp.status}`);
+      const errBody = await resp.text();
+      console.error(`ACT error body: ${errBody.substring(0, 500)}`);
+      throw new Error(`Firecrawl returned ${resp.status}`);
+    }
 
-      if (markdown.length > 300) {
-        // Look for property detail links
-        const detailLink = links.find((l: string) => l.includes("PropertyDetail") || l.includes("parcel") || l.includes("detail"));
-        if (detailLink) {
-          console.log(`ACT: Following detail link: ${detailLink}`);
-          const detailMd = await firecrawlScrapeFullPage(apiKey, detailLink);
-          if (detailMd) {
-            const extracted = extractGenericPropertyData(detailMd, address, town);
-            if (extracted) {
-              extracted.propertyCardUrl = detailLink;
-              return json({ success: true, property: extracted });
-            }
-          }
-        }
-        const extracted = extractGenericPropertyData(markdown, address, town);
-        if (extracted) {
-          extracted.propertyCardUrl = data.data?.metadata?.url || baseUrl;
-          return json({ success: true, property: extracted });
-        }
+    const data = await resp.json();
+    const html = data.data?.html || data.html || "";
+    const md = data.data?.markdown || data.markdown || "";
+    const finalUrl = data.data?.metadata?.url || data.data?.metadata?.sourceURL || "";
+    console.log(`ACT: Final URL=${finalUrl}, md=${md.length}, html=${html.length}`);
+
+    // Check if we landed on a ParcelView detail page
+    if (finalUrl.includes("ParcelView") || html.includes("ParcelView") || html.includes("parcel-detail") || html.includes("Owner Name")) {
+      console.log("ACT: On detail/ParcelView page, extracting data");
+      const prop = extractACTPropertyDetail(html, md, address, town);
+      if (prop) {
+        prop.propertyCardUrl = finalUrl || baseUrl;
+        return json({ success: true, property: prop });
+      }
+      // Fallback generic
+      const extracted = extractGenericPropertyData(md, address, town);
+      if (extracted) {
+        extracted.propertyCardUrl = finalUrl || baseUrl;
+        return json({ success: true, property: extracted });
+      }
+    }
+
+    // If still on search results, try to extract from table rows directly
+    console.log("ACT: Not on detail page, trying to extract from results table");
+    const rowData = extractACTFromResultsTable(html, address, town);
+    if (rowData) {
+      rowData.propertyCardUrl = baseUrl;
+      return json({ success: true, property: rowData });
+    }
+
+    // Last resort: generic extraction from whatever markdown we have
+    if (md.length > 200) {
+      const extracted = extractGenericPropertyData(md, address, town);
+      if (extracted) {
+        extracted.propertyCardUrl = finalUrl || baseUrl;
+        return json({ success: true, property: extracted });
       }
     }
   } catch (e) {
@@ -2014,6 +2040,106 @@ async function scrapeACTDataScout(apiKey: string, baseUrl: string, address: stri
     error: `Could not find property in ${town}. Try the assessor database directly.`,
     searchUrl: baseUrl,
   });
+}
+
+// Extract data directly from ACT search results table rows
+function extractACTFromResultsTable(html: string, address: string, town: string) {
+  // Match rows with class odd/even (DataTables)
+  const rowMatch = html.match(/<tr[^>]*class="(?:odd|even)"[^>]*>([\s\S]*?)<\/tr>/i);
+  if (!rowMatch) return null;
+
+  const cells = rowMatch[1].match(/<td[^>]*>([\s\S]*?)<\/td>/gi) || [];
+  const cellTexts = cells.map(c => c.replace(/<[^>]+>/g, "").trim());
+  // Typical columns: Actions, CRPID(hidden), PID, Parcel Address, Owner Name, Parcel, Assessor Map, Acres
+  // Index 0=Actions, 1=CRPID(hidden), 2=PID, 3=Address, 4=Owner, 5=Parcel, 6=Map, 7=Acres
+  if (cellTexts.length < 5) return null;
+
+  const pid = cellTexts[2] || "";
+  const propAddr = cellTexts[3] || address;
+  const owner = cellTexts[4] || "";
+  const parcel = cellTexts[5] || "";
+  const acres = cellTexts[7] || "";
+
+  if (!owner) return null;
+
+  const isLLC = /\bLLC\b|\bL\.L\.C\b|\bINC\b|\bCORP\b|\bTRUST\b|\bLTD\b/i.test(owner);
+
+  return {
+    address: propAddr || address,
+    owner,
+    mailingAddress: "",
+    propertyType: "",
+    yearBuilt: "",
+    lotSize: acres ? `${acres} AC` : "",
+    assessedValue: "",
+    landValue: "",
+    buildingValue: "",
+    totalValue: "",
+    isLLC,
+    town: town.charAt(0).toUpperCase() + town.slice(1),
+    propertyCardUrl: "",
+    parcelId: parcel || pid,
+  };
+}
+
+// Extract property data from ACT Data Scout detail page
+function extractACTPropertyDetail(html: string, markdown: string, address: string, town: string) {
+  const md = markdown;
+  const text = html.replace(/&nbsp;/g, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+
+  // Owner: look for "Name:" label in the detail page
+  let owner = "";
+  const nameMatch = md.match(/Name:\s*\|?\s*([A-Z0-9][A-Z0-9\s,.'&-]+?)(?:\s*\||\s*\n)/i)
+    || text.match(/Name:\s*([A-Z0-9][A-Z0-9\s,.'&-]+?)(?:\s+(?:PID|Parcel|Tax|Map|Mailing))/i)
+    || md.match(/Owner[:\s|]*([A-Z0-9][A-Z0-9\s,.'&-]+LLC[A-Z0-9\s,.'&-]*)/i)
+    || md.match(/Owner[:\s|]*([A-Z][A-Z0-9\s,.'&-]{3,})/i);
+  if (nameMatch) owner = nameMatch[1].replace(/\|/g, "").trim();
+
+  // Address: match the property address (must start with house number from search)
+  const houseNum = address.match(/^(\d+)/)?.[1] || "";
+  const addrRegex = houseNum ? new RegExp(`(${houseNum}\\s+[A-Z][A-Z\\s]+?(?:ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TER|TRL|PKWY|HWY))\\b`, "i") : null;
+  const addrMatch = addrRegex ? (md.match(addrRegex) || text.match(addrRegex)) : null;
+  const propAddr = addrMatch?.[1]?.trim() || address;
+
+  // Assessment values: Year Improvements Land Outbuilding Total FMV
+  // Also try without $ signs (markdown may strip them)
+  const assessMatch = md.match(/(\d{4})\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)/)
+    || text.match(/(\d{4})\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)/);
+  let buildingValue = "", landValue = "", totalAssessed = "", fmvTotal = "";
+  if (assessMatch && parseInt(assessMatch[1]) >= 2020) {
+    buildingValue = assessMatch[2];
+    landValue = assessMatch[3];
+    totalAssessed = assessMatch[5];
+    fmvTotal = assessMatch[6];
+  }
+
+  // Lot size/acres
+  const acresMatch = text.match(/Size\s*\(Acres\)[:\s]*([\d.]+)/i) || md.match(/Acres\)[:\s]*([\d.]+)/);
+  const lotSize = acresMatch?.[1] ? `${acresMatch[1]} AC` : "";
+
+  // Property type from land table
+  const typeMatch = md.match(/(?:Commercial|Residential|Industrial|Vacant)\s+(?:Vacant|Improved|Land)?/i);
+  const propertyType = typeMatch?.[0]?.trim() || "";
+
+  if (!owner && !totalAssessed) return null;
+
+  const isLLC = /\bLLC\b|\bL\.L\.C\b|\bINC\b|\bCORP\b|\bTRUST\b|\bLTD\b/i.test(owner);
+
+  return {
+    address: propAddr,
+    owner: owner || "N/A",
+    mailingAddress: "",
+    propertyType,
+    yearBuilt: "",
+    lotSize,
+    assessedValue: totalAssessed,
+    landValue,
+    buildingValue,
+    totalValue: fmvTotal || totalAssessed,
+    isLLC,
+    town: town.charAt(0).toUpperCase() + town.slice(1),
+    propertyCardUrl: "",
+  };
 }
 
 // ========== IAS-CLT SCRAPING ==========
