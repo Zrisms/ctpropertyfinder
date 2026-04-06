@@ -2116,22 +2116,19 @@ async function scrapeACTWithActions(apiKey: string, baseUrl: string, houseNum: s
   // Debug: log some links to find the right pattern
   const relevantLinks = links.filter((l: string) => l.includes("Property") || l.includes("Detail") || l.includes("parcel") || l.includes("account"));
   console.log(`ACT actions relevant links: ${JSON.stringify(relevantLinks.slice(0, 10))}`);
-  // Debug: search HTML for common result patterns
-  const rpResultsMatch = html.match(/<div[^>]*id="RPResults"[^>]*>([\s\S]{0,2000})/i);
-  if (rpResultsMatch) {
-    // Find table body rows which contain the actual property data
-    const tbodyMatch = html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/i);
-    if (tbodyMatch) {
-      console.log(`ACT tbody content (first 2000): ${tbodyMatch[1].substring(0, 2000)}`);
-    } else {
-      console.log("ACT: No tbody found in RPResults");
-    }
-    // Also search for any onclick or data attributes
-    const onclickMatches = html.match(/onclick="[^"]*(?:Detail|detail|account|parcel)[^"]*"/gi) || [];
-    console.log(`ACT onclick matches: ${JSON.stringify(onclickMatches.slice(0, 3))}`);
-    // Search for href patterns within the results
-    const allHrefs = html.match(/href="[^"]*(?:Detail|account|parcel)[^"]*"/gi) || [];
-    console.log(`ACT detail-ish hrefs: ${JSON.stringify(allHrefs.slice(0, 5))}`);
+  // Find the RealPropertyResultsTable
+  const resultsTableMatch = html.match(/id="RealPropertyResultsTable"[^>]*>([\s\S]*?)<\/table>/i);
+  if (resultsTableMatch) {
+    console.log(`ACT results table (first 2000): ${resultsTableMatch[1].substring(0, 2000)}`);
+  }
+  // Also look for any anchor tags with data-accountnumber or similar
+  const dataAttrLinks = html.match(/<a[^>]*data-[^>]*>/gi) || [];
+  console.log(`ACT data-attr links: ${JSON.stringify(dataAttrLinks.slice(0, 5))}`);
+  // Look for any rows with class containing "result" or property data
+  const trMatches = html.match(/<tr[^>]*class="[^"]*(?:odd|even|result)[^"]*"[^>]*>[\s\S]*?<\/tr>/gi) || [];
+  console.log(`ACT result rows count: ${trMatches.length}`);
+  if (trMatches.length > 0) {
+    console.log(`ACT first result row: ${trMatches[0].substring(0, 1000)}`);
   }
 
   const detailLinks = extractACTDetailLinks(html, links);
