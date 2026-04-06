@@ -2101,16 +2101,23 @@ function extractACTPropertyDetail(html: string, markdown: string, address: strin
   const addrMatch = addrRegex ? (md.match(addrRegex) || text.match(addrRegex)) : null;
   const propAddr = addrMatch?.[1]?.trim() || address;
 
-  // Assessment values: Year Improvements Land Outbuilding Total FMV
-  // Also try without $ signs (markdown may strip them)
-  const assessMatch = md.match(/(\d{4})\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)/)
-    || text.match(/(\d{4})\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)/);
+  // Assessment values - try multiple column layouts:
+  // 6 cols: Year Improvements Land Outbuilding TotalAssessed FMV
+  // 5 cols: Year Improvements Land TotalAssessed FMV
   let buildingValue = "", landValue = "", totalAssessed = "", fmvTotal = "";
-  if (assessMatch && parseInt(assessMatch[1]) >= 2020) {
-    buildingValue = assessMatch[2];
-    landValue = assessMatch[3];
-    totalAssessed = assessMatch[5];
-    fmvTotal = assessMatch[6];
+  
+  const assess6 = md.match(/(\d{4})\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)/);
+  const assess5 = md.match(/(\d{4})\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)/);
+  if (assess6 && parseInt(assess6[1]) >= 2020) {
+    buildingValue = assess6[2];
+    landValue = assess6[3];
+    totalAssessed = assess6[5];
+    fmvTotal = assess6[6];
+  } else if (assess5 && parseInt(assess5[1]) >= 2020) {
+    buildingValue = assess5[2];
+    landValue = assess5[3];
+    totalAssessed = assess5[4];
+    fmvTotal = assess5[5];
   }
 
   // Lot size/acres
