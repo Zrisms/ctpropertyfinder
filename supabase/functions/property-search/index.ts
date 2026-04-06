@@ -2105,6 +2105,9 @@ function extractACTPropertyDetail(html: string, markdown: string, address: strin
   // 6 cols: Year Improvements Land Outbuilding TotalAssessed FMV
   // 5 cols: Year Improvements Land TotalAssessed FMV
   let buildingValue = "", landValue = "", totalAssessed = "", fmvTotal = "";
+  // Debug: log assessment section
+  const assessSection = md.match(/(?:Current|Assessment|Value)[\s\S]{0,500}/i);
+  if (assessSection) console.log(`ACT assess section: ${assessSection[0].substring(0, 300)}`);
   const assess6 = md.match(/(\d{4})\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)/);
   const assess5 = md.match(/(\d{4})\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)/);
   if (assess6 && parseInt(assess6[1]) >= 2020) {
