@@ -1630,16 +1630,26 @@ async function scrapePRC(apiKey: string, townCode: string, address: string, town
 
     // Match user's street against the dropdown options
     let matchedStreet = "";
-    matchedStreet = streets.find((s) => s === streetPart) || "";
-    if (!matchedStreet) {
-      const streetBase = streetPart.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK|LA|LANE)\.?$/i, "").trim();
-      matchedStreet = streets.find((s) => s.startsWith(streetBase)) || "";
+    // Try all variants (abbreviated + expanded forms)
+    const allVariants = getAddressVariants(streetPart);
+    for (const variant of allVariants) {
+      matchedStreet = streets.find((s) => s === variant) || "";
+      if (matchedStreet) break;
     }
     if (!matchedStreet) {
-      // Try all suffix variants
-      for (const variant of getAddressVariants(streetPart)) {
-        matchedStreet = streets.find((s) => s === variant) || "";
-        if (matchedStreet) break;
+      // Try stripping suffix and matching prefix
+      const streetBase = streetPart.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|PARK|LA|LANE|ROAD|STREET|DRIVE|AVENUE|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY|TURNPIKE)\.?$/i, "").trim();
+      matchedStreet = streets.find((s) => s.startsWith(streetBase + " ")) || "";
+      if (!matchedStreet) {
+        // Also try expanding abbreviations in the base
+        for (const [abbr, full] of Object.entries(REVERSE_ABBR)) {
+          const re = new RegExp(`\\b${abbr}\\b`, "g");
+          const expanded = streetBase.replace(re, full);
+          if (expanded !== streetBase) {
+            matchedStreet = streets.find((s) => s.startsWith(expanded + " ") || s === expanded) || "";
+            if (matchedStreet) break;
+          }
+        }
       }
     }
     if (!matchedStreet) {
