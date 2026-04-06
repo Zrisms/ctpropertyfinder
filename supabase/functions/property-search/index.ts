@@ -237,9 +237,11 @@ const TOWN_DB: Record<string, TownConfig> = {
   windham: { platform: "vgs", slug: "windhamCT" },
 
   // === ACT Data Scout Towns ===
-  kent: { platform: "act", slug: "Kent", url: "https://www.actdatascout.com/RealProperty/Connecticut/Kent" },
   norwalk: { platform: "act", slug: "Norwalk", url: "https://www.actdatascout.com/RealProperty/Connecticut/Norwalk" },
-  sharon: { platform: "act", slug: "Sharon", url: "https://www.actdatascout.com/RealProperty/Connecticut/Sharon" },
+
+  // === VGS Towns (additional) ===
+  kent: { platform: "vgs", slug: "kentct" },
+  sharon: { platform: "vgs", slug: "sharonct" },
 
   // === PropertyRecordCards.com Towns (QDS/PRC platform) ===
   ansonia: { platform: "prc", townCode: "002" },
