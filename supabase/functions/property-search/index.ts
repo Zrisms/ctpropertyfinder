@@ -2095,17 +2095,23 @@ function extractACTPropertyDetail(html: string, markdown: string, address: strin
     || md.match(/Owner[:\s|]*([A-Z][A-Z0-9\s,.'&-]{3,})/i);
   if (nameMatch) owner = nameMatch[1].replace(/\|/g, "").trim();
 
-  // Address: look for street number + name pattern near top
-  const addrMatch = md.match(/(\d+\s+[A-Z][A-Z\s]+?(?:ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TER|TRL|PKWY|HWY))\b/i)
-    || text.match(/(\d+\s+[A-Z][A-Z\s]+?(?:ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TER|TRL|PKWY|HWY))\b/i);
+  // Address: match the property address (must start with house number from search)
+  const houseNum = address.match(/^(\d+)/)?.[1] || "";
+  const addrRegex = houseNum ? new RegExp(`(${houseNum}\\s+[A-Z][A-Z\\s]+?(?:ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TER|TRL|PKWY|HWY))\\b`, "i") : null;
+  const addrMatch = addrRegex ? (md.match(addrRegex) || text.match(addrRegex)) : null;
   const propAddr = addrMatch?.[1]?.trim() || address;
 
   // Assessment values: Year Improvements Land Outbuilding Total FMV
-  const assessMatch = md.match(/(\d{4})\s+\$([\d,]+)\s+\$([\d,]+)\s+\$([\d,]+)\s+\$([\d,]+)\s+\$([\d,]+)/);
-  const buildingValue = assessMatch?.[2] || "";
-  const landValue = assessMatch?.[3] || "";
-  const totalAssessed = assessMatch?.[5] || "";
-  const fmvTotal = assessMatch?.[6] || "";
+  // Also try without $ signs (markdown may strip them)
+  const assessMatch = md.match(/(\d{4})\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)/)
+    || text.match(/(\d{4})\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)/);
+  let buildingValue = "", landValue = "", totalAssessed = "", fmvTotal = "";
+  if (assessMatch && parseInt(assessMatch[1]) >= 2020) {
+    buildingValue = assessMatch[2];
+    landValue = assessMatch[3];
+    totalAssessed = assessMatch[5];
+    fmvTotal = assessMatch[6];
+  }
 
   // Lot size/acres
   const acresMatch = text.match(/Size\s*\(Acres\)[:\s]*([\d.]+)/i) || md.match(/Acres\)[:\s]*([\d.]+)/);
