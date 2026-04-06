@@ -21,7 +21,7 @@ const ABBREVIATIONS: Record<string, string> = {
   parkway: "pkwy",
   turnpike: "tpke",
   extension: "ext",
-  park: "pk",
+  
 };
 
 // Reverse map: ST → STREET, LN → LANE etc.
