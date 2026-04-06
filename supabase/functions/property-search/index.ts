@@ -2087,19 +2087,21 @@ function extractACTPropertyDetail(html: string, markdown: string, address: strin
   const md = markdown;
   const text = html.replace(/&nbsp;/g, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 
-  // Owner from deed transfers (most recent) or page header
-  const ownerMatch = md.match(/Owner\s*\n\s*([^\n]+)/i) 
-    || text.match(/Owner\s+Name[:\s]+([A-Z][A-Z0-9\s,.'&-]+?)(?:\s+(?:PID|Parcel|Map|Size))/i)
-    || md.match(/Est\.\s*Sale\s+Owner[\s\S]*?\$[\d,]+\s+(.+?)(?:\n|$)/);
-  const owner = ownerMatch?.[1]?.trim() || "";
+  // Owner: look for "Name:" label in the detail page
+  let owner = "";
+  const nameMatch = md.match(/Name:\s*\|?\s*([A-Z0-9][A-Z0-9\s,.'&-]+?)(?:\s*\||\s*\n)/i)
+    || text.match(/Name:\s*([A-Z0-9][A-Z0-9\s,.'&-]+?)(?:\s+(?:PID|Parcel|Tax|Map|Mailing))/i)
+    || md.match(/Owner[:\s|]*([A-Z0-9][A-Z0-9\s,.'&-]+LLC[A-Z0-9\s,.'&-]*)/i)
+    || md.match(/Owner[:\s|]*([A-Z][A-Z0-9\s,.'&-]{3,})/i);
+  if (nameMatch) owner = nameMatch[1].replace(/\|/g, "").trim();
 
-  // Address from page
-  const addrMatch = text.match(/(\d+\s+[A-Z][A-Z\s]+(?:ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TER|TRL))/i)
-    || md.match(/^(\d+\s+[A-Z][A-Z\s]+(?:ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TER|TRL))/im);
+  // Address: look for street number + name pattern near top
+  const addrMatch = md.match(/(\d+\s+[A-Z][A-Z\s]+?(?:ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TER|TRL|PKWY|HWY))\b/i)
+    || text.match(/(\d+\s+[A-Z][A-Z\s]+?(?:ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TER|TRL|PKWY|HWY))\b/i);
   const propAddr = addrMatch?.[1]?.trim() || address;
 
-  // Assessment values from "Current Value Assessment" table
-  const assessMatch = md.match(/Year\s+Improvements\s+Land\s+Outbuilding\s+Total Assessed Value\s+FMV Total\s*\n\s*(\d{4})\s+\$([\d,]+)\s+\$([\d,]+)\s+\$([\d,]+)\s+\$([\d,]+)\s+\$([\d,]+)/);
+  // Assessment values: Year Improvements Land Outbuilding Total FMV
+  const assessMatch = md.match(/(\d{4})\s+\$([\d,]+)\s+\$([\d,]+)\s+\$([\d,]+)\s+\$([\d,]+)\s+\$([\d,]+)/);
   const buildingValue = assessMatch?.[2] || "";
   const landValue = assessMatch?.[3] || "";
   const totalAssessed = assessMatch?.[5] || "";
@@ -2110,8 +2112,8 @@ function extractACTPropertyDetail(html: string, markdown: string, address: strin
   const lotSize = acresMatch?.[1] ? `${acresMatch[1]} AC` : "";
 
   // Property type from land table
-  const typeMatch = md.match(/Land Type\s+Zone[\s\S]*?\n\s*([A-Za-z\s]+?)(?:\s+[A-Z])/);
-  const propertyType = typeMatch?.[1]?.trim() || "";
+  const typeMatch = md.match(/(?:Commercial|Residential|Industrial|Vacant)\s+(?:Vacant|Improved|Land)?/i);
+  const propertyType = typeMatch?.[0]?.trim() || "";
 
   if (!owner && !totalAssessed) return null;
 
