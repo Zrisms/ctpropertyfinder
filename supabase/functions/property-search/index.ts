@@ -576,18 +576,19 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
   const houseNum = addrParts[1];
   const streetInput = addrParts[2].replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, "").trim().toUpperCase();
 
-  // Helper to fetch a page via Firecrawl (returns HTML)
-  async function fetchPage(url: string): Promise<string | null> {
+  // Helper to fetch a page via Firecrawl (returns content)
+  async function fetchPage(url: string, useMarkdown = false): Promise<string | null> {
     if (!apiKey) {
       console.error("Avon assessor: FIRECRAWL_API_KEY not set");
       return null;
     }
     try {
-      console.log(`Avon assessor: Firecrawl scrape ${url}`);
+      const formats = useMarkdown ? ["markdown", "rawHtml"] : ["rawHtml"];
+      console.log(`Avon assessor: Firecrawl scrape ${url} formats=${formats}`);
       const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ url, formats: ["rawHtml"], onlyMainContent: false, waitFor: 2000 }),
+        body: JSON.stringify({ url, formats, onlyMainContent: false, waitFor: 2000 }),
       });
       console.log(`Avon assessor: Firecrawl status=${resp.status}`);
       if (!resp.ok) {
@@ -596,9 +597,9 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
         return null;
       }
       const data = await resp.json();
-      const html = data?.data?.rawHtml || data?.data?.html || data?.rawHtml || data?.html || null;
-      console.log(`Avon assessor: got html length=${html?.length || 0}`);
-      return html;
+      const content = data?.data?.rawHtml || data?.data?.markdown || data?.data?.html || data?.rawHtml || data?.markdown || data?.html || null;
+      console.log(`Avon assessor: got content length=${content?.length || 0}`);
+      return content;
     } catch (e) {
       console.error(`Avon assessor: fetchPage error:`, e);
       return null;
