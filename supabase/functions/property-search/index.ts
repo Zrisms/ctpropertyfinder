@@ -669,17 +669,18 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
     return json({ success: false, error: `Could not load Avon property card`, searchUrl: `${BASE}/prop_addr.html` });
   }
 
-  // Step 4: Parse the property card text
+  // Step 4: Parse the property card text (pipe-delimited preformatted text)
   const extractField = (pattern: RegExp): string => {
     const m = cardHtml.match(pattern);
-    return m ? m[1].trim() : "";
+    return m ? m[1].replace(/\s+/g, " ").trim() : "";
   };
 
-  const owner = extractField(/Owner name:\s*(.+?)[\s|]/);
-  const coOwner = extractField(/Second name:\s*(.+?)[\s|]/);
+  // Use greedy match up to the pipe character for field values
+  const owner = extractField(/Owner name:\s*(.+?)\s*\|/);
+  const coOwner = extractField(/Second name:\s*(.+?)\s*\|/);
   const propAddress = extractField(/Property at\s+(.+?)\s{2,}Prop ID/);
   const propId = extractField(/Prop ID\s+(\S+)/);
-  const mailingAddr = extractField(/Address:\s+(.+?)[\s|]/);
+  const mailingAddr = extractField(/\| Address:\s+(.+?)\s*\|/);
   const mailingCity = extractField(/City\/state:\s+(.+?)\s{2,}Zip:/);
   const mailingZip = extractField(/Zip:\s*(\S+)/);
   const mapNum = extractField(/Map:\s*(\S+)/);
@@ -687,15 +688,14 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
   const zone = extractField(/Zone:\s*(\S+)/);
   const volume = extractField(/Vol:\s*(\S+)/);
   const page = extractField(/Page:\s*(\S+)/);
-  const neighborhood = extractField(/Neigh\.:\s*(\S+)/);
+  const neighborhood = extractField(/Neigh\.?:\s*(\S+)/);
 
   // Assessments
   const totalAssessments = extractField(/Total assessments\s+([\d,]+)/);
-  const totalExemptions = extractField(/Total exemptions\s+([\d,]+)/);
   const netAssessment = extractField(/Net assessment\s+([\d,]+)/);
 
   // Sale info
-  const saleDate = extractField(/Sale date:\s*(.+?)[\s|]/);
+  const saleDate = extractField(/Sale date:\s*(.+?)\s*\|/);
   const salePrice = extractField(/Sale price:\s*([\d,]+)/);
 
   // Values
@@ -703,9 +703,9 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
   const costValue = extractField(/Cost value:\s*([\d,]+)/);
 
   // Utilities
-  const water = extractField(/Water\s+(.+?)[\s|]/);
-  const sewer = extractField(/Sewer\s+(.+?)[\s|]/);
-  const gas = extractField(/Gas\s+(.+?)[\s|]/);
+  const water = extractField(/Water\s+(.+?)\s*\|/);
+  const sewer = extractField(/Sewer\s+(.+?)\s*\|/);
+  const gas = extractField(/Gas\s+(.+?)\s*\|/);
 
   // Assessment categories - find land and building values
   const assessLines = cardHtml.match(/\|(.+?)\s+[\d.]+\s+([\d,]+)\|/g) || [];
@@ -716,17 +716,21 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
     if (m) {
       const cat = m[1].trim().toLowerCase();
       if (cat.includes("land")) landValue = m[3];
-      else if (!buildingValue) buildingValue = m[3]; // first non-land is building
+      else if (!buildingValue) buildingValue = m[3];
     }
   }
 
-  // Street Card PDF link
-  const pdfMatch = cardHtml.match(/<A HREF="([^"]+)">Street Card<\/A>/i);
-  const streetCardUrl = pdfMatch ? `${BASE}${pdfMatch[1]}` : "";
+  // Street Card PDF link — handle both absolute and relative hrefs
+  const pdfMatch = cardHtml.match(/href="([^"]*?\/cards\/[^"]+\.pdf)"/i) || cardHtml.match(/<A HREF="([^"]+)">Street Card<\/A>/i);
+  let streetCardUrl = "";
+  if (pdfMatch) {
+    const href = pdfMatch[1];
+    streetCardUrl = href.startsWith("http") ? href : `${BASE}${href}`;
+  }
 
   // Sales history link
   const salesMatch = cardHtml.match(/<A HREF="([^"]+)">Sales History<\/A>/i);
-  const salesHistoryUrl = salesMatch ? `${BASE}${salesMatch[1]}` : "";
+  const salesHistoryUrl = salesMatch ? (salesMatch[1].startsWith("http") ? salesMatch[1] : `${BASE}${salesMatch[1]}`) : "";
 
   const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner + " " + coOwner);
 
