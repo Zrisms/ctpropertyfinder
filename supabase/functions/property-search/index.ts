@@ -481,11 +481,11 @@ Deno.serve(async (req) => {
         case "equality":
           result = await scrapeEqualityCama(apiKey, config.url!, normalizedAddress, lookupTown);
           break;
-        case "avon_gis":
-          result = await scrapeAvonGIS(apiKey, normalizedAddress, lookupTown);
+        case "avon_assessor":
+          result = await scrapeAvonAssessor(normalizedAddress, lookupTown);
           break;
         case "arcgis_rest":
-          result = await scrapeAvonGIS(apiKey, normalizedAddress, lookupTown);
+          result = await scrapeAvonAssessor(normalizedAddress, lookupTown);
           break;
         case "groton_gis":
           result = await scrapeGrotonGIS(normalizedAddress, lookupTown);
