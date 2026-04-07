@@ -587,7 +587,7 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
       const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ url, formats: ["html"], waitFor: 2000 }),
+        body: JSON.stringify({ url, formats: ["rawHtml"], onlyMainContent: false, waitFor: 2000 }),
       });
       console.log(`Avon assessor: Firecrawl status=${resp.status}`);
       if (!resp.ok) {
@@ -596,7 +596,7 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
         return null;
       }
       const data = await resp.json();
-      const html = data?.data?.html || data?.html || null;
+      const html = data?.data?.rawHtml || data?.data?.html || data?.rawHtml || data?.html || null;
       console.log(`Avon assessor: got html length=${html?.length || 0}`);
       return html;
     } catch (e) {
