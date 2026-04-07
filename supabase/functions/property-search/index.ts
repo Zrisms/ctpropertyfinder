@@ -583,12 +583,15 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
   let streetPageHtml: string;
   try {
     const resp = await fetch(streetPageUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+    console.log(`Avon assessor: street page status=${resp.status}, ok=${resp.ok}`);
     if (!resp.ok) {
-      return json({ success: false, error: `Could not load Avon street page for letter ${firstLetter}`, searchUrl: `${BASE}/prop_addr.html` });
+      return json({ success: false, error: `Could not load Avon street page for letter ${firstLetter} (status ${resp.status})`, searchUrl: `${BASE}/prop_addr.html` });
     }
     streetPageHtml = await resp.text();
+    console.log(`Avon assessor: street page length=${streetPageHtml.length}, first100=${streetPageHtml.substring(0, 100)}`);
   } catch (e) {
-    return json({ success: false, error: `Network error fetching Avon street data`, searchUrl: `${BASE}/prop_addr.html` });
+    console.error(`Avon assessor: fetch error:`, e);
+    return json({ success: false, error: `Network error fetching Avon street data: ${e}`, searchUrl: `${BASE}/prop_addr.html` });
   }
 
   // Step 2: Find the matching address link — format is like: 00028 PARK ROAD
