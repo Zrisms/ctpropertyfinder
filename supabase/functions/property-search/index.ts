@@ -302,8 +302,8 @@ const TOWN_DB: Record<string, TownConfig> = {
   woodbridge: { platform: "prc", townCode: "167" },
   woodbury: { platform: "prc", townCode: "168" },
 
-  // === Avon (Tighebond ArcGIS REST API — direct JSON, no scraping) ===
-  avon: { platform: "avon_gis", slug: "avon" },
+  // === Avon (assessor.avonct.gov property cards — direct HTTP scraping) ===
+  avon: { platform: "avon_assessor", slug: "avon" },
 
   // === IAS-CLT Towns ===
   bethel: { platform: "ias", url: "http://bethel.ias-clt.com/", label: "Bethel Assessor" },
