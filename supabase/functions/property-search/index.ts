@@ -647,19 +647,13 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
     return json({ success: false, error: `Could not find "${houseNum} ${streetInput}" in Avon assessor records`, searchUrl: `${BASE}/prop_addr.html` });
   }
 
-  // Step 3: Fetch the property card page
+  // Step 3: Fetch the property card page via Firecrawl
   const cardUrl = bestLink.startsWith("http") ? bestLink : `${BASE}${bestLink}`;
   console.log(`Avon assessor: fetching property card ${cardUrl}`);
 
-  let cardHtml: string;
-  try {
-    const resp = await fetch(cardUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (!resp.ok) {
-      return json({ success: false, error: `Could not load Avon property card`, searchUrl: `${BASE}/prop_addr.html` });
-    }
-    cardHtml = await resp.text();
-  } catch (e) {
-    return json({ success: false, error: `Network error fetching Avon property card`, searchUrl: `${BASE}/prop_addr.html` });
+  const cardHtml = await fetchPage(cardUrl);
+  if (!cardHtml) {
+    return json({ success: false, error: `Could not load Avon property card`, searchUrl: `${BASE}/prop_addr.html` });
   }
 
   // Step 4: Parse the property card text
