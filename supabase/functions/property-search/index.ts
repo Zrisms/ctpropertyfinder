@@ -664,7 +664,7 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
   const cardUrl = bestLink.startsWith("http") ? bestLink : `${BASE}${bestLink}`;
   console.log(`Avon assessor: fetching property card ${cardUrl}`);
 
-  const cardHtml = await fetchPage(cardUrl);
+  const cardHtml = await fetchPage(cardUrl, true);
   if (!cardHtml) {
     return json({ success: false, error: `Could not load Avon property card`, searchUrl: `${BASE}/prop_addr.html` });
   }
