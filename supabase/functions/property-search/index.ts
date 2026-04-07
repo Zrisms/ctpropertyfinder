@@ -738,7 +738,7 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
     address: propAddress || bestLabel.trim(),
     town: "Avon",
     owner: owner.replace(/\s+/g, " ").trim(),
-    coOwner: coOwner.replace(/\s+/g, " ").trim(),
+    coOwner: coOwner.replace(/[|]/g, "").replace(/\s+/g, " ").trim(),
     ownerAddress: [mailingAddr, mailingCity, mailingZip].filter(Boolean).join(", "),
     isLLC,
     parcelId: propId,
