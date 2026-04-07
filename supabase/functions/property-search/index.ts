@@ -564,9 +564,10 @@ Deno.serve(async (req) => {
   }
 });
 
-// ========== AVON ASSESSOR (assessor.avonct.gov — static HTML property cards) ==========
+// ========== AVON ASSESSOR (assessor.avonct.gov — static HTML property cards via Firecrawl) ==========
 async function scrapeAvonAssessor(address: string, town: string): Promise<Response> {
   const BASE = "http://assessor.avonct.gov";
+  const apiKey = Deno.env.get("FIRECRAWL_API_KEY");
 
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
   if (!addrParts) {
@@ -575,27 +576,35 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
   const houseNum = addrParts[1];
   const streetInput = addrParts[2].replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, "").trim().toUpperCase();
 
-  // Step 1: Determine first letter of street and fetch the street listing page
+  // Helper to fetch a page via Firecrawl (returns HTML)
+  async function fetchPage(url: string): Promise<string | null> {
+    if (!apiKey) return null;
+    try {
+      const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ url, formats: ["html"], waitFor: 2000 }),
+      });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      return data?.data?.html || data?.html || null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Step 1: Fetch the street listing page
   const firstLetter = streetInput.charAt(0).toUpperCase();
   const streetPageUrl = `${BASE}/propcards/${firstLetter}street.html`;
   console.log(`Avon assessor: fetching street page ${streetPageUrl} for "${streetInput}"`);
 
-  let streetPageHtml: string;
-  try {
-    const resp = await fetch(streetPageUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
-    console.log(`Avon assessor: street page status=${resp.status}, ok=${resp.ok}`);
-    if (!resp.ok) {
-      return json({ success: false, error: `Could not load Avon street page for letter ${firstLetter} (status ${resp.status})`, searchUrl: `${BASE}/prop_addr.html` });
-    }
-    streetPageHtml = await resp.text();
-    console.log(`Avon assessor: street page length=${streetPageHtml.length}, first100=${streetPageHtml.substring(0, 100)}`);
-  } catch (e) {
-    console.error(`Avon assessor: fetch error:`, e);
-    return json({ success: false, error: `Network error fetching Avon street data: ${e}`, searchUrl: `${BASE}/prop_addr.html` });
+  const streetPageHtml = await fetchPage(streetPageUrl);
+  if (!streetPageHtml) {
+    return json({ success: false, error: `Could not load Avon street page for letter ${firstLetter}`, searchUrl: `${BASE}/prop_addr.html` });
   }
+  console.log(`Avon assessor: street page length=${streetPageHtml.length}`);
 
-  // Step 2: Find the matching address link — format is like: 00028 PARK ROAD
-  // Pad house number to 5 digits to match the page format
+  // Step 2: Find the matching address link
   const paddedNum = houseNum.padStart(5, "0");
   
   // Find all address links on the page
