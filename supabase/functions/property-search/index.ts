@@ -624,6 +624,14 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
   }
 
   if (!bestLink) {
+    // Debug: log first few links found
+    const debugRegex = /<A HREF="([^"]+)">([^<]+)<\/A>/gi;
+    let dm: RegExpExecArray | null;
+    const samples: string[] = [];
+    while ((dm = debugRegex.exec(streetPageHtml)) !== null && samples.length < 5) {
+      samples.push(dm[2].trim());
+    }
+    console.log(`Avon assessor: no match for padded="${paddedNum}" street="${streetInput}". Sample labels: ${JSON.stringify(samples)}`);
     return json({ success: false, error: `Could not find "${houseNum} ${streetInput}" in Avon assessor records`, searchUrl: `${BASE}/prop_addr.html` });
   }
 
