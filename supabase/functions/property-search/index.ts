@@ -564,219 +564,174 @@ Deno.serve(async (req) => {
   }
 });
 
-// ========== AVON GIS (Tighebond ArcGIS REST API) ==========
-async function scrapeAvonGIS(apiKey: string, address: string, town: string): Promise<Response> {
-  const AVON_GIS_URL =
-    "https://hostingdata4.tighebond.com/arcgis/rest/services/AvonCT/AvonDynamic_Public/MapServer/0/query";
+// ========== AVON ASSESSOR (assessor.avonct.gov — static HTML property cards) ==========
+async function scrapeAvonAssessor(address: string, town: string): Promise<Response> {
+  const BASE = "http://assessor.avonct.gov";
 
   const addrParts = address.match(/^(\d+)\s+(.+)$/i);
-  const houseNum = addrParts?.[1] || "";
-  const streetName = addrParts?.[2] || address;
-  const streetBase = streetName
-    .replace(
-      /\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|PK|PRK|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|PARK|TERRACE|TRAIL|HIGHWAY)\.?$/i,
-      "",
-    )
-    .trim();
+  if (!addrParts) {
+    return json({ success: false, error: `Cannot parse address "${address}"`, searchUrl: `${BASE}/prop_addr.html` });
+  }
+  const houseNum = addrParts[1];
+  const streetInput = addrParts[2].replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, "").trim().toUpperCase();
 
-  // Build all query variants
-  const whereSet = new Set<string>();
-  whereSet.add(`CAMA.STRLOC = '${address}'`);
-  whereSet.add(`CAMA.STRLOC LIKE '${houseNum} ${streetName}%'`);
-  if (streetBase !== streetName) whereSet.add(`CAMA.STRLOC LIKE '${houseNum} ${streetBase}%'`);
-  for (const v of getAddressVariants(address)) {
-    if (v !== address) whereSet.add(`CAMA.STRLOC LIKE '${v}%'`);
+  // Step 1: Determine first letter of street and fetch the street listing page
+  const firstLetter = streetInput.charAt(0).toUpperCase();
+  const streetPageUrl = `${BASE}/propcards/${firstLetter}street.html`;
+  console.log(`Avon assessor: fetching street page ${streetPageUrl} for "${streetInput}"`);
+
+  let streetPageHtml: string;
+  try {
+    const resp = await fetch(streetPageUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!resp.ok) {
+      return json({ success: false, error: `Could not load Avon street page for letter ${firstLetter}`, searchUrl: `${BASE}/prop_addr.html` });
+    }
+    streetPageHtml = await resp.text();
+  } catch (e) {
+    return json({ success: false, error: `Network error fetching Avon street data`, searchUrl: `${BASE}/prop_addr.html` });
   }
 
-  console.log(`Avon GIS: searching for ${address} with ${whereSet.size} parallel queries`);
-
-  // Fire ALL queries in parallel
-  const queryFn = async (where: string) => {
-    const params = new URLSearchParams({ where, outFields: "*", f: "json", returnGeometry: "false" });
-    const resp = await fetch(`${AVON_GIS_URL}?${params.toString()}`);
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    return data.features?.length > 0 ? data.features : null;
-  };
-
-  const results = await Promise.all([...whereSet].map(queryFn));
-
-  // Find first result with features
-  let best: any = null;
-  for (const features of results) {
-    if (!features) continue;
-    for (const f of features) {
-      const strloc = (f.attributes["CAMA.STRLOC"] || "").toUpperCase();
-      if (strloc.startsWith(houseNum + " ")) {
-        best = f;
+  // Step 2: Find the matching address link — format is like: 00028 PARK ROAD
+  // Pad house number to 5 digits to match the page format
+  const paddedNum = houseNum.padStart(5, "0");
+  
+  // Find all address links on the page
+  const linkRegex = /<A HREF="([^"]+)">([^<]+)<\/A>/gi;
+  let match: RegExpExecArray | null;
+  let bestLink = "";
+  let bestLabel = "";
+  
+  // Try matching the street name with the house number
+  while ((match = linkRegex.exec(streetPageHtml)) !== null) {
+    const href = match[1];
+    const label = match[2].trim();
+    // Label format: "00028 PARK ROAD  " or "00001 ACORN GLEN  "
+    const labelUpper = label.toUpperCase().replace(/\s+/g, " ").trim();
+    
+    // Check if the label starts with our padded house number
+    if (labelUpper.startsWith(paddedNum + " ")) {
+      // Check if the street name portion matches
+      const labelStreet = labelUpper.substring(paddedNum.length + 1).trim();
+      // Remove suffix from label street for comparison too
+      const labelStreetBase = labelStreet.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, "").trim();
+      
+      if (labelStreet.startsWith(streetInput) || labelStreetBase === streetInput || streetInput.startsWith(labelStreetBase)) {
+        bestLink = href;
+        bestLabel = label;
         break;
       }
     }
-    if (best) break;
-    best = features[0]; // fallback to first result
-    break;
   }
 
-  if (!best) {
-    return json({
-      success: false,
-      error: `Could not find "${address}" in Avon GIS database.`,
-      searchUrl: "https://hosting.tighebond.com/AvonCT_public/index.html",
-    });
+  if (!bestLink) {
+    return json({ success: false, error: `Could not find "${houseNum} ${streetInput}" in Avon assessor records`, searchUrl: `${BASE}/prop_addr.html` });
   }
 
-  const a = best.attributes;
-  const owner = (a["CAMA.NAME"] || "").trim();
-  const coOwner = (a["CAMA.NDNA"] || "").trim();
-  if (!owner || owner.length < 3) {
-    return json({
-      success: false,
-      error: `Could not find "${address}" in Avon GIS database.`,
-      searchUrl: "https://hosting.tighebond.com/AvonCT_public/index.html",
-    });
+  // Step 3: Fetch the property card page
+  const cardUrl = bestLink.startsWith("http") ? bestLink : `${BASE}${bestLink}`;
+  console.log(`Avon assessor: fetching property card ${cardUrl}`);
+
+  let cardHtml: string;
+  try {
+    const resp = await fetch(cardUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!resp.ok) {
+      return json({ success: false, error: `Could not load Avon property card`, searchUrl: `${BASE}/prop_addr.html` });
+    }
+    cardHtml = await resp.text();
+  } catch (e) {
+    return json({ success: false, error: `Network error fetching Avon property card`, searchUrl: `${BASE}/prop_addr.html` });
   }
 
-  console.log(`Avon GIS found: ${owner}, ${a["CAMA.STRLOC"]}`);
+  // Step 4: Parse the property card text
+  const extractField = (pattern: RegExp): string => {
+    const m = cardHtml.match(pattern);
+    return m ? m[1].trim() : "";
+  };
+
+  const owner = extractField(/Owner name:\s*(.+?)[\s|]/);
+  const coOwner = extractField(/Second name:\s*(.+?)[\s|]/);
+  const propAddress = extractField(/Property at\s+(.+?)\s{2,}Prop ID/);
+  const propId = extractField(/Prop ID\s+(\S+)/);
+  const mailingAddr = extractField(/Address:\s+(.+?)[\s|]/);
+  const mailingCity = extractField(/City\/state:\s+(.+?)\s{2,}Zip:/);
+  const mailingZip = extractField(/Zip:\s*(\S+)/);
+  const mapNum = extractField(/Map:\s*(\S+)/);
+  const lotNum = extractField(/Lot:\s*(\S+)/);
+  const zone = extractField(/Zone:\s*(\S+)/);
+  const volume = extractField(/Vol:\s*(\S+)/);
+  const page = extractField(/Page:\s*(\S+)/);
+  const neighborhood = extractField(/Neigh\.:\s*(\S+)/);
+
+  // Assessments
+  const totalAssessments = extractField(/Total assessments\s+([\d,]+)/);
+  const totalExemptions = extractField(/Total exemptions\s+([\d,]+)/);
+  const netAssessment = extractField(/Net assessment\s+([\d,]+)/);
+
+  // Sale info
+  const saleDate = extractField(/Sale date:\s*(.+?)[\s|]/);
+  const salePrice = extractField(/Sale price:\s*([\d,]+)/);
+
+  // Values
+  const mktValue = extractField(/Mkt value\s*:\s*([\d,]+)/);
+  const costValue = extractField(/Cost value:\s*([\d,]+)/);
+
+  // Utilities
+  const water = extractField(/Water\s+(.+?)[\s|]/);
+  const sewer = extractField(/Sewer\s+(.+?)[\s|]/);
+  const gas = extractField(/Gas\s+(.+?)[\s|]/);
+
+  // Assessment categories - find land and building values
+  const assessLines = cardHtml.match(/\|(.+?)\s+[\d.]+\s+([\d,]+)\|/g) || [];
+  let landValue = "";
+  let buildingValue = "";
+  for (const line of assessLines) {
+    const m = line.match(/\|(.+?)\s+([\d.]+)\s+([\d,]+)\|/);
+    if (m) {
+      const cat = m[1].trim().toLowerCase();
+      if (cat.includes("land")) landValue = m[3];
+      else if (!buildingValue) buildingValue = m[3]; // first non-land is building
+    }
+  }
+
+  // Street Card PDF link
+  const pdfMatch = cardHtml.match(/<A HREF="([^"]+)">Street Card<\/A>/i);
+  const streetCardUrl = pdfMatch ? `${BASE}${pdfMatch[1]}` : "";
+
+  // Sales history link
+  const salesMatch = cardHtml.match(/<A HREF="([^"]+)">Sales History<\/A>/i);
+  const salesHistoryUrl = salesMatch ? `${BASE}${salesMatch[1]}` : "";
+
   const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner + " " + coOwner);
-  const recordCardUrl = a["CAMA.RecordCard"] || "";
 
   const prop: any = {
-    address: a["CAMA.STRLOC"] || address,
+    address: propAddress || bestLabel.trim(),
     town: "Avon",
-    owner,
-    coOwner,
-    ownerAddress: [a["CAMA.STREET"], a["CAMA.CITY"], a["CAMA.ST"], (a["CAMA.ZIP"] || "").trim()]
-      .filter(Boolean)
-      .join(", "),
+    owner: owner.replace(/\s+/g, " ").trim(),
+    coOwner: coOwner.replace(/\s+/g, " ").trim(),
+    ownerAddress: [mailingAddr, mailingCity, mailingZip].filter(Boolean).join(", "),
     isLLC,
-    parcelId: a["CAMA.GISPin"] || a["Cadastral_MDB_Parcels.PARNO"] || "",
-    mblu: "",
-    accountNumber: String(a["CAMA.ACCT"] || ""),
-    buildingCount: "",
-    bookPage: `Vol ${a["CAMA.VOL"] || ""} / Pg ${a["CAMA.PAGE"] || ""}`,
-    certificate: "",
-    instrument: "",
-    assessedValue: a["CAMA.TOTVAL"] || "",
-    totalAppraisal: a["CAMA.APRTOT"] || "",
-    totalMarketValue: "",
-    improvementsValue: a["CAMA.BLDVAL"] || "",
-    landValue: a["CAMA.LNDVAL"] || "",
-    assessImprovements: "",
-    assessLand: "",
-    assessTotal: a["CAMA.TOTVAL"] || "",
-    salePrice: a["CAMA.SALEPR"] ? `$${Number(a["CAMA.SALEPR"]).toLocaleString()}` : "",
-    saleDate: a["CAMA.SDATE"] || "",
-    lotSize: a["CAMA.ACRES"] || "",
-    frontage: "",
-    depth: "",
-    useCode: "",
-    useDescription: a["Cadastral_MDB_Parcels.PROPERTYTYPE"] || "",
-    zoning: a["CAMA.ZONE"] || "",
-    neighborhood: "",
-    totalMarketLand: "",
-    landAppraisedValue: "",
-    yearBuilt: a["CAMA.YRBUILT"] || "",
-    buildingStyle: a["CAMA.STYLE"] || "",
-    model: "",
-    stories: a["CAMA.STORIES"] || "",
-    livingArea: a["CAMA.SFLA"] || "",
-    replacementCost: "",
-    buildingPercentGood: "",
-    occupancy: "",
-    totalRooms: a["CAMA.RMTOT"] || "",
-    bedrooms: a["CAMA.RMBED"] || "",
-    totalBaths: a["CAMA.FIXBATH"] || "",
-    halfBaths: a["CAMA.FIXHALF"] || "",
-    totalXtraFixtures: "",
-    bathStyle: "",
-    kitchenStyle: "",
-    interiorCondition: "",
-    finBsmntArea: "",
-    finBsmntQual: "",
-    grade: a["CAMA.GRADE"] || "",
-    exteriorWall: a["CAMA.EXTWALL"] || "",
-    roofStructure: a["CAMA.ROOFTYP"] || "",
-    roofCover: a["CAMA.ROOFMAT"] || "",
-    interiorWall: "",
-    flooring: "",
-    heating: a["CAMA.HEAT"] || "",
-    heatingFuel: a["CAMA.FUEL"] || "",
-    cooling: a["CAMA.COOL"] || "",
-    buildingPhoto: "",
-    garage: "",
-    pool: "",
-    fireplace: a["CAMA.FIREPLC"] || "",
-    foundation: "",
-    taxAmount: "",
-    water: a["CAMA.WATER"] || "",
-    sewer: a["CAMA.SEWER"] || "",
-    gas: a["CAMA.GAS"] || "",
-    ownershipHistory: [],
-    subAreas: [],
-    valuationHistory: [],
-    propertyCardUrl: recordCardUrl || "https://hosting.tighebond.com/AvonCT_public/index.html",
+    parcelId: propId,
+    mblu: `Map ${mapNum} / Lot ${lotNum}`,
+    accountNumber: propId,
+    bookPage: `Vol ${volume} / Pg ${page}`,
+    assessedValue: netAssessment,
+    totalAppraisal: costValue || mktValue,
+    totalMarketValue: mktValue,
+    improvementsValue: buildingValue,
+    landValue,
+    assessTotal: totalAssessments,
+    salePrice: salePrice ? `$${salePrice}` : "",
+    saleDate,
+    zoning: zone,
+    neighborhood,
+    water,
+    sewer,
+    gas,
+    propertyCardUrl: streetCardUrl || cardUrl,
     llcDetails: undefined as any,
   };
 
-  // LLC lookup removed - handled separately by frontend
-
   return json({ success: true, property: prop });
-}
-
-// Try to scrape the Avon assessor record card for building details
-async function scrapeAvonRecordCard(apiKey: string, url: string): Promise<any> {
-  try {
-    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        url,
-        formats: ["extract"],
-        extract: {
-          prompt: "Extract all property assessment data from this Avon CT property record card.",
-          schema: {
-            type: "object",
-            properties: {
-              assessedValue: { type: "string" },
-              totalAppraisal: { type: "string" },
-              totalMarketValue: { type: "string" },
-              improvementsValue: { type: "string" },
-              landValue: { type: "string" },
-              yearBuilt: { type: "string" },
-              livingArea: { type: "string" },
-              lotSize: { type: "string" },
-              bedrooms: { type: "string" },
-              totalBaths: { type: "string" },
-              halfBaths: { type: "string" },
-              totalRooms: { type: "string" },
-              stories: { type: "string" },
-              buildingStyle: { type: "string" },
-              exteriorWall: { type: "string" },
-              roofStructure: { type: "string" },
-              roofCover: { type: "string" },
-              foundation: { type: "string" },
-              heating: { type: "string" },
-              heatingFuel: { type: "string" },
-              cooling: { type: "string" },
-              flooring: { type: "string" },
-              garage: { type: "string" },
-              pool: { type: "string" },
-              fireplace: { type: "string" },
-              basement: { type: "string" },
-              grade: { type: "string" },
-              propertyType: { type: "string" },
-              taxAmount: { type: "string" },
-            },
-          },
-        },
-      }),
-    });
-    if (!resp.ok) return {};
-    const ex = (await resp.json())?.data?.extract;
-    return ex || {};
-  } catch {
-    return {};
-  }
 }
 
 // ========== GROTON GIS (Direct ArcGIS REST + Property Card HTML) ==========
