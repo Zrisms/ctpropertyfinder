@@ -574,30 +574,28 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
     return json({ success: false, error: `Cannot parse address "${address}"`, searchUrl: `${BASE}/prop_addr.html` });
   }
   const houseNum = addrParts[1];
-  const streetInput = addrParts[2].replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, "").trim().toUpperCase();
+  // Keep full street name WITH suffix for matching against streets.html entries
+  const streetFull = addrParts[2].replace(/\s+/g, " ").trim().toUpperCase();
+  // Also strip suffix for fuzzy matching
+  const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, "").trim();
 
-  // Helper to fetch a page via Firecrawl (returns content)
-  async function fetchPage(url: string, useMarkdown = false): Promise<string | null> {
-    if (!apiKey) {
-      console.error("Avon assessor: FIRECRAWL_API_KEY not set");
-      return null;
-    }
+  // Helper to fetch a page via Firecrawl
+  async function fetchPage(url: string): Promise<string | null> {
+    if (!apiKey) { console.error("Avon assessor: FIRECRAWL_API_KEY not set"); return null; }
     try {
-      const formats = useMarkdown ? ["markdown", "rawHtml"] : ["rawHtml"];
-      console.log(`Avon assessor: Firecrawl scrape ${url} formats=${formats}`);
+      console.log(`Avon assessor: Firecrawl scrape ${url}`);
       const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ url, formats, onlyMainContent: false, waitFor: 2000 }),
+        body: JSON.stringify({ url, formats: ["rawHtml"], onlyMainContent: false, waitFor: 2000 }),
       });
-      console.log(`Avon assessor: Firecrawl status=${resp.status}`);
-      if (!resp.ok) {
-        const errText = await resp.text();
-        console.error(`Avon assessor: Firecrawl error: ${errText.substring(0, 200)}`);
+      if (!resp.ok) { console.error(`Avon assessor: Firecrawl HTTP ${resp.status}`); return null; }
+      const data = await resp.json();
+      const content = data?.data?.rawHtml || data?.data?.html || data?.rawHtml || data?.html || null;
+      if (content && content.includes("Target server not found")) {
+        console.error("Avon assessor: got 'Target server not found' — page broken");
         return null;
       }
-      const data = await resp.json();
-      const content = data?.data?.rawHtml || data?.data?.markdown || data?.data?.html || data?.rawHtml || data?.markdown || data?.html || null;
       console.log(`Avon assessor: got content length=${content?.length || 0}`);
       return content;
     } catch (e) {
@@ -606,76 +604,70 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
     }
   }
 
-  // Step 1: Fetch the street listing page
-  const firstLetter = streetInput.charAt(0).toUpperCase();
-  const streetPageUrl = `${BASE}/propcards/${firstLetter}street.html`;
-  console.log(`Avon assessor: fetching street page ${streetPageUrl} for "${streetInput}"`);
-
-  const streetPageHtml = await fetchPage(streetPageUrl);
-  if (!streetPageHtml) {
-    return json({ success: false, error: `Could not load Avon street page for letter ${firstLetter}`, searchUrl: `${BASE}/prop_addr.html` });
+  // Step 1: Fetch streets.html to find the street code
+  // streets.html has entries like: <a href="...Wstreet.html#5320005">WILD WOOD DRIVE</a>
+  // The anchor number encodes: {3-digit street code}{4-digit first house padded}
+  const streetsHtml = await fetchPage(`${BASE}/propcards/streets.html`);
+  if (!streetsHtml) {
+    return json({ success: false, error: "Could not load Avon streets index", searchUrl: `${BASE}/prop_addr.html` });
   }
-  console.log(`Avon assessor: street page length=${streetPageHtml.length}`);
 
-  // Step 2: Find the matching address link
-  const paddedNum = houseNum.padStart(5, "0");
-  
-  // Find all address links on the page
-  const linkRegex = /<A HREF="([^"]+)">([^<]+)<\/A>/gi;
-  let match: RegExpExecArray | null;
-  let bestLink = "";
-  let bestLabel = "";
-  
-  // Try matching the street name with the house number
-  while ((match = linkRegex.exec(streetPageHtml)) !== null) {
-    const href = match[1];
-    const label = match[2].trim();
-    // Label format: "00028 PARK ROAD  " or "00001 ACORN GLEN  "
-    const labelUpper = label.toUpperCase().replace(/\s+/g, " ").trim();
-    
-    // Check if the label starts with our padded house number
-    if (labelUpper.startsWith(paddedNum + " ")) {
-      // Check if the street name portion matches
-      const labelStreet = labelUpper.substring(paddedNum.length + 1).trim();
-      // Remove suffix from label street for comparison too
-      const labelStreetBase = labelStreet.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, "").trim();
-      
-      if (labelStreet.startsWith(streetInput) || labelStreetBase === streetInput || streetInput.startsWith(labelStreetBase)) {
-        bestLink = href;
-        bestLabel = label;
-        break;
-      }
+  // Find matching street — match against both full name and base name
+  const streetLinkRegex = /href="[^"]*?#(\d+)"[^>]*>([^<]+)</gi;
+  let slm: RegExpExecArray | null;
+  let streetCode = "";
+  let matchedStreetName = "";
+
+  while ((slm = streetLinkRegex.exec(streetsHtml)) !== null) {
+    const anchor = slm[1]; // e.g. "5320005"
+    const name = slm[2].replace(/\s+/g, " ").trim().toUpperCase();
+    const nameBase = name.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, "").trim();
+
+    if (name === streetFull || nameBase === streetBase || name.startsWith(streetBase + " ") || streetFull.startsWith(nameBase + " ")) {
+      // Extract 3-digit street code from anchor (first 3 chars)
+      streetCode = anchor.substring(0, 3);
+      matchedStreetName = name;
+      console.log(`Avon assessor: matched street "${name}" code=${streetCode} anchor=${anchor}`);
+      break;
     }
   }
 
-  if (!bestLink) {
-    // Debug: log first few links found
-    const debugRegex = /<A HREF="([^"]+)">([^<]+)<\/A>/gi;
-    let dm: RegExpExecArray | null;
-    const samples: string[] = [];
-    while ((dm = debugRegex.exec(streetPageHtml)) !== null && samples.length < 5) {
-      samples.push(dm[2].trim());
-    }
-    console.log(`Avon assessor: no match for padded="${paddedNum}" street="${streetInput}". Sample labels: ${JSON.stringify(samples)}`);
-    return json({ success: false, error: `Could not find "${houseNum} ${streetInput}" in Avon assessor records`, searchUrl: `${BASE}/prop_addr.html` });
+  if (!streetCode) {
+    console.log(`Avon assessor: no street match for "${streetFull}" / "${streetBase}"`);
+    return json({ success: false, error: `Street "${streetFull}" not found in Avon records`, searchUrl: `${BASE}/prop_addr.html` });
   }
 
-  // Step 3: Fetch the property card page via Firecrawl
-  const cardUrl = bestLink.startsWith("http") ? bestLink : `${BASE}${bestLink}`;
-  console.log(`Avon assessor: fetching property card ${cardUrl}`);
+  // Step 2: Construct direct card URL
+  // Pattern: propcards/{first_digit_of_code}/admin/a{3-digit code}{4-digit padded house}01.html
+  const paddedHouse = houseNum.padStart(4, "0");
+  const firstDigit = streetCode.charAt(0);
+  const cardUrl = `${BASE}/propcards/${firstDigit}/admin/a${streetCode}${paddedHouse}01.html`;
+  console.log(`Avon assessor: constructed card URL ${cardUrl}`);
 
-  const cardHtml = await fetchPage(cardUrl, true);
+  const cardHtml = await fetchPage(cardUrl);
   if (!cardHtml) {
-    return json({ success: false, error: `Could not load Avon property card`, searchUrl: `${BASE}/prop_addr.html` });
+    // Try alternate padding (5-digit house number for larger numbers)
+    const altPadded = houseNum.padStart(5, "0");
+    const altUrl = `${BASE}/propcards/${firstDigit}/admin/a${streetCode}${altPadded}01.html`;
+    console.log(`Avon assessor: trying alt URL ${altUrl}`);
+    const altHtml = await fetchPage(altUrl);
+    if (!altHtml) {
+      return json({ success: false, error: `Property card not found for ${houseNum} ${matchedStreetName}`, searchUrl: `${BASE}/prop_addr.html` });
+    }
+    return parseAvonCard(altHtml, matchedStreetName, cardUrl);
   }
 
-  // Step 4: Parse the property card text (pipe-delimited preformatted text)
+  return parseAvonCard(cardHtml, matchedStreetName, cardUrl);
+}
+
+function parseAvonCard(cardHtml: string, streetName: string, cardUrl: string): Response {
+  const BASE = "http://assessor.avonct.gov";
+
   const extractField = (pattern: RegExp): string => {
     const m = cardHtml.match(pattern);
     return m ? m[1].replace(/\s+/g, " ").trim() : "";
   };
 
-  // Use greedy match up to the pipe character for field values
   const owner = extractField(/Owner name:\s*(.+?)\s*\|/);
   const coOwner = extractField(/Second name:\s*(.+?)\s*\|/);
   const propAddress = extractField(/Property at\s+(.+?)\s{2,}Prop ID/);
@@ -689,25 +681,16 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
   const volume = extractField(/Vol:\s*(\S+)/);
   const page = extractField(/Page:\s*(\S+)/);
   const neighborhood = extractField(/Neigh\.?:\s*(\S+)/);
-
-  // Assessments
   const totalAssessments = extractField(/Total assessments\s+([\d,]+)/);
   const netAssessment = extractField(/Net assessment\s+([\d,]+)/);
-
-  // Sale info
   const saleDate = extractField(/Sale date:\s*(.+?)\s*\|/);
   const salePrice = extractField(/Sale price:\s*([\d,]+)/);
-
-  // Values
   const mktValue = extractField(/Mkt value\s*:\s*([\d,]+)/);
   const costValue = extractField(/Cost value:\s*([\d,]+)/);
-
-  // Utilities
   const water = extractField(/Water\s+(.+?)\s*\|/);
   const sewer = extractField(/Sewer\s+(.+?)\s*\|/);
   const gas = extractField(/Gas\s+(.+?)\s*\|/);
 
-  // Assessment categories - find land and building values
   const assessLines = cardHtml.match(/\|(.+?)\s+[\d.]+\s+([\d,]+)\|/g) || [];
   let landValue = "";
   let buildingValue = "";
@@ -720,22 +703,17 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
     }
   }
 
-  // Street Card PDF link — handle both absolute and relative hrefs
-  const pdfMatch = cardHtml.match(/href="([^"]*?\/cards\/[^"]+\.pdf)"/i) || cardHtml.match(/<A HREF="([^"]+)">Street Card<\/A>/i);
+  const pdfMatch = cardHtml.match(/href="([^"]*?\/cards\/[^"]+\.pdf)"/i) || cardHtml.match(/<a href="([^"]+)">Street Card<\/a>/i);
   let streetCardUrl = "";
   if (pdfMatch) {
     const href = pdfMatch[1];
     streetCardUrl = href.startsWith("http") ? href : `${BASE}${href}`;
   }
 
-  // Sales history link
-  const salesMatch = cardHtml.match(/<A HREF="([^"]+)">Sales History<\/A>/i);
-  const salesHistoryUrl = salesMatch ? (salesMatch[1].startsWith("http") ? salesMatch[1] : `${BASE}${salesMatch[1]}`) : "";
-
   const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(owner + " " + coOwner);
 
   const prop: any = {
-    address: propAddress || bestLabel.trim(),
+    address: propAddress || streetName,
     town: "Avon",
     owner: owner.replace(/\s+/g, " ").trim(),
     coOwner: coOwner.replace(/[|]/g, "").replace(/\s+/g, " ").trim(),
