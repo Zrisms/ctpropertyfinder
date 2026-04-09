@@ -660,6 +660,14 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
       if (cardHtml) {
         return parseAvonCard(cardHtml, streetFull, cardUrl);
       }
+      // Card page found in index but unreachable — this is a server-side issue
+      console.error(`Avon assessor: card page ${cardUrl} is broken on the assessor server`);
+      return json({
+        success: false,
+        error: `The property card for ${houseNum} ${streetFull} exists in the Avon assessor index but the page is currently unavailable on the assessor's server. Try again later or visit the assessor site directly.`,
+        searchUrl: cardUrl,
+        directUrl: `${BASE}/prop_addr.html`,
+      });
     }
     console.log(`Avon assessor: no exact match in ${firstLetter}street.html, falling back to streets.html`);
   }
@@ -694,19 +702,24 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
 
   const paddedHouse = houseNum.padStart(4, "0");
   const firstDigit = streetCode.charAt(0);
-  const cardUrl = `${BASE}/propcards/${firstDigit}/admin/a${streetCode}${paddedHouse}01.html`;
-  console.log(`Avon assessor: constructed card URL ${cardUrl}`);
+  const cardUrl2 = `${BASE}/propcards/${firstDigit}/admin/a${streetCode}${paddedHouse}01.html`;
+  console.log(`Avon assessor: constructed card URL ${cardUrl2}`);
 
-  const cardHtml = await fetchPage(cardUrl);
+  const cardHtml = await fetchPage(cardUrl2);
   if (!cardHtml) {
     const altPadded = houseNum.padStart(5, "0");
     const altUrl = `${BASE}/propcards/${firstDigit}/admin/a${streetCode}${altPadded}01.html`;
     console.log(`Avon assessor: trying alt URL ${altUrl}`);
     const altHtml = await fetchPage(altUrl);
     if (!altHtml) {
-      return json({ success: false, error: `Property card not found for ${houseNum} ${matchedStreetName}`, searchUrl: `${BASE}/prop_addr.html` });
+      return json({
+        success: false,
+        error: `The property card for ${houseNum} ${matchedStreetName} is currently unavailable on the Avon assessor's server. Try again later.`,
+        searchUrl: cardUrl2,
+        directUrl: `${BASE}/prop_addr.html`,
+      });
     }
-    return parseAvonCard(altHtml, matchedStreetName, cardUrl);
+    return parseAvonCard(altHtml, matchedStreetName, cardUrl2);
   }
 
   return parseAvonCard(cardHtml, matchedStreetName, cardUrl);
