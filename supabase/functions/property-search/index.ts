@@ -574,57 +574,121 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
     return json({ success: false, error: `Cannot parse address "${address}"`, searchUrl: `${BASE}/prop_addr.html` });
   }
   const houseNum = addrParts[1];
-  // Keep full street name WITH suffix for matching against streets.html entries
   const streetFull = addrParts[2].replace(/\s+/g, " ").trim().toUpperCase();
-  // Also strip suffix for fuzzy matching
   const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, "").trim();
 
-  // Helper to fetch a page via Firecrawl
-  async function fetchPage(url: string): Promise<string | null> {
-    if (!apiKey) { console.error("Avon assessor: FIRECRAWL_API_KEY not set"); return null; }
-    try {
-      console.log(`Avon assessor: Firecrawl scrape ${url}`);
-      const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ url, formats: ["rawHtml"], onlyMainContent: false, waitFor: 2000 }),
-      });
-      if (!resp.ok) { console.error(`Avon assessor: Firecrawl HTTP ${resp.status}`); return null; }
-      const data = await resp.json();
-      const content = data?.data?.rawHtml || data?.data?.html || data?.rawHtml || data?.html || null;
-      if (content && content.includes("Target server not found")) {
-        console.error("Avon assessor: got 'Target server not found' — page broken");
-        return null;
+  // Helper: fetch page via Firecrawl with retries, then direct fetch as fallback
+  async function fetchPage(url: string, retries = 2): Promise<string | null> {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      if (attempt > 0) {
+        console.log(`Avon assessor: retry ${attempt} for ${url}`);
+        await new Promise(r => setTimeout(r, 1500 * attempt));
       }
-      console.log(`Avon assessor: got content length=${content?.length || 0}`);
-      return content;
+      // Try Firecrawl
+      if (apiKey) {
+        try {
+          console.log(`Avon assessor: Firecrawl scrape ${url}`);
+          const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ url, formats: ["rawHtml"], onlyMainContent: false, waitFor: 3000 }),
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            const content = data?.data?.rawHtml || data?.data?.html || data?.rawHtml || data?.html || null;
+            if (content && !content.includes("Target server not found")) {
+              console.log(`Avon assessor: Firecrawl got content length=${content.length}`);
+              return content;
+            }
+            console.warn(`Avon assessor: Firecrawl returned empty or 'Target server not found' (attempt ${attempt})`);
+          } else {
+            console.warn(`Avon assessor: Firecrawl HTTP ${resp.status} (attempt ${attempt})`);
+          }
+        } catch (e) {
+          console.warn(`Avon assessor: Firecrawl error (attempt ${attempt}):`, e);
+        }
+      }
+    }
+    // Direct fetch fallback (one attempt)
+    try {
+      console.log(`Avon assessor: direct fetch ${url}`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      const resp = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!resp.ok) { console.error(`Avon assessor: direct fetch HTTP ${resp.status}`); return null; }
+      const text = await resp.text();
+      if (text && !text.includes("Target server not found")) {
+        console.log(`Avon assessor: direct fetch got content length=${text.length}`);
+        return text;
+      }
+      console.error("Avon assessor: direct fetch returned 'Target server not found'");
+      return null;
     } catch (e) {
-      console.error(`Avon assessor: fetchPage error:`, e);
+      console.error(`Avon assessor: direct fetch error:`, e);
       return null;
     }
   }
 
-  // Step 1: Fetch streets.html to find the street code
-  // streets.html has entries like: <a href="...Wstreet.html#5320005">WILD WOOD DRIVE</a>
-  // The anchor number encodes: {3-digit street code}{4-digit first house padded}
+  // Step 1: Fetch the letter-based street page (e.g. Fstreet.html) to find the exact card URL
+  const firstLetter = streetBase.charAt(0).toUpperCase();
+  const streetPageUrl = `${BASE}/propcards/${firstLetter}street.html`;
+  const streetPageHtml = await fetchPage(streetPageUrl);
+
+  if (streetPageHtml) {
+    // Search for exact address link in the street page
+    const paddedHouseNum = houseNum.padStart(5, "0");
+    const addrLinkRegex = /href="([^"]+)"[^>]*>\s*(\d{5})\s+([^<]+)/gi;
+    let alm: RegExpExecArray | null;
+    let cardUrl = "";
+
+    while ((alm = addrLinkRegex.exec(streetPageHtml)) !== null) {
+      const href = alm[1];
+      const num = alm[2]; // 5-digit padded house number
+      const name = alm[3].replace(/\s+/g, " ").trim().toUpperCase();
+      const nameBase = name.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, "").trim();
+
+      if (num === paddedHouseNum && (name.includes(streetBase) || nameBase === streetBase)) {
+        cardUrl = href.startsWith("http") ? href : `${BASE}${href}`;
+        console.log(`Avon assessor: found exact card link: ${cardUrl}`);
+        break;
+      }
+    }
+
+    if (cardUrl) {
+      const cardHtml = await fetchPage(cardUrl);
+      if (cardHtml) {
+        return parseAvonCard(cardHtml, streetFull, cardUrl);
+      }
+      // Card page found in index but unreachable — this is a server-side issue
+      console.error(`Avon assessor: card page ${cardUrl} is broken on the assessor server`);
+      return json({
+        success: false,
+        error: `The property card for ${houseNum} ${streetFull} exists in the Avon assessor index but the page is currently unavailable on the assessor's server. Try again later or visit the assessor site directly.`,
+        searchUrl: cardUrl,
+        directUrl: `${BASE}/prop_addr.html`,
+      });
+    }
+    console.log(`Avon assessor: no exact match in ${firstLetter}street.html, falling back to streets.html`);
+  }
+
+  // Fallback: Use streets.html to find street code and construct URL
   const streetsHtml = await fetchPage(`${BASE}/propcards/streets.html`);
   if (!streetsHtml) {
     return json({ success: false, error: "Could not load Avon streets index", searchUrl: `${BASE}/prop_addr.html` });
   }
 
-  // Find matching street — match against both full name and base name
-  const streetLinkRegex = /href="[^"]*?#(\d+)"[^>]*>([^<]+)</gi;
+  const streetLinkRegex = /href="[^"]*?#(\d+)"[^>]*>([^<]+)/gi;
   let slm: RegExpExecArray | null;
   let streetCode = "";
   let matchedStreetName = "";
 
   while ((slm = streetLinkRegex.exec(streetsHtml)) !== null) {
-    const anchor = slm[1]; // e.g. "5320005"
+    const anchor = slm[1];
     const name = slm[2].replace(/\s+/g, " ").trim().toUpperCase();
     const nameBase = name.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, "").trim();
 
     if (name === streetFull || nameBase === streetBase || name.startsWith(streetBase + " ") || streetFull.startsWith(nameBase + " ")) {
-      // Extract 3-digit street code from anchor (first 3 chars)
       streetCode = anchor.substring(0, 3);
       matchedStreetName = name;
       console.log(`Avon assessor: matched street "${name}" code=${streetCode} anchor=${anchor}`);
@@ -633,30 +697,32 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
   }
 
   if (!streetCode) {
-    console.log(`Avon assessor: no street match for "${streetFull}" / "${streetBase}"`);
     return json({ success: false, error: `Street "${streetFull}" not found in Avon records`, searchUrl: `${BASE}/prop_addr.html` });
   }
 
-  // Step 2: Construct direct card URL
-  // Pattern: propcards/{first_digit_of_code}/admin/a{3-digit code}{4-digit padded house}01.html
   const paddedHouse = houseNum.padStart(4, "0");
   const firstDigit = streetCode.charAt(0);
-  const cardUrl = `${BASE}/propcards/${firstDigit}/admin/a${streetCode}${paddedHouse}01.html`;
-  console.log(`Avon assessor: constructed card URL ${cardUrl}`);
+  const cardUrl2 = `${BASE}/propcards/${firstDigit}/admin/a${streetCode}${paddedHouse}01.html`;
+  console.log(`Avon assessor: constructed card URL ${cardUrl2}`);
 
-  const cardHtml = await fetchPage(cardUrl);
+  const cardHtml = await fetchPage(cardUrl2);
   if (!cardHtml) {
-    // Try alternate padding (5-digit house number for larger numbers)
     const altPadded = houseNum.padStart(5, "0");
     const altUrl = `${BASE}/propcards/${firstDigit}/admin/a${streetCode}${altPadded}01.html`;
     console.log(`Avon assessor: trying alt URL ${altUrl}`);
     const altHtml = await fetchPage(altUrl);
     if (!altHtml) {
-      return json({ success: false, error: `Property card not found for ${houseNum} ${matchedStreetName}`, searchUrl: `${BASE}/prop_addr.html` });
+      return json({
+        success: false,
+        error: `The property card for ${houseNum} ${matchedStreetName} is currently unavailable on the Avon assessor's server. Try again later.`,
+        searchUrl: cardUrl2,
+        directUrl: `${BASE}/prop_addr.html`,
+      });
     }
-    return parseAvonCard(altHtml, matchedStreetName, cardUrl);
+    return parseAvonCard(altHtml, matchedStreetName, cardUrl2);
   }
 
+  return parseAvonCard(cardHtml, matchedStreetName, cardUrl);
   return parseAvonCard(cardHtml, matchedStreetName, cardUrl);
 }
 
