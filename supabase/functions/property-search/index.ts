@@ -577,57 +577,55 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
   const streetFull = addrParts[2].replace(/\s+/g, " ").trim().toUpperCase();
   const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, "").trim();
 
-  // Helper: fetch page via Firecrawl with retries, then direct fetch as fallback
+  // Helper: fetch page — try direct HTTP first (fast & preserves <PRE> text), fall back to Firecrawl
   async function fetchPage(url: string, retries = 2): Promise<string | null> {
+    // Direct fetch first
     for (let attempt = 0; attempt <= retries; attempt++) {
-      if (attempt > 0) {
-        console.log(`Avon assessor: retry ${attempt} for ${url}`);
-        await new Promise(r => setTimeout(r, 1500 * attempt));
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * attempt));
+      try {
+        console.log(`Avon assessor: direct fetch ${url} (attempt ${attempt})`);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        const resp = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "Mozilla/5.0" } });
+        clearTimeout(timeout);
+        if (resp.ok) {
+          const text = await resp.text();
+          if (text && !text.includes("Target server not found")) {
+            console.log(`Avon assessor: direct fetch OK length=${text.length}`);
+            return text;
+          }
+        } else {
+          console.warn(`Avon assessor: direct fetch HTTP ${resp.status}`);
+        }
+      } catch (e) {
+        console.warn(`Avon assessor: direct fetch error:`, e);
       }
-      // Try Firecrawl
-      if (apiKey) {
+    }
+    // Firecrawl fallback — request rawHtml to preserve <PRE> formatting
+    if (apiKey) {
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt));
         try {
-          console.log(`Avon assessor: Firecrawl scrape ${url}`);
+          console.log(`Avon assessor: Firecrawl scrape ${url} (attempt ${attempt})`);
           const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
             method: "POST",
             headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ url, formats: ["rawHtml"], onlyMainContent: false, waitFor: 3000 }),
+            body: JSON.stringify({ url, formats: ["rawHtml"], onlyMainContent: false, waitFor: 2000 }),
           });
           if (resp.ok) {
             const data = await resp.json();
             const content = data?.data?.rawHtml || data?.data?.html || data?.rawHtml || data?.html || null;
             if (content && !content.includes("Target server not found")) {
-              console.log(`Avon assessor: Firecrawl got content length=${content.length}`);
+              console.log(`Avon assessor: Firecrawl OK length=${content.length}`);
               return content;
             }
-            console.warn(`Avon assessor: Firecrawl returned empty or 'Target server not found' (attempt ${attempt})`);
-          } else {
-            console.warn(`Avon assessor: Firecrawl HTTP ${resp.status} (attempt ${attempt})`);
           }
         } catch (e) {
-          console.warn(`Avon assessor: Firecrawl error (attempt ${attempt}):`, e);
+          console.warn(`Avon assessor: Firecrawl error:`, e);
         }
       }
     }
-    // Direct fetch fallback (one attempt)
-    try {
-      console.log(`Avon assessor: direct fetch ${url}`);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      const resp = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (!resp.ok) { console.error(`Avon assessor: direct fetch HTTP ${resp.status}`); return null; }
-      const text = await resp.text();
-      if (text && !text.includes("Target server not found")) {
-        console.log(`Avon assessor: direct fetch got content length=${text.length}`);
-        return text;
-      }
-      console.error("Avon assessor: direct fetch returned 'Target server not found'");
-      return null;
-    } catch (e) {
-      console.error(`Avon assessor: direct fetch error:`, e);
-      return null;
-    }
+    return null;
   }
 
   // Step 1: Fetch the letter-based street page (e.g. Fstreet.html) to find the exact card URL
