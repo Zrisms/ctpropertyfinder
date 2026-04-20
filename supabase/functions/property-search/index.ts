@@ -577,57 +577,79 @@ async function scrapeAvonAssessor(address: string, town: string): Promise<Respon
   const streetFull = addrParts[2].replace(/\s+/g, " ").trim().toUpperCase();
   const streetBase = streetFull.replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TRL|HWY|PKWY|TPKE|EXT|STREET|ROAD|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|TRAIL|HIGHWAY)\.?$/i, "").trim();
 
-  // Helper: fetch page via Firecrawl with retries, then direct fetch as fallback
-  async function fetchPage(url: string, retries = 2): Promise<string | null> {
+  // Helper: fetch page. Tries (1) direct fetch, (2) r.jina.ai reader proxy (handles HTTP-only origins
+  // that Firecrawl/Supabase edge can't resolve), (3) Firecrawl as last resort.
+  async function fetchPage(url: string, retries = 1): Promise<string | null> {
+    // 1) Direct fetch
     for (let attempt = 0; attempt <= retries; attempt++) {
-      if (attempt > 0) {
-        console.log(`Avon assessor: retry ${attempt} for ${url}`);
-        await new Promise(r => setTimeout(r, 1500 * attempt));
-      }
-      // Try Firecrawl
-      if (apiKey) {
-        try {
-          console.log(`Avon assessor: Firecrawl scrape ${url}`);
-          const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ url, formats: ["rawHtml"], onlyMainContent: false, waitFor: 3000 }),
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            const content = data?.data?.rawHtml || data?.data?.html || data?.rawHtml || data?.html || null;
-            if (content && !content.includes("Target server not found")) {
-              console.log(`Avon assessor: Firecrawl got content length=${content.length}`);
-              return content;
-            }
-            console.warn(`Avon assessor: Firecrawl returned empty or 'Target server not found' (attempt ${attempt})`);
-          } else {
-            console.warn(`Avon assessor: Firecrawl HTTP ${resp.status} (attempt ${attempt})`);
+      if (attempt > 0) await new Promise(r => setTimeout(r, 800 * attempt));
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        const resp = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "Mozilla/5.0" } });
+        clearTimeout(timeout);
+        if (resp.ok) {
+          const text = await resp.text();
+          if (text && !text.includes("Target server not found")) {
+            console.log(`Avon assessor: direct fetch OK ${url} length=${text.length}`);
+            return text;
           }
-        } catch (e) {
-          console.warn(`Avon assessor: Firecrawl error (attempt ${attempt}):`, e);
         }
+      } catch (e) {
+        console.warn(`Avon assessor: direct fetch failed ${url}:`, (e as Error).message);
       }
     }
-    // Direct fetch fallback (one attempt)
-    try {
-      console.log(`Avon assessor: direct fetch ${url}`);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      const resp = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeout);
-      if (!resp.ok) { console.error(`Avon assessor: direct fetch HTTP ${resp.status}`); return null; }
-      const text = await resp.text();
-      if (text && !text.includes("Target server not found")) {
-        console.log(`Avon assessor: direct fetch got content length=${text.length}`);
-        return text;
+
+    // 2) Jina reader proxy — preserves raw HTML including <PRE> formatting
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * attempt));
+      try {
+        const proxied = `https://r.jina.ai/${url}`;
+        console.log(`Avon assessor: Jina proxy ${proxied} (attempt ${attempt})`);
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+        const resp = await fetch(proxied, {
+          signal: controller.signal,
+          headers: { "X-Return-Format": "html", "User-Agent": "Mozilla/5.0" },
+        });
+        clearTimeout(timeout);
+        if (resp.ok) {
+          const text = await resp.text();
+          if (text && text.length > 200 && !/Target server not found/i.test(text.slice(0, 500))) {
+            console.log(`Avon assessor: Jina OK length=${text.length}`);
+            return text;
+          }
+          console.warn(`Avon assessor: Jina returned suspicious content (length=${text?.length})`);
+        } else {
+          console.warn(`Avon assessor: Jina HTTP ${resp.status}`);
+        }
+      } catch (e) {
+        console.warn(`Avon assessor: Jina error:`, (e as Error).message);
       }
-      console.error("Avon assessor: direct fetch returned 'Target server not found'");
-      return null;
-    } catch (e) {
-      console.error(`Avon assessor: direct fetch error:`, e);
-      return null;
     }
+
+    // 3) Firecrawl fallback (force fresh, bypass cache)
+    if (apiKey) {
+      try {
+        console.log(`Avon assessor: Firecrawl fallback ${url}`);
+        const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ url, formats: ["rawHtml"], onlyMainContent: false, maxAge: 0, waitFor: 2000 }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          const content = data?.data?.rawHtml || data?.data?.html || null;
+          if (content && !/Target server not found/i.test(content.slice(0, 500))) {
+            console.log(`Avon assessor: Firecrawl OK length=${content.length}`);
+            return content;
+          }
+        }
+      } catch (e) {
+        console.warn(`Avon assessor: Firecrawl error:`, (e as Error).message);
+      }
+    }
+    return null;
   }
 
   // Step 1: Fetch the letter-based street page (e.g. Fstreet.html) to find the exact card URL
