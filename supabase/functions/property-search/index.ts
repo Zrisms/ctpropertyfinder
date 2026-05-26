@@ -2151,46 +2151,76 @@ function extractACTPropertyDetail(html: string, markdown: string, address: strin
   const md = markdown;
   const text = html.replace(/&nbsp;/g, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 
-  // Owner: look for "Name:" label in the detail page
+  // Owner: prefer pipe-table "| Name: | VALUE |" row
   let owner = "";
-  const nameMatch = md.match(/Name:\s*\|?\s*([A-Z0-9][A-Z0-9\s,.'&-]+?)(?:\s*\||\s*\n)/i)
+  const nameMatch = md.match(/\|\s*Name:\s*\|\s*([^|\n]+?)\s*\|/i)
+    || md.match(/Name:\s*\|?\s*([A-Z0-9][A-Z0-9\s,.'&-]+?)(?:\s*\||\s*\n)/i)
     || text.match(/Name:\s*([A-Z0-9][A-Z0-9\s,.'&-]+?)(?:\s+(?:PID|Parcel|Tax|Map|Mailing))/i)
-    || md.match(/Owner[:\s|]*([A-Z0-9][A-Z0-9\s,.'&-]+LLC[A-Z0-9\s,.'&-]*)/i)
     || md.match(/Owner[:\s|]*([A-Z][A-Z0-9\s,.'&-]{3,})/i);
   if (nameMatch) owner = nameMatch[1].replace(/\|/g, "").trim();
 
-  // Address: match the property address (must start with house number from search)
-  const houseNum = address.match(/^(\d+)/)?.[1] || "";
-  const addrRegex = houseNum ? new RegExp(`(${houseNum}\\s+[A-Z][A-Z\\s]+?(?:ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TER|TRL|PKWY|HWY))\\b`, "i") : null;
-  const addrMatch = addrRegex ? (md.match(addrRegex) || text.match(addrRegex)) : null;
-  const propAddr = addrMatch?.[1]?.trim() || address;
+  // Mailing address
+  let mailingAddress = "";
+  const mailMatch = md.match(/\|\s*Mailing Address:\s*\|\s*([^|]+?)\s*\|/i);
+  if (mailMatch) mailingAddress = mailMatch[1].replace(/<br\s*\/?>/gi, ", ").replace(/\s+/g, " ").trim();
 
-  // Assessment values - try multiple column layouts:
-  // 6 cols: Year Improvements Land Outbuilding TotalAssessed FMV
-  // 5 cols: Year Improvements Land TotalAssessed FMV
+  // Physical Address
+  let propAddr = address;
+  const physMatch = md.match(/\|\s*Physical Address:\s*\|\s*([^|\n]+?)\s*\|/i);
+  if (physMatch) {
+    propAddr = physMatch[1].replace(/\s+/g, " ").trim();
+  } else {
+    const houseNum = address.match(/^(\d+)/)?.[1] || "";
+    const addrRegex = houseNum ? new RegExp(`(${houseNum}\\s+[A-Z][A-Z\\s]+?(?:ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|WAY|TER|TRL|PKWY|HWY))\\b`, "i") : null;
+    const addrMatch = addrRegex ? (md.match(addrRegex) || text.match(addrRegex)) : null;
+    if (addrMatch) propAddr = addrMatch[1].trim();
+  }
+
+  // Assessment values from pipe-separated table:
+  // | Year | Improvements | Land | Outbuilding | Total Assessed Value | FMV Total |
   let buildingValue = "", landValue = "", totalAssessed = "", fmvTotal = "";
-  
-  const assess6 = md.match(/(\d{4})\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)/);
-  const assess5 = md.match(/(\d{4})\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)/);
-  if (assess6 && parseInt(assess6[1]) >= 2020) {
-    buildingValue = assess6[2];
-    landValue = assess6[3];
-    totalAssessed = assess6[5];
-    fmvTotal = assess6[6];
-  } else if (assess5 && parseInt(assess5[1]) >= 2020) {
-    buildingValue = assess5[2];
-    landValue = assess5[3];
-    totalAssessed = assess5[4];
-    fmvTotal = assess5[5];
+  const pipe6 = md.match(/\|\s*(20\d{2})\s*\|\s*\$?([\d,]+|N\/A)\s*\|\s*\$?([\d,]+|N\/A)\s*\|\s*\$?([\d,]+|N\/A)\s*\|\s*\$?([\d,]+|N\/A)\s*\|\s*\$?([\d,]+|N\/A)\s*\|/i);
+  const pipe5 = md.match(/\|\s*(20\d{2})\s*\|\s*\$?([\d,]+|N\/A)\s*\|\s*\$?([\d,]+|N\/A)\s*\|\s*\$?([\d,]+|N\/A)\s*\|\s*\$?([\d,]+|N\/A)\s*\|/i);
+  const clean = (v: string) => (v && v !== "N/A" ? v : "");
+  if (pipe6) {
+    buildingValue = clean(pipe6[2]); landValue = clean(pipe6[3]);
+    totalAssessed = clean(pipe6[5]); fmvTotal = clean(pipe6[6]);
+  } else if (pipe5) {
+    buildingValue = clean(pipe5[2]); landValue = clean(pipe5[3]);
+    totalAssessed = clean(pipe5[4]); fmvTotal = clean(pipe5[5]);
+  } else {
+    const assess6 = md.match(/(20\d{2})\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)/);
+    const assess5 = md.match(/(20\d{2})\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)\s+\$?([\d,]+)/);
+    if (assess6) { buildingValue = assess6[2]; landValue = assess6[3]; totalAssessed = assess6[5]; fmvTotal = assess6[6]; }
+    else if (assess5) { buildingValue = assess5[2]; landValue = assess5[3]; totalAssessed = assess5[4]; fmvTotal = assess5[5]; }
   }
 
   // Lot size/acres
-  const acresMatch = text.match(/Size\s*\(Acres\)[:\s]*([\d.]+)/i) || md.match(/Acres\)[:\s]*([\d.]+)/);
+  const acresMatch = md.match(/Size\s*\(Acres\)[^\d]*([\d.]+)/i) || text.match(/Size\s*\(Acres\)[:\s]*([\d.]+)/i);
   const lotSize = acresMatch?.[1] ? `${acresMatch[1]} AC` : "";
 
-  // Property type from land table
-  const typeMatch = md.match(/(?:Commercial|Residential|Industrial|Vacant)\s+(?:Vacant|Improved|Land)?/i);
-  const propertyType = typeMatch?.[0]?.trim() || "";
+  // Property type / Parcel Use
+  let propertyType = "";
+  const useMatch = md.match(/\|\s*Parcel Use:\s*\|\s*([^|\n]+?)\s*\|/i);
+  if (useMatch) propertyType = useMatch[1].trim();
+  else {
+    const tm = md.match(/(?:Commercial|Residential|Industrial|Vacant)\s+(?:Vacant|Improved|Land)?/i);
+    propertyType = tm?.[0]?.trim() || "";
+  }
+
+  // Year built — Residential Card "Year Constructed" column
+  let yearBuilt = "";
+  const ybMatch = md.match(/Year[\s<br>\/]*Constructed[\s\S]{0,300}?\|\s*(\b1[89]\d{2}|20[0-2]\d)\s*\|/i)
+    || text.match(/Year\s+Constructed[^0-9]{0,120}(\b1[89]\d{2}|20[0-2]\d)\b/i);
+  if (ybMatch) yearBuilt = ybMatch[1];
+
+  // Latest non-zero sale price from Deed Transfers
+  let salePrice = "";
+  const saleRe = /\|\s*\d{1,2}\/\d{1,2}\/\d{4}\s*\|[^|]*\|[^|]*\|[^|]*\|\s*\$([\d,]+)\s*\|/g;
+  let sm: RegExpExecArray | null;
+  while ((sm = saleRe.exec(md)) !== null) {
+    if (sm[1] !== "0") { salePrice = sm[1]; break; }
+  }
 
   if (!owner && !totalAssessed) return null;
 
@@ -2199,14 +2229,15 @@ function extractACTPropertyDetail(html: string, markdown: string, address: strin
   return {
     address: propAddr,
     owner: owner || "N/A",
-    mailingAddress: "",
+    mailingAddress,
     propertyType,
-    yearBuilt: "",
+    yearBuilt,
     lotSize,
     assessedValue: totalAssessed,
     landValue,
     buildingValue,
     totalValue: fmvTotal || totalAssessed,
+    salePrice,
     isLLC,
     town: town.charAt(0).toUpperCase() + town.slice(1),
     propertyCardUrl: "",
