@@ -2680,15 +2680,38 @@ async function scrapeDarienAssessPro(apiKey: string, address: string, town: stri
     console.error("Darien search error:", (e as Error).message || e);
   }
 
-  // 2) Find the detail link (datalet.aspx is Patriot's record page)
+  // 2) Parse the iasWorld results table for the matching parcel row.
+  //    Format: | <ParcelID> | <Owner> | <ADDRESS> | <NBHD> | <Unit> | <LUC> |
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
   const wantedStreet = norm(streetBase);
-  const detailLinks = searchLinks
-    .filter((l) => /datalet\.aspx|parcel\.aspx|detail/i.test(l))
-    .map((l) => (l.startsWith("http") ? l : `${base}${l.startsWith("/") ? "" : "/"}${l}`));
+  const wantedFull = norm(`${houseNum} ${streetBase}`);
 
-  // 3) Fetch each candidate detail page, accepting disclaimer first.
-  for (const link of detailLinks.slice(0, 4)) {
+  let parcelId = "";
+  let ownerRaw = "";
+  let addressRaw = "";
+
+  const rowRe = /\|\s*(\d{3,8})\s*\|\s*([^|]+?)\s*\|\s*(\d+\s+[A-Z0-9 .'\-]+?)\s*\|\s*(\d+)?\s*\|/g;
+  let rm: RegExpExecArray | null;
+  while ((rm = rowRe.exec(searchMarkdown)) !== null) {
+    const rowAddr = norm(rm[3]);
+    if (
+      rowAddr === wantedFull ||
+      rowAddr.startsWith(wantedFull) ||
+      (rowAddr.startsWith(`${houseNum} `) && rowAddr.includes(wantedStreet))
+    ) {
+      parcelId = rm[1].trim();
+      ownerRaw = rm[2].replace(/\\/g, "").trim();
+      addressRaw = rm[3].trim();
+      break;
+    }
+  }
+
+  // 3) If we found a parcel, try to load the iasWorld Datalet detail page
+  //    to enrich with assessment data.
+  let detailMd = "";
+  let detailUrl = "";
+  if (parcelId) {
+    detailUrl = `${base}/Datalets/Datalet.aspx?UseSearch=no&pin=${encodeURIComponent(parcelId)}`;
     try {
       const ctrl2 = new AbortController();
       const t2 = setTimeout(() => ctrl2.abort(), 30000);
@@ -2697,7 +2720,7 @@ async function scrapeDarienAssessPro(apiKey: string, address: string, town: stri
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         signal: ctrl2.signal,
         body: JSON.stringify({
-          url: link,
+          url: detailUrl,
           formats: ["markdown"],
           onlyMainContent: false,
           waitFor: 2500,
@@ -2710,31 +2733,50 @@ async function scrapeDarienAssessPro(apiKey: string, address: string, town: stri
         }),
       });
       clearTimeout(t2);
-      if (!detailResp.ok) continue;
-      const dd = await detailResp.json();
-      const detailMd: string = dd.data?.markdown || dd.markdown || "";
-      if (detailMd.length < 300) continue;
-      // Skip pages that still show only the disclaimer
-      if (/currently unavailable due to maintenance/i.test(detailMd) && !/owner/i.test(detailMd)) continue;
-      // Heuristic: must mention our street to be the right parcel
-      if (wantedStreet && !norm(detailMd).includes(wantedStreet)) continue;
-      const extracted = extractGenericPropertyData(detailMd, address, town);
-      if (extracted) {
-        extracted.propertyCardUrl = link;
-        return json({ success: true, property: extracted });
+      if (detailResp.ok) {
+        const dd = await detailResp.json();
+        detailMd = dd.data?.markdown || dd.markdown || "";
       }
     } catch (e) {
       console.error("Darien detail error:", (e as Error).message || e);
     }
   }
 
-  // 4) Last-resort: extract whatever is on the search results page itself.
-  if (searchMarkdown.length > 300) {
-    const extracted = extractGenericPropertyData(searchMarkdown, address, town);
+  // 4) Combine: prefer detail page extraction, fall back to results-row info.
+  if (detailMd.length > 300 && norm(detailMd).includes(wantedStreet)) {
+    const extracted = extractGenericPropertyData(detailMd, address, town);
     if (extracted) {
-      extracted.propertyCardUrl = searchUrl;
+      if (!extracted.parcelId && parcelId) extracted.parcelId = parcelId;
+      extracted.propertyCardUrl = detailUrl;
       return json({ success: true, property: extracted });
     }
+  }
+
+  if (parcelId && ownerRaw) {
+    const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(ownerRaw);
+    return json({
+      success: true,
+      property: {
+        address: addressRaw || address, town, owner: ownerRaw, coOwner: "",
+        ownerAddress: "", isLLC, parcelId, mblu: "", accountNumber: "",
+        buildingCount: "", bookPage: "", certificate: "", instrument: "",
+        assessedValue: "", totalAppraisal: "", totalMarketValue: "",
+        improvementsValue: "", landValue: "",
+        assessImprovements: "", assessLand: "", assessTotal: "",
+        salePrice: "", saleDate: "", lotSize: "",
+        frontage: "", depth: "", useCode: "", useDescription: "",
+        zoning: "", neighborhood: "", totalMarketLand: "", landAppraisedValue: "",
+        yearBuilt: "", buildingStyle: "", model: "", stories: "",
+        livingArea: "", replacementCost: "", buildingPercentGood: "", occupancy: "",
+        totalRooms: "", bedrooms: "", totalBaths: "", halfBaths: "",
+        totalXtraFixtures: "", bathStyle: "", kitchenStyle: "", interiorCondition: "",
+        finBsmntArea: "", finBsmntQual: "", grade: "", exteriorWall: "", roofStructure: "", roofCover: "",
+        interiorWall: "", flooring: "", heating: "", heatingFuel: "", cooling: "", buildingPhoto: "",
+        garage: "", pool: "", fireplace: "", foundation: "", taxAmount: "",
+        ownershipHistory: [], subAreas: [], valuationHistory: [],
+        propertyCardUrl: detailUrl || searchUrl, llcDetails: undefined as any,
+      },
+    });
   }
 
   return json({
