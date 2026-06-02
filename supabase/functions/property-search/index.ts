@@ -2652,20 +2652,18 @@ async function scrapeDarienAssessPro(apiKey: string, address: string, town: stri
         timeout: 40000,
         actions: [
           { type: "wait", milliseconds: 1500 },
-          // Patriot AssessPro disclaimer — the Agree button id is typically btAgree
-          { type: "click", selector: '#btAgree, input[value="Agree" i], input[name*="Agree" i], button:has-text("Agree")' },
+          // iasWorld (Tyler Tech) disclaimer — Agree button id is btAgree
+          { type: "click", selector: "#btAgree" },
           { type: "wait", milliseconds: 2500 },
-          // Street number field
-          { type: "click", selector: 'input[name="inpNo"], input[id*="StrNo" i], input[name*="StrNo" i], input[name*="StreetNum" i]' },
+          // iasWorld inputs are inpNumber / inpStreet, submit is btSearch
+          { type: "click", selector: "#inpNumber" },
           { type: "write", text: houseNum },
           { type: "wait", milliseconds: 200 },
-          // Street name field
-          { type: "click", selector: 'input[name="inpStreet"], input[id*="StrName" i], input[name*="StrName" i], input[name*="StreetName" i]' },
+          { type: "click", selector: "#inpStreet" },
           { type: "write", text: streetBase },
           { type: "wait", milliseconds: 300 },
-          // Submit search
-          { type: "click", selector: '#btSearch, input[type="submit"][value*="Search" i], input[name*="Search" i], button:has-text("Search")' },
-          { type: "wait", milliseconds: 4000 },
+          { type: "click", selector: "#btSearch" },
+          { type: "wait", milliseconds: 4500 },
         ],
       }),
     });
