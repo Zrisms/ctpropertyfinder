@@ -2620,6 +2620,132 @@ async function firecrawlScrape(apiKey: string, url: string): Promise<string | nu
 }
 
 // Full page scrape (includes headers, sidebars, all content — better for property detail pages)
+// ========== DARIEN (Patriot AssessPro) ==========
+// Darien's assessor site (assessment.darienct.gov) shows a "Disagree / Agree"
+// disclaimer before allowing search. We must click Agree first, then submit
+// the address search form, then follow the result link to the detail page.
+async function scrapeDarienAssessPro(apiKey: string, address: string, town: string): Promise<Response> {
+  const base = "https://assessment.darienct.gov";
+  const searchUrl = `${base}/Search/commonsearch.aspx?mode=address`;
+  const m = address.match(/^(\d+)\s+(.+)$/);
+  const houseNum = m?.[1] || "";
+  const streetPart = m?.[2] || address;
+  const streetBase = streetPart
+    .replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, "")
+    .trim();
+
+  // 1) Land on disclaimer, click Agree, fill the form, submit.
+  let searchMarkdown = "";
+  let searchLinks: string[] = [];
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 45000);
+    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      signal: ctrl.signal,
+      body: JSON.stringify({
+        url: searchUrl,
+        formats: ["markdown", "links"],
+        onlyMainContent: false,
+        waitFor: 3000,
+        timeout: 40000,
+        actions: [
+          { type: "wait", milliseconds: 1500 },
+          // Patriot AssessPro disclaimer — the Agree button id is typically btAgree
+          { type: "click", selector: '#btAgree, input[value="Agree" i], input[name*="Agree" i], button:has-text("Agree")' },
+          { type: "wait", milliseconds: 2500 },
+          // Street number field
+          { type: "click", selector: 'input[name="inpNo"], input[id*="StrNo" i], input[name*="StrNo" i], input[name*="StreetNum" i]' },
+          { type: "write", text: houseNum },
+          { type: "wait", milliseconds: 200 },
+          // Street name field
+          { type: "click", selector: 'input[name="inpStreet"], input[id*="StrName" i], input[name*="StrName" i], input[name*="StreetName" i]' },
+          { type: "write", text: streetBase },
+          { type: "wait", milliseconds: 300 },
+          // Submit search
+          { type: "click", selector: '#btSearch, input[type="submit"][value*="Search" i], input[name*="Search" i], button:has-text("Search")' },
+          { type: "wait", milliseconds: 4000 },
+        ],
+      }),
+    });
+    clearTimeout(t);
+    if (resp.ok) {
+      const data = await resp.json();
+      searchMarkdown = data.data?.markdown || data.markdown || "";
+      searchLinks = data.data?.links || data.links || [];
+      console.log(`Darien search: ${searchMarkdown.length} chars, ${searchLinks.length} links`);
+    } else {
+      console.error(`Darien search HTTP ${resp.status}`);
+    }
+  } catch (e) {
+    console.error("Darien search error:", (e as Error).message || e);
+  }
+
+  // 2) Find the detail link (datalet.aspx is Patriot's record page)
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const wantedStreet = norm(streetBase);
+  const detailLinks = searchLinks
+    .filter((l) => /datalet\.aspx|parcel\.aspx|detail/i.test(l))
+    .map((l) => (l.startsWith("http") ? l : `${base}${l.startsWith("/") ? "" : "/"}${l}`));
+
+  // 3) Fetch each candidate detail page, accepting disclaimer first.
+  for (const link of detailLinks.slice(0, 4)) {
+    try {
+      const ctrl2 = new AbortController();
+      const t2 = setTimeout(() => ctrl2.abort(), 30000);
+      const detailResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        signal: ctrl2.signal,
+        body: JSON.stringify({
+          url: link,
+          formats: ["markdown"],
+          onlyMainContent: false,
+          waitFor: 2500,
+          timeout: 25000,
+          actions: [
+            { type: "wait", milliseconds: 1200 },
+            { type: "click", selector: '#btAgree, input[value="Agree" i], button:has-text("Agree")' },
+            { type: "wait", milliseconds: 2000 },
+          ],
+        }),
+      });
+      clearTimeout(t2);
+      if (!detailResp.ok) continue;
+      const dd = await detailResp.json();
+      const detailMd: string = dd.data?.markdown || dd.markdown || "";
+      if (detailMd.length < 300) continue;
+      // Skip pages that still show only the disclaimer
+      if (/currently unavailable due to maintenance/i.test(detailMd) && !/owner/i.test(detailMd)) continue;
+      // Heuristic: must mention our street to be the right parcel
+      if (wantedStreet && !norm(detailMd).includes(wantedStreet)) continue;
+      const extracted = extractGenericPropertyData(detailMd, address, town);
+      if (extracted) {
+        extracted.propertyCardUrl = link;
+        return json({ success: true, property: extracted });
+      }
+    } catch (e) {
+      console.error("Darien detail error:", (e as Error).message || e);
+    }
+  }
+
+  // 4) Last-resort: extract whatever is on the search results page itself.
+  if (searchMarkdown.length > 300) {
+    const extracted = extractGenericPropertyData(searchMarkdown, address, town);
+    if (extracted) {
+      extracted.propertyCardUrl = searchUrl;
+      return json({ success: true, property: extracted });
+    }
+  }
+
+  return json({
+    success: false,
+    error: `Could not find property data for ${address} in ${town}. Try the assessor database directly.`,
+    searchUrl,
+  });
+}
+
 async function firecrawlScrapeFullPage(apiKey: string, url: string): Promise<string | null> {
   console.log(`Firecrawl full-page scraping: ${url}`);
   try {
