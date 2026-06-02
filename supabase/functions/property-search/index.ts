@@ -451,9 +451,18 @@ Deno.serve(async (req) => {
 
     // For 'custom' platform towns, use dynamic interactive scraping
     if (config.platform === "custom") {
-      console.log(`Custom platform for ${town}, using dynamic scraper on ${config.url}`);
-      const dynamicResult = await scrapeCustomSite(apiKey, config.url!, normalizedAddress, town);
-      return dynamicResult;
+      // Darien uses Patriot AssessPro which requires accepting a disclaimer first
+      if (lookupTown === "darien") {
+        console.log(`Darien AssessPro scraper for "${normalizedAddress}"`);
+        const darienResult = await scrapeDarienAssessPro(apiKey, normalizedAddress, town);
+        const body = await darienResult.clone().json().catch(() => null);
+        if (body?.success) return darienResult;
+        console.log(`Darien AssessPro failed, falling through to CT ECO fallback`);
+      } else {
+        console.log(`Custom platform for ${town}, using dynamic scraper on ${config.url}`);
+        const dynamicResult = await scrapeCustomSite(apiKey, config.url!, normalizedAddress, town);
+        return dynamicResult;
+      }
     }
 
     // Try platform-specific scraper using canonical lookup town
@@ -2611,6 +2620,172 @@ async function firecrawlScrape(apiKey: string, url: string): Promise<string | nu
 }
 
 // Full page scrape (includes headers, sidebars, all content — better for property detail pages)
+// ========== DARIEN (Patriot AssessPro) ==========
+// Darien's assessor site (assessment.darienct.gov) shows a "Disagree / Agree"
+// disclaimer before allowing search. We must click Agree first, then submit
+// the address search form, then follow the result link to the detail page.
+async function scrapeDarienAssessPro(apiKey: string, address: string, town: string): Promise<Response> {
+  const base = "https://assessment.darienct.gov";
+  const searchUrl = `${base}/Search/commonsearch.aspx?mode=address`;
+  const m = address.match(/^(\d+)\s+(.+)$/);
+  const houseNum = m?.[1] || "";
+  const streetPart = m?.[2] || address;
+  const streetBase = streetPart
+    .replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, "")
+    .trim();
+
+  // 1) Land on disclaimer, click Agree, fill the form, submit.
+  let searchMarkdown = "";
+  let searchLinks: string[] = [];
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 45000);
+    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      signal: ctrl.signal,
+      body: JSON.stringify({
+        url: searchUrl,
+        formats: ["markdown", "links"],
+        onlyMainContent: false,
+        waitFor: 3000,
+        timeout: 40000,
+        actions: [
+          { type: "wait", milliseconds: 1500 },
+          // iasWorld (Tyler Tech) disclaimer — Agree button id is btAgree
+          { type: "click", selector: "#btAgree" },
+          { type: "wait", milliseconds: 2500 },
+          // iasWorld inputs are inpNumber / inpStreet, submit is btSearch
+          { type: "click", selector: "#inpNumber" },
+          { type: "write", text: houseNum },
+          { type: "wait", milliseconds: 200 },
+          { type: "click", selector: "#inpStreet" },
+          { type: "write", text: streetBase },
+          { type: "wait", milliseconds: 300 },
+          { type: "click", selector: "#btSearch" },
+          { type: "wait", milliseconds: 4500 },
+        ],
+      }),
+    });
+    clearTimeout(t);
+    if (resp.ok) {
+      const data = await resp.json();
+      searchMarkdown = data.data?.markdown || data.markdown || "";
+      searchLinks = data.data?.links || data.links || [];
+      console.log(`Darien search: ${searchMarkdown.length} chars, ${searchLinks.length} links`);
+    } else {
+      console.error(`Darien search HTTP ${resp.status}`);
+    }
+  } catch (e) {
+    console.error("Darien search error:", (e as Error).message || e);
+  }
+
+  // 2) Parse the iasWorld results table for the matching parcel row.
+  //    Format: | <ParcelID> | <Owner> | <ADDRESS> | <NBHD> | <Unit> | <LUC> |
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const wantedStreet = norm(streetBase);
+  const wantedFull = norm(`${houseNum} ${streetBase}`);
+
+  let parcelId = "";
+  let ownerRaw = "";
+  let addressRaw = "";
+
+  const rowRe = /\|\s*(\d{3,8})\s*\|\s*([^|]+?)\s*\|\s*(\d+\s+[A-Z0-9 .'\-]+?)\s*\|\s*(\d+)?\s*\|/g;
+  let rm: RegExpExecArray | null;
+  while ((rm = rowRe.exec(searchMarkdown)) !== null) {
+    const rowAddr = norm(rm[3]);
+    if (
+      rowAddr === wantedFull ||
+      rowAddr.startsWith(wantedFull) ||
+      (rowAddr.startsWith(`${houseNum} `) && rowAddr.includes(wantedStreet))
+    ) {
+      parcelId = rm[1].trim();
+      ownerRaw = rm[2].replace(/\\/g, "").trim();
+      addressRaw = rm[3].trim();
+      break;
+    }
+  }
+
+  // 3) If we found a parcel, try to load the iasWorld Datalet detail page
+  //    to enrich with assessment data.
+  let detailMd = "";
+  let detailUrl = "";
+  if (parcelId) {
+    detailUrl = `${base}/Datalets/Datalet.aspx?UseSearch=no&pin=${encodeURIComponent(parcelId)}`;
+    try {
+      const ctrl2 = new AbortController();
+      const t2 = setTimeout(() => ctrl2.abort(), 30000);
+      const detailResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        signal: ctrl2.signal,
+        body: JSON.stringify({
+          url: detailUrl,
+          formats: ["markdown"],
+          onlyMainContent: false,
+          waitFor: 2500,
+          timeout: 25000,
+          actions: [
+            { type: "wait", milliseconds: 1200 },
+            { type: "click", selector: "#btAgree" },
+            { type: "wait", milliseconds: 2000 },
+          ],
+        }),
+      });
+      clearTimeout(t2);
+      if (detailResp.ok) {
+        const dd = await detailResp.json();
+        detailMd = dd.data?.markdown || dd.markdown || "";
+      }
+    } catch (e) {
+      console.error("Darien detail error:", (e as Error).message || e);
+    }
+  }
+
+  // 4) Combine: prefer detail page extraction, fall back to results-row info.
+  if (detailMd.length > 300 && norm(detailMd).includes(wantedStreet)) {
+    const extracted = extractGenericPropertyData(detailMd, address, town);
+    if (extracted) {
+      if (!extracted.parcelId && parcelId) extracted.parcelId = parcelId;
+      extracted.propertyCardUrl = detailUrl;
+      return json({ success: true, property: extracted });
+    }
+  }
+
+  if (parcelId && ownerRaw) {
+    const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(ownerRaw);
+    return json({
+      success: true,
+      property: {
+        address: addressRaw || address, town, owner: ownerRaw, coOwner: "",
+        ownerAddress: "", isLLC, parcelId, mblu: "", accountNumber: "",
+        buildingCount: "", bookPage: "", certificate: "", instrument: "",
+        assessedValue: "", totalAppraisal: "", totalMarketValue: "",
+        improvementsValue: "", landValue: "",
+        assessImprovements: "", assessLand: "", assessTotal: "",
+        salePrice: "", saleDate: "", lotSize: "",
+        frontage: "", depth: "", useCode: "", useDescription: "",
+        zoning: "", neighborhood: "", totalMarketLand: "", landAppraisedValue: "",
+        yearBuilt: "", buildingStyle: "", model: "", stories: "",
+        livingArea: "", replacementCost: "", buildingPercentGood: "", occupancy: "",
+        totalRooms: "", bedrooms: "", totalBaths: "", halfBaths: "",
+        totalXtraFixtures: "", bathStyle: "", kitchenStyle: "", interiorCondition: "",
+        finBsmntArea: "", finBsmntQual: "", grade: "", exteriorWall: "", roofStructure: "", roofCover: "",
+        interiorWall: "", flooring: "", heating: "", heatingFuel: "", cooling: "", buildingPhoto: "",
+        garage: "", pool: "", fireplace: "", foundation: "", taxAmount: "",
+        ownershipHistory: [], subAreas: [], valuationHistory: [],
+        propertyCardUrl: detailUrl || searchUrl, llcDetails: undefined as any,
+      },
+    });
+  }
+
+  return json({
+    success: false,
+    error: `Could not find property data for ${address} in ${town}. Try the assessor database directly.`,
+    searchUrl,
+  });
+}
+
 async function firecrawlScrapeFullPage(apiKey: string, url: string): Promise<string | null> {
   console.log(`Firecrawl full-page scraping: ${url}`);
   try {
