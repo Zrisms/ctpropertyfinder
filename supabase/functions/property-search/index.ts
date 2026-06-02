@@ -2634,50 +2634,74 @@ async function scrapeDarienAssessPro(apiKey: string, address: string, town: stri
     .replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT)\.?$/i, "")
     .trim();
 
+  // Helper: POST to Firecrawl with retries + per-attempt timeout + backoff.
+  const firecrawlPost = async (
+    payload: Record<string, unknown>,
+    opts: { attempts: number; perAttemptMs: number; label: string },
+  ): Promise<any | null> => {
+    let lastErr = "";
+    for (let i = 1; i <= opts.attempts; i++) {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), opts.perAttemptMs);
+      const started = Date.now();
+      try {
+        const r = await fetch("https://api.firecrawl.dev/v1/scrape", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          signal: ctrl.signal,
+          body: JSON.stringify(payload),
+        });
+        clearTimeout(t);
+        if (r.ok) {
+          const j = await r.json();
+          console.log(`Darien ${opts.label} attempt ${i} ok in ${Date.now() - started}ms`);
+          return j;
+        }
+        lastErr = `HTTP ${r.status}`;
+        console.error(`Darien ${opts.label} attempt ${i} failed: ${lastErr}`);
+      } catch (e) {
+        clearTimeout(t);
+        lastErr = (e as Error).message || String(e);
+        console.error(`Darien ${opts.label} attempt ${i} threw after ${Date.now() - started}ms: ${lastErr}`);
+      }
+      if (i < opts.attempts) await new Promise((res) => setTimeout(res, 1500 * i));
+    }
+    console.error(`Darien ${opts.label} exhausted ${opts.attempts} attempts: ${lastErr}`);
+    return null;
+  };
+
   // 1) Land on disclaimer, click Agree, fill the form, submit.
   let searchMarkdown = "";
   let searchLinks: string[] = [];
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 45000);
-    const resp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      signal: ctrl.signal,
-      body: JSON.stringify({
-        url: searchUrl,
-        formats: ["markdown", "links"],
-        onlyMainContent: false,
-        waitFor: 3000,
-        timeout: 40000,
-        actions: [
-          { type: "wait", milliseconds: 1500 },
-          // iasWorld (Tyler Tech) disclaimer — Agree button id is btAgree
-          { type: "click", selector: "#btAgree" },
-          { type: "wait", milliseconds: 2500 },
-          // iasWorld inputs are inpNumber / inpStreet, submit is btSearch
-          { type: "click", selector: "#inpNumber" },
-          { type: "write", text: houseNum },
-          { type: "wait", milliseconds: 200 },
-          { type: "click", selector: "#inpStreet" },
-          { type: "write", text: streetBase },
-          { type: "wait", milliseconds: 300 },
-          { type: "click", selector: "#btSearch" },
-          { type: "wait", milliseconds: 4500 },
-        ],
-      }),
-    });
-    clearTimeout(t);
-    if (resp.ok) {
-      const data = await resp.json();
-      searchMarkdown = data.data?.markdown || data.markdown || "";
-      searchLinks = data.data?.links || data.links || [];
-      console.log(`Darien search: ${searchMarkdown.length} chars, ${searchLinks.length} links`);
-    } else {
-      console.error(`Darien search HTTP ${resp.status}`);
-    }
-  } catch (e) {
-    console.error("Darien search error:", (e as Error).message || e);
+  const searchData = await firecrawlPost(
+    {
+      url: searchUrl,
+      formats: ["markdown", "links"],
+      onlyMainContent: false,
+      waitFor: 4000,
+      timeout: 75000,
+      actions: [
+        { type: "wait", milliseconds: 2000 },
+        // iasWorld (Tyler Tech) disclaimer — Agree button id is btAgree
+        { type: "click", selector: "#btAgree" },
+        { type: "wait", milliseconds: 3500 },
+        // iasWorld inputs are inpNumber / inpStreet, submit is btSearch
+        { type: "click", selector: "#inpNumber" },
+        { type: "write", text: houseNum },
+        { type: "wait", milliseconds: 300 },
+        { type: "click", selector: "#inpStreet" },
+        { type: "write", text: streetBase },
+        { type: "wait", milliseconds: 400 },
+        { type: "click", selector: "#btSearch" },
+        { type: "wait", milliseconds: 6500 },
+      ],
+    },
+    { attempts: 3, perAttemptMs: 90000, label: "search" },
+  );
+  if (searchData) {
+    searchMarkdown = searchData.data?.markdown || searchData.markdown || "";
+    searchLinks = searchData.data?.links || searchData.links || [];
+    console.log(`Darien search: ${searchMarkdown.length} chars, ${searchLinks.length} links`);
   }
 
   // 2) Parse the iasWorld results table for the matching parcel row.
@@ -2707,38 +2731,30 @@ async function scrapeDarienAssessPro(apiKey: string, address: string, town: stri
   }
 
   // 3) If we found a parcel, try to load the iasWorld Datalet detail page
-  //    to enrich with assessment data.
+  //    to enrich with assessment data. This is the step most prone to
+  //    timeouts (disclaimer + datalet render), so allow more time/retries.
   let detailMd = "";
   let detailUrl = "";
   if (parcelId) {
     detailUrl = `${base}/Datalets/Datalet.aspx?UseSearch=no&pin=${encodeURIComponent(parcelId)}`;
-    try {
-      const ctrl2 = new AbortController();
-      const t2 = setTimeout(() => ctrl2.abort(), 30000);
-      const detailResp = await fetch("https://api.firecrawl.dev/v1/scrape", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        signal: ctrl2.signal,
-        body: JSON.stringify({
-          url: detailUrl,
-          formats: ["markdown"],
-          onlyMainContent: false,
-          waitFor: 2500,
-          timeout: 25000,
-          actions: [
-            { type: "wait", milliseconds: 1200 },
-            { type: "click", selector: "#btAgree" },
-            { type: "wait", milliseconds: 2000 },
-          ],
-        }),
-      });
-      clearTimeout(t2);
-      if (detailResp.ok) {
-        const dd = await detailResp.json();
-        detailMd = dd.data?.markdown || dd.markdown || "";
-      }
-    } catch (e) {
-      console.error("Darien detail error:", (e as Error).message || e);
+    const detailData = await firecrawlPost(
+      {
+        url: detailUrl,
+        formats: ["markdown"],
+        onlyMainContent: false,
+        waitFor: 4000,
+        timeout: 75000,
+        actions: [
+          { type: "wait", milliseconds: 2000 },
+          { type: "click", selector: "#btAgree" },
+          { type: "wait", milliseconds: 4000 },
+        ],
+      },
+      { attempts: 3, perAttemptMs: 90000, label: "detail" },
+    );
+    if (detailData) {
+      detailMd = detailData.data?.markdown || detailData.markdown || "";
+      console.log(`Darien detail: ${detailMd.length} chars`);
     }
   }
 
