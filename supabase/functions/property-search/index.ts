@@ -451,9 +451,18 @@ Deno.serve(async (req) => {
 
     // For 'custom' platform towns, use dynamic interactive scraping
     if (config.platform === "custom") {
-      console.log(`Custom platform for ${town}, using dynamic scraper on ${config.url}`);
-      const dynamicResult = await scrapeCustomSite(apiKey, config.url!, normalizedAddress, town);
-      return dynamicResult;
+      // Darien uses Patriot AssessPro which requires accepting a disclaimer first
+      if (lookupTown === "darien") {
+        console.log(`Darien AssessPro scraper for "${normalizedAddress}"`);
+        const darienResult = await scrapeDarienAssessPro(apiKey, normalizedAddress, town);
+        const body = await darienResult.clone().json().catch(() => null);
+        if (body?.success) return darienResult;
+        console.log(`Darien AssessPro failed, falling through to CT ECO fallback`);
+      } else {
+        console.log(`Custom platform for ${town}, using dynamic scraper on ${config.url}`);
+        const dynamicResult = await scrapeCustomSite(apiKey, config.url!, normalizedAddress, town);
+        return dynamicResult;
+      }
     }
 
     // Try platform-specific scraper using canonical lookup town
