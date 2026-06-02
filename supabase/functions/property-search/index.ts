@@ -2704,7 +2704,7 @@ async function scrapeDarienAssessPro(apiKey: string, address: string, town: stri
           timeout: 25000,
           actions: [
             { type: "wait", milliseconds: 1200 },
-            { type: "click", selector: '#btAgree, input[value="Agree" i], button:has-text("Agree")' },
+            { type: "click", selector: "#btAgree" },
             { type: "wait", milliseconds: 2000 },
           ],
         }),
