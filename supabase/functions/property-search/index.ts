@@ -458,6 +458,12 @@ Deno.serve(async (req) => {
         const body = await darienResult.clone().json().catch(() => null);
         if (body?.success) return darienResult;
         console.log(`Darien AssessPro failed, falling through to CT ECO fallback`);
+      } else if (lookupTown === "wethersfield") {
+        console.log(`Wethersfield MapGeo scraper for "${normalizedAddress}"`);
+        const wResult = await scrapeWethersfieldMapGeo(apiKey, normalizedAddress, town);
+        const body = await wResult.clone().json().catch(() => null);
+        if (body?.success) return wResult;
+        console.log(`Wethersfield MapGeo failed, falling through to CT ECO fallback`);
       } else {
         console.log(`Custom platform for ${town}, using dynamic scraper on ${config.url}`);
         const dynamicResult = await scrapeCustomSite(apiKey, config.url!, normalizedAddress, town);
