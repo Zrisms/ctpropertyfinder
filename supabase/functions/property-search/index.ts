@@ -2808,6 +2808,109 @@ async function scrapeDarienAssessPro(apiKey: string, address: string, town: stri
   });
 }
 
+// ========== WETHERSFIELD MAPGEO SCRAPING ==========
+// Wethersfield's assessor data moved to MapGeo (wethersfieldct.mapgeo.io).
+// MapGeo is an Ember SPA: a disclaimer modal appears first, then a
+// "Property Quick Search" input in the header lets you type an address.
+// After selecting a result, the property attributes load in a side panel.
+async function scrapeWethersfieldMapGeo(apiKey: string, address: string, town: string): Promise<Response> {
+  const baseUrl = "https://wethersfieldct.mapgeo.io/datasets/properties";
+  const m = address.match(/^(\d+)\s+(.+)$/);
+  const houseNum = m?.[1] || "";
+  const streetPart = m?.[2] || address;
+  const streetBase = streetPart
+    .replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|ROAD|STREET|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|HIGHWAY|PARKWAY|TURNPIKE|EXTENSION)\.?$/i, "")
+    .trim();
+  const typed = `${houseNum} ${streetBase}`.trim();
+
+  const fcPost = async (
+    payload: Record<string, unknown>,
+    opts: { attempts: number; perAttemptMs: number; label: string },
+  ): Promise<any | null> => {
+    let lastErr = "";
+    for (let i = 1; i <= opts.attempts; i++) {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), opts.perAttemptMs);
+      const started = Date.now();
+      try {
+        const r = await fetch("https://api.firecrawl.dev/v1/scrape", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          signal: ctrl.signal,
+          body: JSON.stringify(payload),
+        });
+        clearTimeout(t);
+        if (r.ok) {
+          const j = await r.json();
+          console.log(`Wethersfield ${opts.label} attempt ${i} ok in ${Date.now() - started}ms`);
+          return j;
+        }
+        lastErr = `HTTP ${r.status}`;
+        console.error(`Wethersfield ${opts.label} attempt ${i} failed: ${lastErr}`);
+      } catch (e) {
+        clearTimeout(t);
+        lastErr = (e as Error).message || String(e);
+        console.error(`Wethersfield ${opts.label} attempt ${i} threw after ${Date.now() - started}ms: ${lastErr}`);
+      }
+      if (i < opts.attempts) await new Promise((res) => setTimeout(res, 1500 * i));
+    }
+    console.error(`Wethersfield ${opts.label} exhausted ${opts.attempts} attempts: ${lastErr}`);
+    return null;
+  };
+
+  // 1) Load the MapGeo SPA, dismiss the disclaimer, type into the Quick
+  //    Search input, wait for autocomplete, choose the first suggestion,
+  //    then wait for the property side panel to render.
+  const searchData = await fcPost(
+    {
+      url: baseUrl,
+      formats: ["markdown", "links"],
+      onlyMainContent: false,
+      waitFor: 5000,
+      timeout: 90000,
+      actions: [
+        { type: "wait", milliseconds: 4500 },
+        // Dismiss the Disclaimer modal (button text "Close").
+        { type: "click", selector: ".modal-footer button" },
+        { type: "wait", milliseconds: 1500 },
+        // Focus the Quick Search input in the top header.
+        { type: "click", selector: "input[placeholder='Property Quick Search']" },
+        { type: "wait", milliseconds: 400 },
+        { type: "write", text: typed },
+        { type: "wait", milliseconds: 2500 },
+        // Pick the first autocomplete suggestion.
+        { type: "press", key: "ArrowDown" },
+        { type: "wait", milliseconds: 300 },
+        { type: "press", key: "Enter" },
+        { type: "wait", milliseconds: 6000 },
+      ],
+    },
+    { attempts: 3, perAttemptMs: 110000, label: "search" },
+  );
+
+  const md: string = searchData?.data?.markdown || searchData?.markdown || "";
+  console.log(`Wethersfield MapGeo markdown: ${md.length} chars`);
+
+  if (md.length > 300) {
+    const lowerMd = md.toLowerCase();
+    const wantedStreet = streetBase.toLowerCase();
+    if (lowerMd.includes(wantedStreet) || lowerMd.includes(typed.toLowerCase())) {
+      const extracted = extractGenericPropertyData(md, address, town);
+      if (extracted) {
+        extracted.propertyCardUrl = baseUrl;
+        return json({ success: true, property: extracted });
+      }
+    }
+  }
+
+  return json({
+    success: false,
+    error: `Could not find property data for ${address} in ${town} on MapGeo.`,
+    searchUrl: baseUrl,
+  });
+}
+
+
 async function firecrawlScrapeFullPage(apiKey: string, url: string): Promise<string | null> {
   console.log(`Firecrawl full-page scraping: ${url}`);
   try {
