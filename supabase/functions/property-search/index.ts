@@ -312,7 +312,7 @@ const TOWN_DB: Record<string, TownConfig> = {
 
   // === MapXpress Towns (direct ASP search + detail pages) ===
   bloomfield: { platform: "mapxpress", slug: "bloomfield", url: "https://bloomfield.mapxpress.net" },
-  wethersfield: { platform: "mapxpress", slug: "wethersfield", url: "https://wethersfield.mapxpress.net" },
+  wethersfield: { platform: "custom", url: "https://wethersfieldct.mapgeo.io/datasets/properties", label: "Wethersfield MapGeo" },
   windsor: { platform: "mapxpress", slug: "windsor", url: "https://windsor.mapxpress.net" },
   groton: { platform: "groton_gis", url: "https://maps.groton-ct.gov", label: "Groton GIS" },
 
