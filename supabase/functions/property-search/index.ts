@@ -312,7 +312,7 @@ const TOWN_DB: Record<string, TownConfig> = {
 
   // === MapXpress Towns (direct ASP search + detail pages) ===
   bloomfield: { platform: "mapxpress", slug: "bloomfield", url: "https://bloomfield.mapxpress.net" },
-  wethersfield: { platform: "mapxpress", slug: "wethersfield", url: "https://wethersfield.mapxpress.net" },
+  wethersfield: { platform: "custom", url: "https://wethersfieldct.mapgeo.io/datasets/properties", label: "Wethersfield MapGeo" },
   windsor: { platform: "mapxpress", slug: "windsor", url: "https://windsor.mapxpress.net" },
   groton: { platform: "groton_gis", url: "https://maps.groton-ct.gov", label: "Groton GIS" },
 
@@ -458,6 +458,12 @@ Deno.serve(async (req) => {
         const body = await darienResult.clone().json().catch(() => null);
         if (body?.success) return darienResult;
         console.log(`Darien AssessPro failed, falling through to CT ECO fallback`);
+      } else if (lookupTown === "wethersfield") {
+        console.log(`Wethersfield MapGeo scraper for "${normalizedAddress}"`);
+        const wResult = await scrapeWethersfieldMapGeo(apiKey, normalizedAddress, town);
+        const body = await wResult.clone().json().catch(() => null);
+        if (body?.success) return wResult;
+        console.log(`Wethersfield MapGeo failed, falling through to CT ECO fallback`);
       } else {
         console.log(`Custom platform for ${town}, using dynamic scraper on ${config.url}`);
         const dynamicResult = await scrapeCustomSite(apiKey, config.url!, normalizedAddress, town);
@@ -2801,6 +2807,111 @@ async function scrapeDarienAssessPro(apiKey: string, address: string, town: stri
     searchUrl,
   });
 }
+
+// ========== WETHERSFIELD MAPGEO SCRAPING ==========
+// Wethersfield's assessor data moved to MapGeo (wethersfieldct.mapgeo.io).
+// MapGeo is an Ember SPA: a disclaimer modal appears first, then a
+// "Property Quick Search" input in the header lets you type an address.
+// After selecting a result, the property attributes load in a side panel.
+async function scrapeWethersfieldMapGeo(apiKey: string, address: string, town: string): Promise<Response> {
+  const baseUrl = "https://wethersfieldct.mapgeo.io/datasets/properties";
+  const m = address.match(/^(\d+)\s+(.+)$/);
+  const houseNum = m?.[1] || "";
+  const streetPart = m?.[2] || address;
+  const streetBase = streetPart
+    .replace(/\s+(ST|RD|DR|AVE|LN|CT|CIR|BLVD|PL|TER|WAY|TRL|HWY|PKWY|TPKE|EXT|ROAD|STREET|DRIVE|AVENUE|LANE|COURT|CIRCLE|BOULEVARD|PLACE|TERRACE|HIGHWAY|PARKWAY|TURNPIKE|EXTENSION)\.?$/i, "")
+    .trim();
+  const typed = `${houseNum} ${streetBase}`.trim();
+
+  const fcPost = async (
+    payload: Record<string, unknown>,
+    opts: { attempts: number; perAttemptMs: number; label: string },
+  ): Promise<any | null> => {
+    let lastErr = "";
+    for (let i = 1; i <= opts.attempts; i++) {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), opts.perAttemptMs);
+      const started = Date.now();
+      try {
+        const r = await fetch("https://api.firecrawl.dev/v1/scrape", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          signal: ctrl.signal,
+          body: JSON.stringify(payload),
+        });
+        clearTimeout(t);
+        if (r.ok) {
+          const j = await r.json();
+          console.log(`Wethersfield ${opts.label} attempt ${i} ok in ${Date.now() - started}ms`);
+          return j;
+        }
+        const txt = await r.text().catch(() => "");
+        lastErr = `HTTP ${r.status}: ${txt.slice(0, 300)}`;
+        console.error(`Wethersfield ${opts.label} attempt ${i} failed: ${lastErr}`);
+      } catch (e) {
+        clearTimeout(t);
+        lastErr = (e as Error).message || String(e);
+        console.error(`Wethersfield ${opts.label} attempt ${i} threw after ${Date.now() - started}ms: ${lastErr}`);
+      }
+      if (i < opts.attempts) await new Promise((res) => setTimeout(res, 1500 * i));
+    }
+    console.error(`Wethersfield ${opts.label} exhausted ${opts.attempts} attempts: ${lastErr}`);
+    return null;
+  };
+
+  // 1) Load the MapGeo SPA, dismiss the disclaimer, type into the Quick
+  //    Search input, wait for autocomplete, choose the first suggestion,
+  //    then wait for the property side panel to render.
+  const searchData = await fcPost(
+    {
+      url: baseUrl,
+      formats: ["markdown", "links"],
+      onlyMainContent: false,
+      waitFor: 6000,
+      timeout: 110000,
+      proxy: "stealth",
+      actions: [
+        { type: "wait", milliseconds: 5000 },
+        // Dismiss the Disclaimer modal — first button in modal footer is "Close".
+        { type: "click", selector: ".modal-footer .btn" },
+        { type: "wait", milliseconds: 2000 },
+        // Focus the Quick Search input in the top header.
+        { type: "click", selector: "input[placeholder='Property Quick Search']" },
+        { type: "wait", milliseconds: 500 },
+        { type: "write", text: typed },
+        { type: "wait", milliseconds: 3000 },
+        // Pick the first autocomplete suggestion.
+        { type: "press", key: "ArrowDown" },
+        { type: "wait", milliseconds: 400 },
+        { type: "press", key: "Enter" },
+        { type: "wait", milliseconds: 7000 },
+      ],
+    },
+    { attempts: 3, perAttemptMs: 150000, label: "search" },
+  );
+
+  const md: string = searchData?.data?.markdown || searchData?.markdown || "";
+  console.log(`Wethersfield MapGeo markdown: ${md.length} chars`);
+
+  if (md.length > 300) {
+    const lowerMd = md.toLowerCase();
+    const wantedStreet = streetBase.toLowerCase();
+    if (lowerMd.includes(wantedStreet) || lowerMd.includes(typed.toLowerCase())) {
+      const extracted = extractGenericPropertyData(md, address, town);
+      if (extracted) {
+        extracted.propertyCardUrl = baseUrl;
+        return json({ success: true, property: extracted });
+      }
+    }
+  }
+
+  return json({
+    success: false,
+    error: `Could not find property data for ${address} in ${town} on MapGeo.`,
+    searchUrl: baseUrl,
+  });
+}
+
 
 async function firecrawlScrapeFullPage(apiKey: string, url: string): Promise<string | null> {
   console.log(`Firecrawl full-page scraping: ${url}`);
