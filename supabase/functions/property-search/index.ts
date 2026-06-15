@@ -2845,7 +2845,8 @@ async function scrapeWethersfieldMapGeo(apiKey: string, address: string, town: s
           console.log(`Wethersfield ${opts.label} attempt ${i} ok in ${Date.now() - started}ms`);
           return j;
         }
-        lastErr = `HTTP ${r.status}`;
+        const txt = await r.text().catch(() => "");
+        lastErr = `HTTP ${r.status}: ${txt.slice(0, 300)}`;
         console.error(`Wethersfield ${opts.label} attempt ${i} failed: ${lastErr}`);
       } catch (e) {
         clearTimeout(t);
