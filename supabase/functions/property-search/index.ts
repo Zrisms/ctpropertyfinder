@@ -2867,26 +2867,27 @@ async function scrapeWethersfieldMapGeo(apiKey: string, address: string, town: s
       url: baseUrl,
       formats: ["markdown", "links"],
       onlyMainContent: false,
-      waitFor: 5000,
-      timeout: 90000,
+      waitFor: 6000,
+      timeout: 110000,
+      proxy: "stealth",
       actions: [
-        { type: "wait", milliseconds: 4500 },
-        // Dismiss the Disclaimer modal (button text "Close").
-        { type: "click", selector: ".modal-footer button" },
-        { type: "wait", milliseconds: 1500 },
+        { type: "wait", milliseconds: 5000 },
+        // Dismiss the Disclaimer modal — first button in modal footer is "Close".
+        { type: "click", selector: ".modal-footer .btn" },
+        { type: "wait", milliseconds: 2000 },
         // Focus the Quick Search input in the top header.
         { type: "click", selector: "input[placeholder='Property Quick Search']" },
-        { type: "wait", milliseconds: 400 },
+        { type: "wait", milliseconds: 500 },
         { type: "write", text: typed },
-        { type: "wait", milliseconds: 2500 },
+        { type: "wait", milliseconds: 3000 },
         // Pick the first autocomplete suggestion.
         { type: "press", key: "ArrowDown" },
-        { type: "wait", milliseconds: 300 },
+        { type: "wait", milliseconds: 400 },
         { type: "press", key: "Enter" },
-        { type: "wait", milliseconds: 6000 },
+        { type: "wait", milliseconds: 7000 },
       ],
     },
-    { attempts: 3, perAttemptMs: 110000, label: "search" },
+    { attempts: 3, perAttemptMs: 150000, label: "search" },
   );
 
   const md: string = searchData?.data?.markdown || searchData?.markdown || "";
