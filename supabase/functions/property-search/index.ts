@@ -401,6 +401,23 @@ async function queryCamaRaw(address: string, town: string): Promise<CamaRow | nu
   return queryCamaParcel(address, town, 6000);
 }
 
+// Bound any scraper promise so no search can hang indefinitely.
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T | null> {
+  return Promise.race([
+    p,
+    new Promise<null>((resolve) => setTimeout(() => {
+      console.log(`${label} exceeded ${ms}ms budget — abandoning`);
+      resolve(null);
+    }, ms)),
+  ]);
+}
+
+async function responseSucceeded(res: Response | null): Promise<boolean> {
+  if (!res) return false;
+  const body = await res.clone().json().catch(() => null);
+  return !!body?.success;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
