@@ -2883,7 +2883,7 @@ async function scrapeWethersfieldMapGeo(apiKey: string, address: string, town: s
       formats: ["markdown", "links"],
       onlyMainContent: false,
       waitFor: 6000,
-      timeout: 110000,
+      timeout: 25000,
       proxy: "stealth",
       actions: [
         { type: "wait", milliseconds: 5000 },
@@ -2902,7 +2902,7 @@ async function scrapeWethersfieldMapGeo(apiKey: string, address: string, town: s
         { type: "wait", milliseconds: 7000 },
       ],
     },
-    { attempts: 3, perAttemptMs: 150000, label: "search" },
+    { attempts: 2, perAttemptMs: 30000, label: "search" },
   );
 
   const md: string = searchData?.data?.markdown || searchData?.markdown || "";
