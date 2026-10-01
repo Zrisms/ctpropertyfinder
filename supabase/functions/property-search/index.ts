@@ -1,3 +1,5 @@
+import { queryCamaParcel, mapCamaRowToBasic, mapCamaRowToProperty, type CamaRow } from "../_shared/ct-cama.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -386,34 +388,17 @@ function resolveTownLookup(town: string): { lookupTown: string; config?: TownCon
 }
 
 // ========== CT ECO STATEWIDE PARCEL API (fast ~1s lookup) ==========
+// Statewide fallback via official CT Open Data CAMA (Socrata). The former CT ECO
+// ArcGIS endpoint is decommissioned ("service not started"), so this supersedes it
+// while keeping the same function contract: basic fields or null, never blocking.
 async function queryCTEcoParcel(address: string, town: string): Promise<any | null> {
-  try {
-    const CT_ECO_URL = "https://cteco.uconn.edu/ctmaps/rest/services/Parcels/Parcels/MapServer/0/query";
-    const where = `UPPER(LOCATION) LIKE '%${address.toUpperCase().replace(/'/g, "''")}%' AND UPPER(TOWN) LIKE '%${town.toUpperCase().replace(/'/g, "''")}%'`;
-    const params = new URLSearchParams({ where, outFields: "*", f: "json", returnGeometry: "false", resultRecordCount: "5" });
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
-    const resp = await fetch(`${CT_ECO_URL}?${params}`, { signal: controller.signal });
-    clearTimeout(timeout);
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    if (!data.features?.length) return null;
-    const a = data.features[0].attributes;
-    return {
-      owner: a.OWNER1 || a.NAME || "",
-      coOwner: a.OWNER2 || "",
-      address: a.LOCATION || address,
-      parcelId: a.PARCEL_ID || a.GIS_PIN || "",
-      assessedValue: a.ASSESS_TOT || a.TOTAL_VALU || "",
-      landValue: a.LAND_VALUE || a.ASSESS_LND || "",
-      improvementsValue: a.BLDG_VALUE || a.ASSESS_IMP || "",
-      lotSize: a.ACRES || a.LOT_SIZE || "",
-      useDescription: a.USE_CODE || a.PROP_TYPE || "",
-      yearBuilt: a.YEAR_BUILT || "",
-    };
-  } catch {
-    return null; // Timeout or network error — don't block
-  }
+  const row = await queryCamaParcel(address, town, 6000);
+  return row ? mapCamaRowToBasic(row, address) : null;
+}
+
+// Raw CAMA row for the full-fidelity fallback response.
+async function queryCamaRaw(address: string, town: string): Promise<CamaRow | null> {
+  return queryCamaParcel(address, town, 6000);
 }
 
 Deno.serve(async (req) => {
