@@ -446,9 +446,16 @@ Deno.serve(async (req) => {
     const ctecoPromise = queryCTEcoParcel(normalizedAddress, lookupTown);
 
     if (!config) {
-      console.log(`Town "${town}" not in DB — trying dynamic scrape`);
-      const dynamicResult = await scrapeDynamic(apiKey, normalizedAddress, lookupTown, town);
-      return dynamicResult;
+      console.log(`Town "${town}" not in DB — trying dynamic scrape (bounded)`);
+      const dynamicResult = await withTimeout(scrapeDynamic(apiKey, normalizedAddress, lookupTown, town), 60000, `Dynamic scrape for ${town}`);
+      if (await responseSucceeded(dynamicResult)) return dynamicResult!;
+      console.log(`Dynamic scrape failed for ${town}, falling through to statewide CAMA fallback`);
+      const row = await queryCamaRaw(normalizedAddress, lookupTown);
+      if (row && row.owner) {
+        console.log(`Statewide CAMA fallback: found owner ${row.owner}`);
+        return json({ success: true, property: mapCamaRowToProperty(row, normalizedAddress, town) });
+      }
+      return dynamicResult ?? json({ success: false, error: `Could not find property data for ${address} in ${town}. Try the assessor database directly.` });
     }
 
     // For 'custom' platform towns, use dynamic interactive scraping
