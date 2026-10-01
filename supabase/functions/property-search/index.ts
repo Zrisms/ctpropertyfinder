@@ -550,10 +550,14 @@ Deno.serve(async (req) => {
       console.log(`Could not parse platform response`);
     }
 
-    // Platform failed — check if CT ECO got basic data
+    // Platform failed — use the official statewide CAMA record if available
     const cteco = await ctecoPromise;
     if (cteco && cteco.owner) {
-      console.log(`CT ECO fallback: found owner ${cteco.owner}`);
+      console.log(`Statewide CAMA fallback: found owner ${cteco.owner}`);
+      const row = await queryCamaRaw(normalizedAddress, lookupTown);
+      if (row && row.owner) {
+        return json({ success: true, property: mapCamaRowToProperty(row, normalizedAddress, town) });
+      }
       const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(cteco.owner);
       return json({ success: true, property: {
         address: cteco.address || normalizedAddress, town, owner: cteco.owner, coOwner: cteco.coOwner || "",
