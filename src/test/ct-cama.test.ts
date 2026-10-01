@@ -162,24 +162,28 @@ describe("statewide fallback ordering", () => {
 
 describe("municipality coverage", () => {
   const src = readFileSync(resolve(__dirname, "../../supabase/functions/property-search/index.ts"), "utf8");
+  const dbMatch = src.match(/const TOWN_DB[^{]*\{([\s\S]*?)\n\};/)!;
+  const dbKeys = (dbMatch[1].match(/^\s*([a-z0-9_ ]+?)\s*:/gm) || []).map((k) => k.trim().replace(/:$/, "").replace(/^"|"$/g, ""));
+  const aliasMatch = src.match(/const TOWN_ALIASES[^{]*\{([\s\S]*?)\n\};/)!;
+  const aliasKeys = (aliasMatch[1].match(/^\s*("?)([a-z0-9 ]+)\1\s*:/gm) || []).map((k) =>
+    k.trim().replace(/:$/, "").replace(/^"|"$/g, "").trim(),
+  );
 
-  it("CT_TOWNS lists all 169 Connecticut municipalities", () => {
-    const m = src.match(/const CT_TOWNS[^=]*=\s*\[([\s\S]*?)\];/);
-    expect(m).toBeTruthy();
-    const towns = m![1].match(/"[^"]+"/g) || [];
-    expect(towns.length).toBe(169);
+  it("TOWN_DB covers all 169 Connecticut municipalities (no duplicate list)", () => {
+    expect(dbKeys.length).toBe(169);
+    expect(new Set(dbKeys).size).toBe(169);
   });
 
-  it("every CT_TOWNS entry has a TOWN_DB entry (directly or via alias)", () => {
-    const townsMatch = src.match(/const CT_TOWNS[^=]*=\s*\[([\s\S]*?)\];/)!;
-    const towns = (townsMatch[1].match(/"([^"]+)"/g) || []).map((t) => t.slice(1, -1).toLowerCase());
-    const dbMatch = src.match(/const TOWN_DB[^{]*\{([\s\S]*?)\n\};/)!;
-    const dbKeys = new Set((dbMatch[1].match(/^\s*([a-z_]+):/gm) || []).map((k) => k.trim().replace(":", "")));
-    const aliasMatch = src.match(/const TOWN_ALIASES[^{]*\{([\s\S]*?)\n\};?/);
-    const aliasKeys = new Set(
-      aliasMatch ? (aliasMatch[1].match(/"([^"]+)"\s*:/g) || []).map((k) => k.replace(/[":\s]/g, "").toLowerCase()) : [],
-    );
-    const missing = towns.filter((t) => !dbKeys.has(t.replace(/\s+/g, "_")) && !dbKeys.has(t) && !aliasKeys.has(t));
-    expect(missing).toEqual([]);
+  it("every alias resolves to a real TOWN_DB town", () => {
+    const aliasValues = (aliasMatch[1].match(/:\s*"([^"]+)"/g) || []).map((v) => v.replace(/:\s*"|"$/g, ""));
+    const unresolved = aliasValues.filter((v) => !dbKeys.includes(v));
+    expect(unresolved).toEqual([]);
+  });
+
+  it("key towns keep their platform routing", () => {
+    expect(dbMatch[1]).toMatch(/wethersfield:\s*\{\s*platform:\s*"custom"/);
+    expect(dbMatch[1]).toMatch(/avon:\s*\{\s*platform:\s*"avon_assessor"/);
+    expect(dbMatch[1]).toMatch(/norwalk:\s*\{\s*platform:\s*"act"/);
+    expect(dbMatch[1]).toMatch(/darien:\s*\{\s*platform:\s*"custom"/);
   });
 });
