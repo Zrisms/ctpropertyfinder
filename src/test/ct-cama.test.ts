@@ -163,7 +163,9 @@ describe("statewide fallback ordering", () => {
 describe("municipality coverage", () => {
   const src = readFileSync(resolve(__dirname, "../../supabase/functions/property-search/index.ts"), "utf8");
   const dbMatch = src.match(/const TOWN_DB[^{]*\{([\s\S]*?)\n\};/)!;
-  const dbKeys = (dbMatch[1].match(/^\s*([a-z0-9_ ]+?)\s*:/gm) || []).map((k) => k.trim().replace(/:$/, "").replace(/^"|"$/g, ""));
+  const dbKeys = (dbMatch[1].match(/^\s*(?:"([^"]+)"|([a-z0-9_]+))\s*:/gm) || []).map((k) =>
+    k.trim().replace(/:$/, "").replace(/^"|"$/g, "").trim(),
+  );
   const aliasMatch = src.match(/const TOWN_ALIASES[^{]*\{([\s\S]*?)\n\};/)!;
   const aliasKeys = (aliasMatch[1].match(/^\s*("?)([a-z0-9 ]+)\1\s*:/gm) || []).map((k) =>
     k.trim().replace(/:$/, "").replace(/^"|"$/g, "").trim(),
