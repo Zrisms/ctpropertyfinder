@@ -1,3 +1,5 @@
+import { queryCamaParcel, mapCamaRowToBasic, mapCamaRowToProperty, type CamaRow } from "../_shared/ct-cama.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -386,34 +388,34 @@ function resolveTownLookup(town: string): { lookupTown: string; config?: TownCon
 }
 
 // ========== CT ECO STATEWIDE PARCEL API (fast ~1s lookup) ==========
+// Statewide fallback via official CT Open Data CAMA (Socrata). The former CT ECO
+// ArcGIS endpoint is decommissioned ("service not started"), so this supersedes it
+// while keeping the same function contract: basic fields or null, never blocking.
 async function queryCTEcoParcel(address: string, town: string): Promise<any | null> {
-  try {
-    const CT_ECO_URL = "https://cteco.uconn.edu/ctmaps/rest/services/Parcels/Parcels/MapServer/0/query";
-    const where = `UPPER(LOCATION) LIKE '%${address.toUpperCase().replace(/'/g, "''")}%' AND UPPER(TOWN) LIKE '%${town.toUpperCase().replace(/'/g, "''")}%'`;
-    const params = new URLSearchParams({ where, outFields: "*", f: "json", returnGeometry: "false", resultRecordCount: "5" });
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
-    const resp = await fetch(`${CT_ECO_URL}?${params}`, { signal: controller.signal });
-    clearTimeout(timeout);
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    if (!data.features?.length) return null;
-    const a = data.features[0].attributes;
-    return {
-      owner: a.OWNER1 || a.NAME || "",
-      coOwner: a.OWNER2 || "",
-      address: a.LOCATION || address,
-      parcelId: a.PARCEL_ID || a.GIS_PIN || "",
-      assessedValue: a.ASSESS_TOT || a.TOTAL_VALU || "",
-      landValue: a.LAND_VALUE || a.ASSESS_LND || "",
-      improvementsValue: a.BLDG_VALUE || a.ASSESS_IMP || "",
-      lotSize: a.ACRES || a.LOT_SIZE || "",
-      useDescription: a.USE_CODE || a.PROP_TYPE || "",
-      yearBuilt: a.YEAR_BUILT || "",
-    };
-  } catch {
-    return null; // Timeout or network error — don't block
-  }
+  const row = await queryCamaParcel(address, town, 6000);
+  return row ? mapCamaRowToBasic(row, address) : null;
+}
+
+// Raw CAMA row for the full-fidelity fallback response.
+async function queryCamaRaw(address: string, town: string): Promise<CamaRow | null> {
+  return queryCamaParcel(address, town, 6000);
+}
+
+// Bound any scraper promise so no search can hang indefinitely.
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T | null> {
+  return Promise.race([
+    p,
+    new Promise<null>((resolve) => setTimeout(() => {
+      console.log(`${label} exceeded ${ms}ms budget — abandoning`);
+      resolve(null);
+    }, ms)),
+  ]);
+}
+
+async function responseSucceeded(res: Response | null): Promise<boolean> {
+  if (!res) return false;
+  const body = await res.clone().json().catch(() => null);
+  return !!body?.success;
 }
 
 Deno.serve(async (req) => {
@@ -444,9 +446,16 @@ Deno.serve(async (req) => {
     const ctecoPromise = queryCTEcoParcel(normalizedAddress, lookupTown);
 
     if (!config) {
-      console.log(`Town "${town}" not in DB — trying dynamic scrape`);
-      const dynamicResult = await scrapeDynamic(apiKey, normalizedAddress, lookupTown, town);
-      return dynamicResult;
+      console.log(`Town "${town}" not in DB — trying dynamic scrape (bounded)`);
+      const dynamicResult = await withTimeout(scrapeDynamic(apiKey, normalizedAddress, lookupTown, town), 60000, `Dynamic scrape for ${town}`);
+      if (await responseSucceeded(dynamicResult)) return dynamicResult!;
+      console.log(`Dynamic scrape failed for ${town}, falling through to statewide CAMA fallback`);
+      const row = await queryCamaRaw(normalizedAddress, lookupTown);
+      if (row && row.owner) {
+        console.log(`Statewide CAMA fallback: found owner ${row.owner}`);
+        return json({ success: true, property: mapCamaRowToProperty(row, normalizedAddress, town) });
+      }
+      return dynamicResult ?? json({ success: false, error: `Could not find property data for ${address} in ${town}. Try the assessor database directly.` });
     }
 
     // For 'custom' platform towns, use dynamic interactive scraping
@@ -459,15 +468,17 @@ Deno.serve(async (req) => {
         if (body?.success) return darienResult;
         console.log(`Darien AssessPro failed, falling through to CT ECO fallback`);
       } else if (lookupTown === "wethersfield") {
-        console.log(`Wethersfield MapGeo scraper for "${normalizedAddress}"`);
-        const wResult = await scrapeWethersfieldMapGeo(apiKey, normalizedAddress, town);
-        const body = await wResult.clone().json().catch(() => null);
-        if (body?.success) return wResult;
-        console.log(`Wethersfield MapGeo failed, falling through to CT ECO fallback`);
+        console.log(`Wethersfield MapGeo scraper for "${normalizedAddress}" (bounded)`);
+        // MapGeo blocks headless browsers; cap total spend so the statewide
+        // CAMA fallback is reached promptly instead of hanging on retries.
+        const wResult = await withTimeout(scrapeWethersfieldMapGeo(apiKey, normalizedAddress, town), 45000, "Wethersfield MapGeo");
+        if (await responseSucceeded(wResult)) return wResult!;
+        console.log(`Wethersfield MapGeo failed, falling through to statewide CAMA fallback`);
       } else {
-        console.log(`Custom platform for ${town}, using dynamic scraper on ${config.url}`);
-        const dynamicResult = await scrapeCustomSite(apiKey, config.url!, normalizedAddress, town);
-        return dynamicResult;
+        console.log(`Custom platform for ${town}, using dynamic scraper on ${config.url} (bounded)`);
+        const dynamicResult = await withTimeout(scrapeCustomSite(apiKey, config.url!, normalizedAddress, town), 60000, `Custom scrape for ${town}`);
+        if (await responseSucceeded(dynamicResult)) return dynamicResult!;
+        console.log(`Custom scrape failed for ${town}, falling through to statewide CAMA fallback`);
       }
     }
 
@@ -539,10 +550,14 @@ Deno.serve(async (req) => {
       console.log(`Could not parse platform response`);
     }
 
-    // Platform failed — check if CT ECO got basic data
+    // Platform failed — use the official statewide CAMA record if available
     const cteco = await ctecoPromise;
     if (cteco && cteco.owner) {
-      console.log(`CT ECO fallback: found owner ${cteco.owner}`);
+      console.log(`Statewide CAMA fallback: found owner ${cteco.owner}`);
+      const row = await queryCamaRaw(normalizedAddress, lookupTown);
+      if (row && row.owner) {
+        return json({ success: true, property: mapCamaRowToProperty(row, normalizedAddress, town) });
+      }
       const isLLC = /\bLLC\b|\bL\.L\.C\b|\bLimited Liability\b/i.test(cteco.owner);
       return json({ success: true, property: {
         address: cteco.address || normalizedAddress, town, owner: cteco.owner, coOwner: cteco.coOwner || "",
@@ -2868,7 +2883,7 @@ async function scrapeWethersfieldMapGeo(apiKey: string, address: string, town: s
       formats: ["markdown", "links"],
       onlyMainContent: false,
       waitFor: 6000,
-      timeout: 110000,
+      timeout: 25000,
       proxy: "stealth",
       actions: [
         { type: "wait", milliseconds: 5000 },
@@ -2887,7 +2902,7 @@ async function scrapeWethersfieldMapGeo(apiKey: string, address: string, town: s
         { type: "wait", milliseconds: 7000 },
       ],
     },
-    { attempts: 3, perAttemptMs: 150000, label: "search" },
+    { attempts: 2, perAttemptMs: 30000, label: "search" },
   );
 
   const md: string = searchData?.data?.markdown || searchData?.markdown || "";
