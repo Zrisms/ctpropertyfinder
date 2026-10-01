@@ -468,15 +468,17 @@ Deno.serve(async (req) => {
         if (body?.success) return darienResult;
         console.log(`Darien AssessPro failed, falling through to CT ECO fallback`);
       } else if (lookupTown === "wethersfield") {
-        console.log(`Wethersfield MapGeo scraper for "${normalizedAddress}"`);
-        const wResult = await scrapeWethersfieldMapGeo(apiKey, normalizedAddress, town);
-        const body = await wResult.clone().json().catch(() => null);
-        if (body?.success) return wResult;
-        console.log(`Wethersfield MapGeo failed, falling through to CT ECO fallback`);
+        console.log(`Wethersfield MapGeo scraper for "${normalizedAddress}" (bounded)`);
+        // MapGeo blocks headless browsers; cap total spend so the statewide
+        // CAMA fallback is reached promptly instead of hanging on retries.
+        const wResult = await withTimeout(scrapeWethersfieldMapGeo(apiKey, normalizedAddress, town), 45000, "Wethersfield MapGeo");
+        if (await responseSucceeded(wResult)) return wResult!;
+        console.log(`Wethersfield MapGeo failed, falling through to statewide CAMA fallback`);
       } else {
-        console.log(`Custom platform for ${town}, using dynamic scraper on ${config.url}`);
-        const dynamicResult = await scrapeCustomSite(apiKey, config.url!, normalizedAddress, town);
-        return dynamicResult;
+        console.log(`Custom platform for ${town}, using dynamic scraper on ${config.url} (bounded)`);
+        const dynamicResult = await withTimeout(scrapeCustomSite(apiKey, config.url!, normalizedAddress, town), 60000, `Custom scrape for ${town}`);
+        if (await responseSucceeded(dynamicResult)) return dynamicResult!;
+        console.log(`Custom scrape failed for ${town}, falling through to statewide CAMA fallback`);
       }
     }
 
